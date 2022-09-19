@@ -25,7 +25,23 @@ import numpy as np  # for plotting
 # For sampling from MVN
 from mlkernels import Linear, EQ
 import lab as B
-import matplotlib.animation as animation
+
+rng = random.PRNGKey(123)
+beta_min = 0.001
+beta_max = 3
+
+# Grid over time
+R = 1000
+train_ts = jnp.arange(1, R)/(R-1)
+
+#Initialize the optimizer
+optimizer = optax.adam(1e-3)
+
+
+@partial(jax.jit)
+def matrix_cho(matrix):
+    L_cov = cholesky(matrix, lower=True)
+    return L_cov
 
 
 @partial(jax.jit)
@@ -53,8 +69,6 @@ def matrix_solve(L_cov, b):
 #     t: time    
 #     """
 #     return -matrix_solve(L_cov, x - mean)
-
-
 
 
 def log_hat_pt(x, t, mf):
@@ -323,27 +337,26 @@ class ApproximateScoreLinear(nn.Module):
         x = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
         return x  # (n_batch,)
 
-    @nn.compact
-    def evaluate_eig(self, x, t):
-        batch_size = x.shape[0]
-        N = jnp.shape(x)[1]
-        in_size = (N + 1) * N
-        n_hidden = 256
-        s = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(in_size)(s)
-        s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
-        #print(s[0, :, 1])
-        #print(s[0, :, 1:])
-        x = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
-        print(s[0, 0, :])
-        print(jnp.linalg.eig(s[0, 1:, :]))
-        print(jnp.hstack((jnp.ones((batch_size, 1)), x)))
+    # def evaluate_eig(self, x, t):
+    #     batch_size = x.shape[0]
+    #     N = jnp.shape(x)[1]
+    #     in_size = (N + 1) * N
+    #     n_hidden = 256
+    #     s = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
+    #     s = nn.Dense(n_hidden)(s)
+    #     s = nn.relu(s)
+    #     s = nn.Dense(n_hidden)(s)
+    #     s = nn.relu(s)
+    #     s = nn.Dense(n_hidden)(s)
+    #     s = nn.relu(s)
+    #     s = nn.Dense(in_size)(s)
+    #     s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
+    #     #print(s[0, :, 1])
+    #     #print(s[0, :, 1:])
+    #     x = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
+    #     print(s[0, 0, :])
+    #     print(jnp.linalg.eig(s[0, 1:, :]))
+    #     print(jnp.hstack((jnp.ones((batch_size, 1)), x)))
 
 
 @partial(jit, static_argnums=[4])
@@ -390,6 +403,42 @@ def w1_stdnormal(samples):
     return jnp.mean(jnp.abs(true_inv_cdf - approx_inv_cdf))
 
 
+#we jit the function, but we have to mark some of the arguments as static,
+#which means the function is recompiled every time these arguments are changed,
+#since they are directly compiled into the binary code. This is necessary
+#since jitted-functions cannot have functions as arguments. But it also 
+#no problem since these arguments will never/rarely change in our case,
+#therefore not triggering re-compilation.
+# @partial(jit, static_argnums=[1, 2,3,4,5])  # removed 1 because that's N
+def reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts):
+    """
+    rng: random number generator (JAX rng)
+    D: dimension in which the reverse SDE runs
+    N_initial: How many samples from the initial distribution N(0, I), number
+    forward_drift: drift function of the forward SDE (we implemented it above)
+    disperion: dispersion function of the forward SDE (we implemented it above)
+    score: The score function to use as additional drift in the reverse SDE
+    ts: a discretization {t_i} of [0, T], shape 1d-array
+    """
+    def f(carry, params):
+        # drift 
+        t, dt = params
+        x, rng = carry
+        rng, step_rng = jax.random.split(rng)  # the missing line
+        noise = random.normal(step_rng, x.shape)
+        _dispersion = dispersion(1 - t) # jnp.sqrt(beta_{t})
+        t = jnp.ones((x.shape[0], 1)) * t
+        drift = -forward_drift(x, 1 - t) + _dispersion**2 * score(x, 1 - t)
+        x = x + dt * drift + jnp.sqrt(dt) * _dispersion * noise
+        return (x, rng), ()
+    rng, step_rng = random.split(rng)
+    initial = random.normal(step_rng, (n_samples, N))
+    dts = ts[1:] - ts[:-1]
+    params = jnp.stack([ts[:-1], dts], axis=1)
+    (x, _), _ = scan(f, (initial, rng), params)
+    return x
+
+
 def train_nn(mf, N):
     """Train nn"""
     rng = random.PRNGKey(123)
@@ -402,11 +451,9 @@ def train_nn(mf, N):
     #initialize the model weights
     score_model = ApproximateScore()
     params = score_model.init(rng, x, time)
-
     #Initialize the optimizer
     opt_state = optimizer.init(params)
-
-    N_epochs = 1000
+    N_epochs = 10000
     train_size = mf.shape[0]
     batch_size = 50
     steps_per_epoch = train_size // batch_size
@@ -426,13 +473,10 @@ def train_nn(mf, N):
             print("Epoch %d \t, Loss %f " % (k, mean_loss))
     trained_score = lambda x, t: score_model.apply(params, x, t)
     rng, step_rng = random.split(rng)
-    samples = reverse_sde(step_rng, N, 1000, drift, dispersion, trained_score)
-    plot_heatmap(samples)
-    plt.scatter(samples[:, 0], samples[:, 1])
-    plt.savefig("generative_samples.png")
+    return reverse_sde(step_rng, N, 1000, drift, dispersion, trained_score, train_ts)
 
 
-def train_new_nn_on(rng, mf):
+def train_linear_nn(rng, mf):
         rng, step_rng = random.split(rng)
         score_model = ApproximateScoreLinear()
         train_size = mf.shape[0]
@@ -442,7 +486,6 @@ def train_new_nn_on(rng, mf):
         x = jnp.zeros(N*batch_size).reshape((batch_size, N))
         time = jnp.ones((batch_size, 1))
         params = score_model.init(step_rng, x, time)
-
         opt_state = optimizer.init(params)
         N_epochs = 100  # may be too little
         steps_per_epoch = train_size // batch_size
@@ -463,7 +506,7 @@ def train_new_nn_on(rng, mf):
         return score_model, params
 
 
-def train_new_nn_on_retrain(N_epochs, rng, mf, score_model, params, opt_state):
+def retrain_nn(N_epochs, rng, mf, score_model, params, opt_state):
     train_size = mf.shape[0]
     batch_size = 5
     batch_size = min(train_size, batch_size)
@@ -485,3 +528,6 @@ def train_new_nn_on_retrain(N_epochs, rng, mf, score_model, params, opt_state):
             print("Epoch %d \t, Loss %f " % (k, mean_loss))
     return score_model, params, opt_state
 
+
+# Get a jax grad function, which can be batched with vmap
+nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0, None), out_axes=(0)))

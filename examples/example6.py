@@ -1,5 +1,20 @@
+import jax
+from jax import jit, vmap, grad
+import jax.numpy as jnp
+# enable 64 precision
+# from jax.config import config
+# config.update("jax_enable_x64", True)
+jax.config.update('jax_platform_name', 'cpu')
+import matplotlib.pyplot as plt
+import jax.random as random
+import seaborn as sns
+sns.set_style("darkgrid")
+cm = sns.color_palette("mako_r", as_cmap=True)
+from sgm.plot import plot_score_ax, plot_score_diff, plot_video
+from sgm.utils import optimizer, ApproximateScoreLinear, sample_hyperplane, log_hat_pt, nabla_log_pt_scalar_hyperplane, retrain_nn
 
-def main5():
+
+def main():
     rng = random.PRNGKey(123)
     rng, step_rng, step_rng2 = random.split(rng, 3)
     # Js = jnp.logspace(2, 9, num=25, base=2).astype(int)
@@ -127,7 +142,7 @@ def main5():
             for k in range(K):
                 ax[j, k].clear()
         # True score
-        score_model, params, opt_state = train_new_nn_on_retrain(i, step_rng, mf, score_model, params, opt_state)
+        score_model, params, opt_state = retrain_nn(i, step_rng, mf, score_model, params, opt_state)
         trained_score = jit(lambda x, t: score_model.apply(params, x, t))
         score_diff = lambda x, t: (score_model.apply(params, x, t) - nabla_log_hat_pt(x, t))
         score_diff_normalized = lambda x, t: (score_model.apply(params, x, t) - nabla_log_hat_pt(x, t)) / jnp.linalg.norm(nabla_log_hat_pt(x, t))
@@ -141,15 +156,14 @@ def main5():
     train_size = mf.shape[0]
     N = mf.shape[1]
 
-    ani = animation.FuncAnimation(
-        fig, animate, frames=300, interval=1, fargs=(ax,))
-    # Set up formatting for the movie files
-    Writer = animation.writers['ffmpeg']
-    writer = Writer(fps=20, metadata=dict(artist='Me'), bitrate=800)
-    ani.save('{}.mp4'.format("plot_scorediff_t=0.06_nonlinear"), writer=writer, dpi=300)
+    plot_video(fig, ax, animate, 300, "plot_scorediff_t=0.06_nonlinear")
 
     # # For the hyperplane example, m_0 is zeros and C_0 is identity
     # for J in Js:
     #     print("At J=%d" % J)
     #     N = 3
     #     mf = sample_hyperplane(J, M, N)
+
+
+if __name__ == "__main__":
+    main()

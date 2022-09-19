@@ -4,45 +4,34 @@ import jax
 # from jax.config import config
 # config.update("jax_enable_x64", True)
 jax.config.update('jax_platform_name', 'cpu')
-from jax.experimental.host_callback import id_print
 import matplotlib.pyplot as plt
-from jax.lax import scan
 from jax import grad, jit, vmap
 import jax.random as random
 from functools import partial
 from scipy.stats import norm
-from scipy.stats import qmc
-from jax.scipy.special import logsumexp
-from jax.scipy.linalg import cholesky
-from jax.scipy.linalg import solve_triangular
-import flax.linen as nn
-import optax
-import scipy
 import seaborn as sns
 sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
-import numpy as np  # for plotting
-# For sampling from MVN
-from mlkernels import Linear, EQ
-import lab as B
 import matplotlib.animation as animation
-
+from sgm.utils import drift, dispersion, train_ts, reverse_sde
 
 # plt.rcParams.update({"text.usetex": True,
 #     "font.family": "sans-serif",
 #     "font.sans-serif": ["Helvetica"]})
 
-rng = random.PRNGKey(123)
-beta_min = 0.001
-beta_max = 3
 
-# Grid over time
-R = 1000
-train_ts = jnp.arange(1, R)/(R-1)
+def plot_video(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):
+
+    ani = animation.FuncAnimation(
+        fig, animate, frames=frames, interval=1, fargs=(ax,))
+    # Set up formatting for the movie files
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=fps, metadata=dict(artist='Me'), bitrate=bitrate)
+    # Warning: mp4 does not work on pdf
+    ani.save('{}.mp4'.format(fname), writer=writer, dpi=dpi)
 
 
-
-def plot_OH():
+def plot_OH(forward_density):
     # define data point
     x_0 = 2
     R = 10
@@ -56,12 +45,6 @@ def plot_OH():
     plt.savefig("contour.png")
     plt.close()
     return 0
-
-
-@partial(jax.jit)
-def matrix_cho(matrix):
-    L_cov = cholesky(matrix, lower=True)
-    return L_cov
 
 
 # def error_scores(mf, m_0, C_0, area_min=-1, area_max=1):
@@ -155,43 +138,6 @@ def plot_score_diff(ax, score1, score2, t, N, area_min=-1, area_max=1, fname="pl
     ax.quiver(grid[:, 0], grid[:, 1], diff[:, 0], diff[:, 1], angles='xy', scale_units='xy', scale=0.05)
 
 
-
-#we jit the function, but we have to mark some of the arguments as static,
-#which means the function is recompiled every time these arguments are changed,
-#since they are directly compiled into the binary code. This is necessary
-#since jitted-functions cannot have functions as arguments. But it also 
-#no problem since these arguments will never/rarely change in our case,
-#therefore not triggering re-compilation.
-# @partial(jit, static_argnums=[1, 2,3,4,5])  # removed 1 because that's N
-def reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts=train_ts):
-    """
-    rng: random number generator (JAX rng)
-    D: dimension in which the reverse SDE runs
-    N_initial: How many samples from the initial distribution N(0, I), number
-    forward_drift: drift function of the forward SDE (we implemented it above)
-    disperion: dispersion function of the forward SDE (we implemented it above)
-    score: The score function to use as additional drift in the reverse SDE
-    ts: a discretization {t_i} of [0, T], shape 1d-array
-    """
-    def f(carry, params):
-        # drift 
-        t, dt = params
-        x, rng = carry
-        rng, step_rng = jax.random.split(rng)  # the missing line
-        noise = random.normal(step_rng, x.shape)
-        _dispersion = dispersion(1 - t) # jnp.sqrt(beta_{t})
-        t = jnp.ones((x.shape[0], 1)) * t
-        drift = -forward_drift(x, 1 - t) + _dispersion**2 * score(x, 1 - t)
-        x = x + dt * drift + jnp.sqrt(dt) * _dispersion * noise
-        return (x, rng), ()
-    rng, step_rng = random.split(rng)
-    initial = random.normal(step_rng, (n_samples, N))
-    dts = ts[1:] - ts[:-1]
-    params = jnp.stack([ts[:-1], dts], axis=1)
-    (x, _), _ = scan(f, (initial, rng), params)
-    return x
-
-
 def plot_heatmap(positions, area_min=-3, area_max=3):
     """
     positions: locations of all particles in R^2, array (J, 2)
@@ -222,13 +168,7 @@ def plot_heatmap(positions, area_min=-3, area_max=3):
     plt.close()
 
 
-def heatmap_image(score, n_samps=5000, rng=random.PRNGKey(123)):
+def heatmap_image(score, N, n_samps=5000, rng=random.PRNGKey(123)):
     rng, step_rng = random.split(rng)
-    samples = reverse_sde(step_rng, N, n_samps, drift, dispersion, score)
+    samples = reverse_sde(step_rng, N, n_samps, drift, dispersion, score, train_ts)
     plot_heatmap(samples[:, [0,1]], -3, 3)
-
-
-
-#Initialize the optimizer
-optimizer = optax.adam(1e-3)
-

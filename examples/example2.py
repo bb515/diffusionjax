@@ -10,8 +10,8 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 import numpy as np  # for plotting
 # For sampling from MVN
-from ..utils import sample_hyperplane, nabla_log_hat_pt, train_nn
-from ..plot import heatmap_image, plot_score
+from sgm.utils import sample_hyperplane, nabla_log_hat_pt, train_nn
+from sgm.plot import heatmap_image, plot_score, plot_heatmap
 
 
 
@@ -31,13 +31,17 @@ def main():
     plt.scatter(mf[:, 0], mf[:, 1])
     plt.savefig("scatter.png")
     plt.close()
-    plot_score(nabla_log_hat_pt, 0.01, -3, 3)
-
-    rng = random.PRNGKey(123) 
-    heatmap_image(score=nabla_log_hat_pt, n_samps=5000, rng=rng)
+    rng = random.PRNGKey(123)
+    score = lambda x, t: nabla_log_hat_pt(x, t, mf)
+    plot_score(score, 0.01, N, -3, 3)
+    heatmap_image(score, N=N, n_samps=5000, rng=rng)
     # perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
     # heatmap_image(score=perturbed_score, n_samps=5000)
-    train_nn(mf, N)
+    samples = train_nn(mf, N)
+    plot_heatmap(samples)
+    plt.scatter(samples[:, 0], samples[:, 1])
+    plt.savefig("generative_samples.png")
+
 
 
 if __name__ == "__main__":
