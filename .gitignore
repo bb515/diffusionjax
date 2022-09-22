@@ -142,4 +142,7 @@ dmypy.json
 # cython
 *.c
 
+# Videos
+*.mp4
+
 .vscode/

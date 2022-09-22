@@ -1,5 +1,5 @@
 import jax
-from jax import jit
+from jax import jit, vmap, grad
 import jax.numpy as jnp
 # enable 64 precision
 # from jax.config import config
@@ -10,70 +10,138 @@ import jax.random as random
 import seaborn as sns
 sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
-import numpy as np  # for plotting
-# For sampling from MVN
-from sgm.utils import sample_hyperplane, reverse_sde, train_linear_nn, sample_hyperplane, drift, dispersion, train_ts
-from sgm.utils import w1_dd, average_distance_to_hyperplane, w1_stdnormal
-from sgm.plot import heatmap_image, plot_score, plot_heatmap
+from sgm.plot import plot_score_ax, plot_score_diff, plot_video
+from sgm.utils import optimizer, sample_hyperplane, retrain_nn
+from sgm.linear import ApproximateScoreLinear
+from sgm.non_linear import log_hat_pt, nabla_log_pt_scalar_hyperplane, update_step, loss_fn
+
 
 
 def main():
-    """Outer loop for training over sample sizes"""
-    rng = random.PRNGKey(123) 
-    Js = jnp.logspace(2, 9, num=25, base=2).astype(int)
-    wasserstein_generated_train = []
-    average_distance_to_hyperplanes = []
-    wasserstein_generated_analytic = []
-    wasserstein_train_analytic = []
-    rng, step_rng, step_rng2 = random.split(rng, 3)
-    for J in Js:
-        print("At J=%d" % J)
-        N = 3
-        mf = sample_hyperplane(J, 1, N)
-        score_model, params = train_linear_nn(step_rng, mf)
+    # The data can be for example, pixels in an image, described by a single point in Euclidean space
+    J = 50
+    M = 1
+    N = 2
+
+    # mf = sample_sphere(J, M, N)
+    mf = sample_hyperplane(J, M, N)
+    plt.scatter(mf[:, 0], mf[:, 1])
+    plt.savefig("scatter.png")
+    plt.close()
+
+    (train_size, N) = mf.shape
+
+    log_hat_pt_l = lambda x, t: log_hat_pt(x, t, mf)
+    # Get a jax grad function, which can be batched with vmap
+    nabla_log_hat_pt = jit(vmap(grad(log_hat_pt_l), in_axes=(0, 0), out_axes=(0)))
+
+    # Get a jax function, which can be batched with vmap
+    nabla_log_pt = jit(vmap(nabla_log_pt_scalar_hyperplane, in_axes=(0, 0), out_axes=(0)))
+
+    def plot_frame(
+            ax, score_diff, nabla_log_pt,
+            nabla_log_hat_pt, trained_score):
+        # xlim_max = 
+        # ylim_min_1 = 
+        # ylim_max_3 = 
+        # ylim_min_3 = 
+        # ylim_max_4 = 
+        # ylim_min_4 =
+
+        ((ax1, ax2), (ax3, ax4)) = ax
+
+        plot_score_ax(
+            ax1, nabla_log_hat_pt, 0.06, N, -3, 3, fname="plot_scorediff")
+        # cumulative total cost
+        #ax1.set_xlim(0, xlim_max)
+        #ax1.set_ylim(ylim_min_1, 0)
+        ax1.set_xlabel("nabla_log_hat_pt")
+        # ax1.set_xlabel(r"$x_0$")
+        # ax1.set_ylabel(r"$x_1$")
+        ax1.tick_params(
+            axis='x',          # changes apply to the x-axis
+            which='both',      # both major and minor ticks are affected
+            bottom=False,      # ticks along the bottom edge are off
+            top=False,         # ticks along the top edge are off
+            labelbottom=False)
+
+        # ax2.set_xlim(0, xlim_max)
+        # ax2.set_ylim(0.4, 3.1)
+        plot_score_ax(
+            ax2, trained_score, 0.06, N, -3, 3, fname="plot_scorediff")
+        ax2.set_xlabel("trained_score")
+        # ax2.set_xlabel(r"$x_0$")
+        # ax2.set_ylabel(r"$x_1$")
+        ax2.tick_params(
+            axis='x',          # changes apply to the x-axis
+            which='both',      # both major and minor ticks are affected
+            bottom=False,      # ticks along the bottom edge are off
+            top=False,         # ticks along the top edge are off
+            labelbottom=False)
+
+        # ax3.set_xlim(0, xlim_max)
+        # ax3.set_ylim(ylim_min_3, ylim_max_3)
+        plot_score_diff(
+            ax3, trained_score, nabla_log_hat_pt, 0.06, N, -3, 3, fname="plot_scorediff")
+        ax3.set_xlabel("trained_score - nabla_log_hat_pt")
+        # ax3.set_xlabel(r"$x_0$")
+        # ax3.set_ylabel(r"$x_1$")
+        ax3.tick_params(
+            axis='x',          # changes apply to the x-axis
+            which='both',      # both major and minor ticks are affected
+            bottom=False,      # ticks along the bottom edge are off
+            top=False,         # ticks along the top edge are off
+            labelbottom=False)
+
+        # ax4.set_ylim(ylim_min_4, ylim_max_4)
+        # ax4.set_xlim(0, xlim_max)
+        plot_score_ax(
+            ax4, nabla_log_pt, 0.06, N, -3, 3, fname="plot_scorediff")
+        ax4.set_xlabel("nabla_log_pt")
+        # ax4.set_xlabel(r"$x_0$")
+        # ax4.set_ylabel(r"$x_1$")
+        ax4.tick_params(
+            axis='x',          # changes apply to the x-axis
+            which='both',      # both major and minor ticks are affected
+            bottom=False,      # ticks along the bottom edge are off
+            top=False,         # ticks along the top edge are off
+            labelbottom=False)
+        # plt.savefig("plot_scorediff{}".format(i))
+        return ((ax1, ax2), (ax3, ax4))
+
+    # lim_tuple = (xlim_max, ylim_min_1, ylim_max_3, ylim_min_3, ylim_max_4, ylim_min_4)
+    _J = 2
+    _K = 2
+    fig, ax = plt.subplots(_J, _K, figsize=(10,5))
+
+    def animate(i, ax):
+        batch_size = 5
+        batch_size = min(train_size, batch_size)
+        x = jnp.zeros(N*batch_size).reshape((batch_size, N))
+        time = jnp.ones((batch_size, 1))
+        rng = random.PRNGKey(123)
+        rng, step_rng = random.split(rng)
+        score_model = ApproximateScoreLinear()
+        params = score_model.init(step_rng, x, time)
+        opt_state = optimizer.init(params)
+        print('frame {} rendered'.format(i))
+        # Clear the axis
+        for j in range(_J):
+            for k in range(_K):
+                ax[j, k].clear()
+        # True score
+        score_model, params, opt_state, mean_losses = retrain_nn(update_step, i, step_rng, mf, score_model, params, opt_state, loss_fn)
         trained_score = jit(lambda x, t: score_model.apply(params, x, t))
-        samples = reverse_sde(step_rng2, N, 10000, drift, dispersion, trained_score, train_ts)
-        wasserstein_generated_train.append(w1_dd(samples[:, 0], mf[:, 0]))
-        average_distance_to_hyperplanes.append(average_distance_to_hyperplane(samples))
-        wasserstein_generated_analytic.append(w1_stdnormal(samples[:, 0]))
-        wasserstein_train_analytic.append(w1_stdnormal(mf[:, 0]))
-    print("wasserstein_generated_train", wasserstein_generated_train)
-    print("average_distance_to_hyperplane", average_distance_to_hyperplane)
-    print("wasserstein_generated_analytic", wasserstein_generated_analytic)
-    print("wasserstein_train_analytic", wasserstein_train_analytic)
-    plt.plot(Js, wasserstein_generated_train, label="wasserstein_generated_train")
-    plt.plot(Js, average_distance_to_hyperplanes, label="average_distance_to_hyperplane")
-    plt.plot(Js, wasserstein_generated_analytic, label="wasserstein_generated_analytic")
-    plt.plot(Js, wasserstein_train_analytic, label="twasserstein_train_analytic")
-    plt.legend()
-    plt.savefig("lineplot.png")
-    plt.xscale("log")
-    plt.savefig("lineplot_log.png")
-    plt.close()
+        score_diff = lambda x, t: (score_model.apply(params, x, t) - nabla_log_hat_pt(x, t))
+        score_diff_normalized = lambda x, t: (score_model.apply(params, x, t) - nabla_log_hat_pt(x, t)) / jnp.linalg.norm(nabla_log_hat_pt(x, t))
 
-    plt.title(r"$\ell^{2}$ distance to hyperplane")
-    plt.plot(Js, wasserstein_generated_train)
-    plt.xscale("log")
-    plt.savefig("lineplot_log_sm_mf.png")
-    plt.close()
+        ax = plot_frame(ax, score_diff, nabla_log_pt, nabla_log_hat_pt, trained_score) 
+        
+        # plt.tight_layout()
+        # plt.show()
+        return None
 
-    plt.title("Wasserstein distance between empirical distribution and samples")
-    plt.plot(Js, average_distance_to_hyperplanes)
-    plt.xscale("log")
-    plt.savefig("lineplot_log_sm_td.png")
-    plt.close()
-
-    plt.title("Wasserstein distance between samples and normal")
-    plt.plot(Js, wasserstein_generated_analytic)
-    plt.xscale("log")
-    plt.savefig("lineplot_log_sm_no.png")
-    plt.close()
-
-    plt.title("Wasserstein distance between empirical distribution and normal")
-    plt.plot(Js, wasserstein_generated_train)
-    plt.xscale("log")
-    plt.savefig("lineplot_log_tf_no.png")
-    plt.close()
+    plot_video(fig, ax, animate, 300, "plot_scorediff_t=0.06_nonlinear")
 
 
 if __name__ == "__main__":

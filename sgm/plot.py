@@ -15,9 +15,37 @@ cm = sns.color_palette("mako_r", as_cmap=True)
 import matplotlib.animation as animation
 from sgm.utils import drift, dispersion, train_ts, reverse_sde
 
+
+BG_ALPHA = 1.0
+MG_ALPHA = 0.2
+FG_ALPHA = 0.4
+
+
 # plt.rcParams.update({"text.usetex": True,
 #     "font.family": "sans-serif",
 #     "font.sans-serif": ["Helvetica"]})
+
+
+def plot_samples(x, index, lims=None):
+    fig, ax = plt.subplots(1, 1)
+    fig.patch.set_facecolor('white')
+    fig.patch.set_alpha(BG_ALPHA)
+    ax.scatter(
+        x[:, index[0]], x[:, index[1]],
+        color='red', label=r"$x$")
+    ax.legend()
+    ax.set_xlabel(r"$x_{}$".format(index[0]))
+    ax.set_ylabel(r"$x_{}$".format(index[1]))
+    if lims is not None:
+        ax.set_xlim(lims[0])
+        ax.set_ylim(lims[1])
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.draw()
+    fig.savefig(
+        "samples_x{}_x{}.png".format(index[0], index[1]),
+        facecolor=fig.get_facecolor(), edgecolor='none')
+    plt.close()
+
 
 
 def plot_video(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):

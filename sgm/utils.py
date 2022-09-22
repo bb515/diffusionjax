@@ -38,6 +38,14 @@ train_ts = jnp.arange(1, R)/(R-1)
 optimizer = optax.adam(1e-3)
 
 
+@partial(jax.jit, static_argnames=['N'])  # TODO: keep this here?
+def matrix_inverse(matrix, N):
+    L_cov = cholesky(matrix, lower=True)
+    L_covT_inv = solve_triangular(L_cov, B.eye(N), lower=True)
+    cov = solve_triangular(L_cov.T, L_covT_inv, lower=False)
+    return cov, L_cov
+
+
 @partial(jax.jit)
 def matrix_cho(matrix):
     L_cov = cholesky(matrix, lower=True)
@@ -49,73 +57,6 @@ def matrix_solve(L_cov, b):
     x = solve_triangular(
         L_cov, b, lower=True)
     return x
-
-# def S_given_t(mf, t, m_0, C_0):
-#     N = mf.shape[0]
-#     mean_coeff = mean_factor(t)
-#     mean = m_0 * mean_coeff
-#     v = var(t)
-#     L_cov = matrix_cho(mean_coeff**2 * C_0 + v)
-#     return L_cov, mean
-
-
-# def log_pt_factored_t(x, L_cov, mean):
-#     """
-#     Analytical distribution score for normal distribution on the hyperplane.
-#     Requires a linear solve for each x
-#     Requires a cholesky for each t
-
-#     x: One location in R^n, N should be 2 in special case example.
-#     t: time    
-#     """
-#     return -matrix_solve(L_cov, x - mean)
-
-
-def log_hat_pt(x, t, mf):
-    """
-    Empirical distribution score for normal distribution on the hyperplane.
-
-    x: One location in R^n, N should be 2 in special case example
-    t: time
-    """
-    N = mf.shape[0]
-    means = mf * mean_factor(t)
-    v = var(t)
-    potentials = jnp.sum(-(x - means)**2 / (2 * v), axis=1)  # doesn't potential also depends on jnp.log(_v_t)? but taking nabla_x
-    return logsumexp(potentials, axis=0, b=1/N)
-
-
-def nabla_log_pt_scalar(x, t, m_0, C_0):
-    """
-    Analytical distribution score for normal distribution on the hyperplane.
-    Requires a linear solve for each x
-    Requires a cholesky for each t
-
-    x: One location in R^n, N should be 2 in special case example.
-    t: time    
-    """
-    N = m_0.shape[0]
-    mean_coeff = mean_factor(t)
-    mean = m_0 * mean_coeff
-    v = var(t)
-    mat = mean_coeff**2 * C_0 + v
-    if N == 1:
-        return (x - m_0) / mat
-    else:
-        L_cov = matrix_cho(mean_coeff**2 * C_0 + v)
-        return -matrix_solve(L_cov, x - mean)
-
-
-def nabla_log_pt_scalar_hyperplane(x, t):
-    N = x.shape[0]
-    mean_coeff = mean_factor(t)**2
-    v = var(t)
-    mat = mean_coeff * jnp.array([[1, 0], [0, 0]]) + v * jnp.identity(N)
-    if N == 1:
-        return (x) / mat
-    else:
-        L_cov = matrix_cho(mat)
-        return -matrix_solve(L_cov, x)
 
 
 def sample_mvn(J, N, kernel=Linear(), m_0=0.0):
@@ -248,135 +189,6 @@ def forward_density(x_0, x, t):
     return norm.pdf(x, loc = mean_coeff * x_0, scale=jnp.sqrt(v))
 
 
-def loss_fn(params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the score function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
-    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
-    v = var(time_samples)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    s = model.apply(params, x_t, time_samples)
-    loss = jnp.mean((noise + s * v)**2)
-    return loss
-
-
-def loss_fn_t(t, params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the score function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    times = jnp.ones((n_batch, 1)) * t
-    mean_coeff = mean_factor(times)  # (n_batch, N)
-    v = var(times)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    s = model.apply(params, x_t, times)
-    loss = jnp.mean((noise + s * v)**2)
-    return loss
-
-
-class ApproximateScore(nn.Module):
-    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
-
-    @nn.compact
-    def __call__(self, x, t):
-        in_size = x.shape[1]
-        n_hidden = 256
-        act = nn.relu
-        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)],axis=1)
-        x = jnp.concatenate([x, t],axis=1)
-        x = nn.Dense(n_hidden)(x)
-        x = nn.relu(x)
-        x = nn.Dense(n_hidden)(x)
-        x = nn.relu(x)
-        x = nn.Dense(n_hidden)(x)
-        x = nn.relu(x)
-        x = nn.Dense(in_size)(x)
-        return x
-
-
-class ApproximateScoreLinear(nn.Module):
-    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
-
-    @nn.compact
-    def __call__(self, x, t):
-        batch_size = x.shape[0]
-        N = jnp.shape(x)[1]
-        in_size = (N + 1) * N
-        n_hidden = 256
-        s = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(in_size)(s)
-        s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
-        #print(s[0, :, 1])
-        #print(s[0, :, 1:])
-        x = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
-        return x  # (n_batch,)
-
-    # def evaluate_eig(self, x, t):
-    #     batch_size = x.shape[0]
-    #     N = jnp.shape(x)[1]
-    #     in_size = (N + 1) * N
-    #     n_hidden = 256
-    #     s = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-    #     s = nn.Dense(n_hidden)(s)
-    #     s = nn.relu(s)
-    #     s = nn.Dense(n_hidden)(s)
-    #     s = nn.relu(s)
-    #     s = nn.Dense(n_hidden)(s)
-    #     s = nn.relu(s)
-    #     s = nn.Dense(in_size)(s)
-    #     s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
-    #     #print(s[0, :, 1])
-    #     #print(s[0, :, 1:])
-    #     x = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
-    #     print(s[0, 0, :])
-    #     print(jnp.linalg.eig(s[0, 1:, :]))
-    #     print(jnp.hstack((jnp.ones((batch_size, 1)), x)))
-
-
-@partial(jit, static_argnums=[4])
-def update_step(params, rng, batch, opt_state, model):
-    """
-    params: the current weights of the model
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    opt_state: the internal state of the optimizer
-    model: the score function
-
-    takes the gradient of the loss function and updates the model weights (params) using it. Returns
-    the value of the loss function (for metrics), the new params and the new optimizer state
-    """
-    val, grads = jax.value_and_grad(loss_fn)(params, model, rng, batch)
-    updates, opt_state = optimizer.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
-    return val, params, opt_state
-
-
 @jit
 def average_distance_to_hyperplane(samples):
     J = samples.shape[0]
@@ -439,95 +251,35 @@ def reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts):
     return x
 
 
-def train_nn(mf, N):
-    """Train nn"""
-    rng = random.PRNGKey(123)
-    ## Neural network training
-    batch_size = 16
-    #some dummy input data. Flax is able to infer all the dimensions of the weights
-    #if we supply if with the kind of input data it has to expect
-    x = jnp.zeros(N*batch_size).reshape((batch_size, N))
-    time = jnp.ones((batch_size, 1))
-    #initialize the model weights
-    score_model = ApproximateScore()
-    params = score_model.init(rng, x, time)
-    #Initialize the optimizer
-    opt_state = optimizer.init(params)
-    N_epochs = 10000
+def retrain_nn(
+        update_step, N_epochs, rng, mf, score_model, params,
+        opt_state, loss_fn, batch_size=5, decomposition=False):
+    if decomposition:
+        L = 2
+    else:
+        L = 1
     train_size = mf.shape[0]
-    batch_size = 50
-    steps_per_epoch = train_size // batch_size
-    for k in range(N_epochs):
-        rng, step_rng = random.split(rng)
-        perms = jax.random.permutation(step_rng, train_size)
-        perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
-        perms = perms.reshape((steps_per_epoch, batch_size))
-        losses = []
-        for perm in perms:
-            batch = mf[perm, :]
-            rng, step_rng = random.split(rng)
-            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model)
-            losses.append(loss)
-        mean_loss = jnp.mean(jnp.array(losses))
-        if k % 10 == 0:
-            print("Epoch %d \t, Loss %f " % (k, mean_loss))
-    trained_score = lambda x, t: score_model.apply(params, x, t)
-    rng, step_rng = random.split(rng)
-    return reverse_sde(step_rng, N, 1000, drift, dispersion, trained_score, train_ts)
-
-
-def train_linear_nn(rng, mf):
-        rng, step_rng = random.split(rng)
-        score_model = ApproximateScoreLinear()
-        train_size = mf.shape[0]
-        N = mf.shape[1]
-        batch_size = 5
-        batch_size = min(train_size, batch_size)
-        x = jnp.zeros(N*batch_size).reshape((batch_size, N))
-        time = jnp.ones((batch_size, 1))
-        params = score_model.init(step_rng, x, time)
-        opt_state = optimizer.init(params)
-        N_epochs = 100  # may be too little
-        steps_per_epoch = train_size // batch_size
-        for k in range(N_epochs):
-            rng, step_rng = random.split(rng)
-            perms = jax.random.permutation(step_rng, train_size)
-            perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
-            perms = perms.reshape((steps_per_epoch, batch_size))
-            losses = []
-            for perm in perms:
-                batch = mf[perm, :]
-                rng, step_rng = random.split(rng)
-                loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model)
-                losses.append(loss)
-            mean_loss = jnp.mean(jnp.array(losses))
-            if k % 100 == 0:
-                print("Epoch %d \t, Loss %f " % (k, mean_loss))
-        return score_model, params
-
-
-def retrain_nn(N_epochs, rng, mf, score_model, params, opt_state):
-    train_size = mf.shape[0]
-    batch_size = 5
     batch_size = min(train_size, batch_size)
     steps_per_epoch = train_size // batch_size
-    # steps_per_epoch = 2
-    for k in range(N_epochs):
+    mean_losses = jnp.zeros((N_epochs, L))
+    for i in range(N_epochs):
         rng, step_rng = random.split(rng)
         perms = jax.random.permutation(step_rng, train_size)
         perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
         perms = perms.reshape((steps_per_epoch, batch_size))
-        losses = []
-        for perm in perms:
+        losses = jnp.zeros((jnp.shape(perms)[0], L))
+        for j, perm in enumerate(perms):
             batch = mf[perm, :]
             rng, step_rng = random.split(rng)
-            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model)
-            losses.append(loss)
-        mean_loss = jnp.mean(jnp.array(losses))
-        if k % 10 == 0:
-            print("Epoch %d \t, Loss %f " % (k, mean_loss))
-    return score_model, params, opt_state
-
-
-# Get a jax grad function, which can be batched with vmap
-nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0, None), out_axes=(0)))
+            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss_fn, has_aux=decomposition)
+            if decomposition:
+                loss = loss[1]
+            losses = losses.at[j].set(loss)
+        # TODO: is mean_loss really what I need to plot? Loses the covariance between different directions
+        # For now, don't batch by setting train_size == batch_size == mf.shape[0]
+        mean_loss = jnp.mean(losses, axis=0)
+        mean_losses = mean_losses.at[i].set(mean_loss)
+        if i % 10 == 0:
+            if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
+            if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
+    return score_model, params, opt_state, mean_losses
