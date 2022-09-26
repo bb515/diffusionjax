@@ -61,19 +61,19 @@ def main():
     plt.savefig("scatter.png")
     plt.close()
 
-    basis = jnp.zeros((N, N - M))
-    basis = basis.at[jnp.array([[0, 0]])].set(1.0)
+    tang_basis = jnp.zeros((N, N - M))
+    tang_basis = tang_basis.at[jnp.array([[0, 0]])].set(1.0)
 
-    perp = jnp.zeros((N, N - M))
-    perp = perp.at[jnp.array([[1, 0]])].set(1.0)
+    perp_basis = jnp.zeros((N, N - M))
+    perp_basis = perp_basis.at[jnp.array([[1, 0]])].set(1.0)
 
     colors = plt.cm.jet(jnp.linspace(0,1,jnp.size(J_train)))
 
     # Choose whether to make plots of loss function split into orthgonal components
     decomposition = False
     if decomposition:
-        loss_function = orthogonal_loss_fn(basis)
-        loss_function_t = orthogonal_loss_fn_t(basis)
+        loss_function = orthogonal_loss_fn(tang_basis)
+        loss_function_t = orthogonal_loss_fn_t(tang_basis)
     else:
         loss_function = loss_fn
         loss_function_t = loss_fn_t
@@ -109,6 +109,9 @@ def main():
             p_samples, i = forward_sde_t(initial, rng, N, test_size, drift, dispersion, train_ts)
             p_samples = p_samples.transpose(0, 2, 1)[:-1]
             # Compute average mean squared distance between the samples
+            distance_p_samples = jnp.einsum('ijk, jk', ,p_samples)
+            distance_q_samples = jnp.einsum('ijk, jk', q_samples)
+            assert 0
             distance_p_samples = p_samples[:, 1, :]
             distance_q_samples = q_samples[:, 1, :]
             plt.plot(train_ts[:-1], distance_p_samples[:, :100])
