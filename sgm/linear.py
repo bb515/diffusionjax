@@ -24,7 +24,7 @@ from sgm.non_linear import update_step as nonlinear_update_step
 
 # def log_pt_factored_t(x, L_cov, mean):
 #     """
-#     Analytical distribution score for normal distribution on the hyperplane.
+#     Analytical distribution  for normal distribution on the hyperplane.
 #     Requires a linear solve for each x
 #     Requires a cholesky for each t
 
@@ -102,7 +102,7 @@ class ApproximateScoreOperatorLinear(nn.Module):
 def linear_loss_fn(params, model, rng, batch):
     """
     params: the current weights of the model
-    model: the score function
+    model: the  function
     rng: random number generator from jax
     batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
     
@@ -119,13 +119,13 @@ def linear_loss_fn(params, model, rng, batch):
     x_t = mean_coeff * batch + stds * noise # (n_batch, N)
     N = jnp.shape(x_t)[1]
     s = model.apply(params, x_t, time_samples)  #  (n_batch, N)
-    return jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
+    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
 
 
 def loss_fn(params, model, rng, batch):
     """
     params: the current weights of the model
-    model: the score function
+    model: the  function
     rng: random number generator from jax
     batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
     
@@ -143,13 +143,13 @@ def loss_fn(params, model, rng, batch):
     N = jnp.shape(x_t)[1]
     s = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
     s = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((n_batch, 1)), x_t)))
-    return jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
+    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
 
 
 def loss_fn_t(t, params, model, rng, batch):
     """
     params: the current weights of the model
-    model: the score function
+    model: the  function
     rng: random number generator from jax
     batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
     
@@ -167,12 +167,12 @@ def loss_fn_t(t, params, model, rng, batch):
     N = jnp.shape(x_t)[1]
     s = model.apply(params, times, N)  #  (n_batch, N, N+1) which is quite memory intense
     s = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((n_batch, 1)), x_t)))
-    return jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
+    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
 
 
 def true_loss_fn_t(params, model, t, m_0, C_0):
     """
-    Analytical distribution score for normal distribution on the hyperplane.
+    Analytical distribution  for normal distribution on the hyperplane.
     Requires a linear solve for each x
     Requires a cholesky for each t
 
@@ -185,7 +185,8 @@ def true_loss_fn_t(params, model, t, m_0, C_0):
     mat = m_t**2 * C_0 + v_t
     mean = m_0 * m_t
     s = model.apply(params, t, N)  # (N, N+1) which is memory intense
-    return true_loss_scalar(s, mat, mean, N) * v_t
+    loss, residual, intermediate = true_loss_scalar(s, mat, mean, N)
+    return loss * v_t
 
 
 def true_loss_scalar(s, mat, mean, N):
@@ -204,12 +205,12 @@ def true_loss_scalar(s, mat, mean, N):
     residual_loss = residual.T @ residual
     trace_loss = jnp.einsum('ij, ji -> ', intermediate, S + mat_inv)
     loss = residual_loss + trace_loss
-    return loss
+    return loss, residual, intermediate
 
 
 def true_loss_fn(params, model, rng, n_batch, m_0, C_0):
     """
-    Analytical distribution score for normal distribution on the hyperplane.
+    Analytical distribution  for normal distribution on the hyperplane.
     Requires a linear solve for each x
     Requires a cholesky for each t
 
@@ -228,7 +229,7 @@ def true_loss_fn(params, model, rng, n_batch, m_0, C_0):
     return loss
 
 
-def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
+def train_linear_nn(rng, mf, batch_size, _model, N_epochs):
     rng, step_rng = random.split(rng)
     train_size = mf.shape[0]
     N = mf.shape[1]
@@ -238,7 +239,7 @@ def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
     time = jnp.ones((batch_size, 1))
     print(jnp.shape(x))
     print(jnp.shape(time))
-    params = score_model.init(step_rng, x, time)
+    params = _model.init(step_rng, x, time)
     opt_state = optimizer.init(params)
     steps_per_epoch = train_size // batch_size
     for k in range(N_epochs):
@@ -250,12 +251,12 @@ def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
         for perm in perms:
             batch = mf[perm, :]
             rng, step_rng = random.split(rng)
-            loss, params, opt_state = nonlinear_update_step(params, step_rng, batch, opt_state, score_model, linear_loss_fn)
+            loss, params, opt_state = nonlinear_update_step(params, step_rng, batch, opt_state, _model, linear_loss_fn)
             losses.append(loss)
         mean_loss = jnp.mean(jnp.array(losses))
         if k % 1 == 0:
             print("Epoch %d \t, Loss %f " % (k, mean_loss))
-    return score_model, params
+    return _model, params
 
 
 # @partial(jit, static_argnums=[6, 7, 8])
@@ -265,7 +266,7 @@ def update_step(n_batch, m_0, C_0, params, rng, opt_state, model, loss_fn, has_a
     rng: random number generator from jax
     batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
     opt_state: the internal state of the optimizer
-    model: the score function
+    model: the  function
 
     takes the gradient of the loss function and updates the model weights (params) using it. Returns
     the value of the loss function (for metrics), the new params and the new optimizer state
@@ -279,7 +280,7 @@ def update_step(n_batch, m_0, C_0, params, rng, opt_state, model, loss_fn, has_a
 
 def retrain_nn(
         n_batch, m_0, C_0, N_epochs, rng,
-        score_model, params, opt_state, loss_fn,
+        _model, params, opt_state, loss_fn,
         decomposition=False):
     if decomposition:
         L = 2
@@ -292,7 +293,7 @@ def retrain_nn(
         rng, step_rng = random.split(rng)
         loss, params, opt_state = update_step(
             n_batch, m_0, C_0, params, step_rng,
-            opt_state, score_model, loss_fn,
+            opt_state, _model, loss_fn,
             has_aux=decomposition)
         if decomposition:
             loss = loss[1]
@@ -302,4 +303,4 @@ def retrain_nn(
                 "Epoch {:d}, Loss {:.2f} ".format(i, loss))
             if L==2: print(
                 "Tangent loss {:.2f}, perpendicular loss {:.2f}".format(loss[0], loss[1]))
-    return score_model, params, opt_state, mean_losses
+    return _model, params, opt_state, mean_losses

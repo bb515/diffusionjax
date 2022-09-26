@@ -87,7 +87,7 @@ def loss_fn(params, model, rng, batch):
     noise = random.normal(step_rng, batch.shape)
     x_t = mean_coeff * batch + stds * noise # (n_batch, N)
     s = model.apply(params, x_t, time_samples)
-    return jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
+    return jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))  # TODO: maybe there is a mistake here? should it be scaled by root(v) instead?
 
 
 def loss_fn_t(t, params, model, rng, batch):
@@ -109,7 +109,7 @@ def loss_fn_t(t, params, model, rng, batch):
     noise = random.normal(step_rng, batch.shape)
     x_t = mean_coeff * batch + stds * noise # (n_batch, N)
     s = model.apply(params, x_t, times)
-    return jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
+    return jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))
 
 
 def orthogonal_loss_fn_t(tangent_basis):
@@ -142,8 +142,8 @@ def orthogonal_loss_fn_t(tangent_basis):
         x_t = mean_coeff * batch + stds * noise # (n_batch, N)
         s = model.apply(params, x_t, times)
          # find orthogonal components of the loss
-        loss = jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
-        parallel = jnp.mean(jnp.sum(jnp.dot(noise + s * v, tangent_basis)**2, axis=1))
+        loss = jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))
+        parallel = jnp.mean(jnp.sum(jnp.dot(noise + s * stds, tangent_basis)**2, axis=1))
         perpendicular = loss - parallel
         return loss, jnp.array([parallel, perpendicular])
 
@@ -171,8 +171,8 @@ def orthogonal_loss_fn(tangent_basis):
         x_t = mean_coeff * batch + stds * noise # (n_batch, N)
         s = model.apply(params, x_t, time_samples)  # (n_batch, N)
         # find orthogonal components of the loss
-        loss = jnp.mean(jnp.sum((noise + s * v)**2, axis=1))
-        parallel = jnp.mean(jnp.sum(jnp.dot(noise + s * v, tangent_basis)**2, axis=1))
+        loss = jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))
+        parallel = jnp.mean(jnp.sum(jnp.dot(noise + s * stds, tangent_basis)**2, axis=1))
         perpendicular = loss - parallel
         return loss, jnp.array([parallel, perpendicular])
     return lambda params, model, rng, batch: loss_fn(params, model, rng, batch, tangent_basis)

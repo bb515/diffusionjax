@@ -14,11 +14,12 @@ cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
     optimizer, sample_hyperplane,
-    sample_hyperplane, train_ts)
+    sample_hyperplane, train_ts, retrain_nn)
 from sgm.linear import ApproximateScoreLinear, true_loss_fn_t
 from sgm.non_linear import (
-    retrain_nn, loss_fn, orthogonal_loss_fn,
-    loss_fn_t, orthogonal_loss_fn_t)
+    loss_fn, orthogonal_loss_fn,
+    loss_fn_t, orthogonal_loss_fn_t,
+    update_step)
 
 
 def main():
@@ -28,16 +29,11 @@ def main():
 
     # The data can be for example, pixels in an image, described by a single point in Euclidean space
     J = 50  # 100 may not be enough, why cant use less than 50? something is still wrong
-    J_true = 1000
+    J_true = 2000
     M = 1
     N = 2
 
-    m_0 = jnp.zeros(N)
-    C_0 = jnp.identity(N)  # analytical score cannot be calculated this way
-    # This data lies on sphere
-    # Defining it as a global variable makes it accessible to JAX without doing lambda functions
     # mf = sample_sphere(J, M, N)
-
     mf = sample_hyperplane(J, M, N)
     mf_true = sample_hyperplane(J_true, M, N)
 
@@ -68,7 +64,7 @@ def main():
         loss_function_t = loss_fn_t
 
     score_model, params, opt_state, mean_losses = retrain_nn(
-        2000, step_rng, mf, score_model, params, opt_state,
+        update_step, 2000, step_rng, mf, score_model, params, opt_state,
         loss_function, batch_size, decomposition=decomposition)
 
     if decomposition:
@@ -111,6 +107,15 @@ def main():
         plt.close()
 
     else:
+        fig, ax = plt.subplots(1)
+        ax.set_title("Loss")
+        ax.plot(mean_losses[:])
+        ax.set_ylabel("Loss")
+        ax.set_xlabel("Number of epochs")
+        plt.savefig("losses0.png")
+        plt.close()
+
+
         #eval = lambda t: evaluate_step(t, params, rng, mf, score_model, loss_function_t, has_aux=False)
         eval = lambda t: loss_function_t(t, params, score_model, rng, mf)
         eval_steps = vmap(eval, in_axes=(0), out_axes=(0))
@@ -122,37 +127,36 @@ def main():
         ax.plot(train_ts, fx[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel(r"$t$")
-        plt.savefig("losses_t0.png")
+        plt.savefig("losses_t0hat.png")
         plt.close()
 
         # eval_true = lambda t: evaluate_step(t, params, rng, mf_true, score_model, loss_function_t, has_aux=True)
         eval_approx_true = lambda t: loss_function_t(t, params, score_model, rng, mf_true)
-        eval_steps_approx_true = vmap(eval_true, in_axes=(0), out_axes=(0))
+        eval_steps_approx_true = vmap(eval_approx_true, in_axes=(0), out_axes=(0))
         #fx0true, fx1true = eval_steps_true(train_ts)
-        fxtrue = eval_steps_approx_true(train_ts)
+        fxapprox = eval_steps_approx_true(train_ts)
+
+        fig, ax = plt.subplots(1)
+        ax.set_title("Loss")
+        ax.plot(train_ts, fxapprox[:])
+        ax.set_ylabel("Loss")
+        ax.set_xlabel(r"$t$")
+        plt.savefig("losses_t0approx.png")
+        plt.close()
 
         d = 0.06
         fig, ax = plt.subplots(1)
         ax.set_title("Difference in loss, {:d} samples vs {:d} samples".format(J_true, J))
-        ax.plot(train_ts, jnp.abs(-fx + fxtrue), label=r"$|L(\theta) - \hat{L}(\theta)|$")
+        ax.plot(train_ts, jnp.abs(-fx + fxapprox), label=r"$|L(\theta) - \hat{L}(\theta)|$")
         ax.set_ylabel("Loss component")
         ax.set_xlabel(r"$t$")
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0d.png")
+        plt.savefig("losses_t0dapprox.png")
         plt.close()
 
-
-
-        ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-        ax.set_ylabel("Loss component")
-        ax.set_xlabel(r"$t$")
-        # ax.set_xscale("log")
-        # ax.set_yscale("log")
-        plt.legend()
-        plt.savefig("losses_t0d.png")
-        plt.close()
+        # ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
 
 
 if __name__ == "__main__":

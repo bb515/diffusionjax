@@ -30,7 +30,7 @@ def main():
         for _ in range(5):
             print("At N=%d" % N)
             J = 128
-    
+ 
             mf, m_0, C_0, z = sample_mvn(J, N, kernel=EQ(), m_0=jnp.zeros((N, )))
             score_model, params = train_linear_nn(step_rng, mf, batch_size=64, score_model=ApproximateScoreLinear(), N_epochs=2000)
             trained_score = jit(lambda x, t: score_model.apply(params, x, t))

@@ -189,6 +189,22 @@ def forward_density(x_0, x, t):
     return norm.pdf(x, loc = mean_coeff * x_0, scale=jnp.sqrt(v))
 
 
+def forward_sde_hyperplane_t(t, rng, N_samps, m_0, C_0):
+    rng, step_rng = jax.random.split(rng)
+    z = random.normal(step_rng, (m_0.shape[0], N_samps))
+    m_t = mean_factor(t)
+    m_0 = m_0.reshape(-1, 1)
+    v_t = var(t)
+    C = m_t**2 * C_0 + v_t * jnp.eye(jnp.shape(m_0)[0])
+    L_cov = matrix_cho(C)
+    return m_t * m_0 + L_cov @ z
+
+
+def average_distance_sde_hyperplane(t, m_0, C_0):
+    # Is an expectation of nonlinear function - MC required
+    pass
+
+
 @jit
 def average_distance_to_hyperplane(samples):
     J = samples.shape[0]
@@ -213,6 +229,74 @@ def w1_stdnormal(samples):
     true_inv_cdf = jax.scipy.stats.norm.ppf(jnp.linspace(0, 1, J)[1:-1])
     approx_inv_cdf = jnp.sort(samples)[1:-1]
     return jnp.mean(jnp.abs(true_inv_cdf - approx_inv_cdf))
+
+
+#we jit the function, but we have to mark some of the arguments as static,
+#which means the function is recompiled every time these arguments are changed,
+#since they are directly compiled into the binary code. This is necessary
+#since jitted-functions cannot have functions as arguments. But it also 
+#no problem since these arguments will never/rarely change in our case,
+#therefore not triggering re-compilation.
+# @partial(jit, static_argnums=[1, 2,3,4,5])  # removed 1 because that's N
+def reverse_sde_t(rng, N, n_samples, forward_drift, dispersion, score, ts):
+    """
+    rng: random number generator (JAX rng)
+    D: dimension in which the reverse SDE runs
+    N_initial: How many samples from the initial distribution N(0, I), number
+    forward_drift: drift function of the forward SDE (we implemented it above)
+    disperion: dispersion function of the forward SDE (we implemented it above)
+    score: The score function to use as additional drift in the reverse SDE
+    ts: a discretization {t_i} of [0, T], shape 1d-array
+    """
+    def f(carry, params):
+        # drift 
+        t, dt = params
+        x, xs, i, rng = carry
+        i += 1
+        rng, step_rng = jax.random.split(rng)  # the missing line
+        noise = random.normal(step_rng, x.shape)
+        _dispersion = dispersion(1 - t) # jnp.sqrt(beta_{t})
+        t = jnp.ones((x.shape[0], 1)) * t
+        drift = -forward_drift(x, 1 - t) + _dispersion**2 * score(x, 1 - t)
+        x = x + dt * drift + jnp.sqrt(dt) * _dispersion * noise
+        xs = xs.at[i, :, :].set(x)
+        return (x, xs, i, rng), ()
+    rng, step_rng = random.split(rng)
+    initial = random.normal(step_rng, (n_samples, N))
+    dts = ts[1:] - ts[:-1]
+    params = jnp.stack([ts[:-1], dts], axis=1)
+    xs = jnp.empty((jnp.size(ts), n_samples, N))
+    (_, xs, _, _), _ = scan(f, (initial, xs, 0, rng), params)
+    return xs
+
+
+def forward_sde_t(initial, rng, N, n_samples, forward_drift, dispersion, ts):
+    """
+    rng: random number generator (JAX rng)
+    D: dimension in which the reverse SDE runs
+    N_initial: How many samples from the initial distribution N(0, I), number
+    forward_drift: drift function of the forward SDE (we implemented it above)
+    disperion: dispersion function of the forward SDE (we implemented it above)
+    score: The score function to use as additional drift in the reverse SDE
+    ts: a discretization {t_i} of [0, T], shape 1d-array
+    """
+    def f(carry, params):
+        # drift 
+        t, dt = params
+        x, xs, i, rng = carry
+        rng, step_rng = jax.random.split(rng)  # the missing line
+        noise = random.normal(step_rng, x.shape)
+        t = jnp.ones((x.shape[0], 1)) * t
+        drift = forward_drift(x, t)
+        x = x + dt * drift + jnp.sqrt(dt) * dispersion(t) * noise
+        xs = xs.at[i, :, :].set(x)
+        i += 1
+        return (x, xs, i, rng), ()
+    dts = ts[1:] - ts[:-1]
+    params = jnp.stack([ts[:-1], dts], axis=1)
+    xs = jnp.empty((jnp.size(ts), n_samples, N))
+    (_, xs, i, _), _ = scan(f, (initial, xs, 0, rng), params)
+    return xs, i
 
 
 #we jit the function, but we have to mark some of the arguments as static,
