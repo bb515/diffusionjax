@@ -55,7 +55,7 @@ def main():
 
             error_means.append(error_mean)
             error_covs.append(error_cov)
-            
+            assert 0 
         error_meanss.append(error_means)
         error_covss.append(error_covs)
 

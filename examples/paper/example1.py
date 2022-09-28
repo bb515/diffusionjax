@@ -1,4 +1,8 @@
-"""Numerical experiments for SGMs. Authors: Ben, Jakiw, Alex and Deniz."""
+"""
+Hyperplane with given tangent,
+Spherical,
+Multimodal samples.
+"""
 import jax
 from jax import jit, vmap, grad
 import jax.numpy as jnp
@@ -13,8 +17,10 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
-    optimizer, sample_hyperplane,
-    sample_hyperplane, train_ts, retrain_nn)
+    optimizer, sample_hyperplane, sample_hyperplane_mvn,
+    sample_multimodal_mvn, sample_hyperplane,
+    sample_multimodal_hyperplane_mvn,
+    train_ts, retrain_nn)
 from sgm.linear import ApproximateScoreLinear, true_loss_fn_t
 from sgm.non_linear import (
     loss_fn, orthogonal_loss_fn,
@@ -28,16 +34,39 @@ def main():
     # Js = jnp.logspace(2, 9, num=25, base=2).astype(int)
 
     # The data can be for example, pixels in an image, described by a single point in Euclidean space
-    J = 50  # 100 may not be enough, why cant use less than 50? something is still wrong
+    J = 2000  # 100 may not be enough, why cant use less than 50? something is still wrong
     J_true = 2000
     M = 1
     N = 2
 
     # mf = sample_sphere(J, M, N)
-    mf = sample_hyperplane(J, M, N)
+    m_0 = jnp.zeros(N)
+    C_0 = jnp.eye(N)
+    # Multimodal
+    nmodes = 2
+    weights = jnp.zeros(nmodes)
+    weights = weights.at[0].set(0.4)
+    weights = weights.at[1].set(0.6)
+
+    m_0 = jnp.zeros((N, nmodes))
+    m_0 = m_0.at[0, 0].set(1.0)
+
+    C_0 = jnp.eye(N)
+    C_0 = jnp.array([C_0] * nmodes) * 0.02
+    
+
+    tangent_basis = jnp.zeros((N, N - M))
+    tangent_basis = tangent_basis.at[jnp.array([[0, 0]])].set(jnp.sqrt(2)/2)
+    tangent_basis = tangent_basis.at[jnp.array([[1, 0]])].set(jnp.sqrt(2)/2)
+
+    # mf = sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis)
+    # mf = sample_multimodal_mvn(J, N, C_0, m_0, weights)
+    mf = sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis)
+    # mf = sample_sphere(J, M, N)
+    # mf = sample_hyperplane(J, M, N)
     mf_true = sample_hyperplane(J_true, M, N)
 
-    plt.scatter(mf[:, 0], mf[:, 1])
+    plt.scatter(mf[:, 0], mf[:, 1], alpha=0.2)
     plt.savefig("scatter.png")
     plt.close()
 
@@ -51,8 +80,6 @@ def main():
     score_model = ApproximateScoreLinear()
     params = score_model.init(step_rng, x, time)
     opt_state = optimizer.init(params)
-    tangent_basis = jnp.zeros((N, N - M))
-    tangent_basis = tangent_basis.at[jnp.array([[0, 0]])].set(1.0)
 
     # Choose whether to make plots of loss function split into orthgonal components
     decomposition = False

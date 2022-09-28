@@ -32,8 +32,9 @@ def main():
     M = 1
     N = 2
 
-    # mf = sample_sphere(J, M, N)  # This data lies on sphere
-    mf = sample_hyperplane(J, M, N)
+    # Expect that learning a spherical manifold takes longer in training time and more samples
+    mf = sample_sphere(J, M, N)  # This data lies on sphere
+    # mf = sample_hyperplane(J, M, N)
     mf_true = sample_hyperplane(J_true, M, N)
     plt.scatter(mf[:, 0], mf[:, 1])
     plt.savefig("scatter.png")

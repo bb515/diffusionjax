@@ -36,6 +36,10 @@ def main():
     # plt.savefig("dispersion")
     # plt.close()
 
+    # tangent_basis = jnp.zeros((N, N - M))
+    # tangent_basis = tangent_basis.at[jnp.array([[0, 0]])].set(jnp.sqrt(2)/2)
+    # tangent_basis = tangent_basis.at[jnp.array([[1, 0]])].set(jnp.sqrt(2)/2)
+
     C_0 = jnp.array([[1, 0], [0, 0]])
     m_0 = jnp.zeros(2)
 
@@ -56,6 +60,12 @@ def main():
 
     for i, J in enumerate(J_train):
         mf_data["{:d}".format(J)] = sample_hyperplane(J, M, N)
+        # mf_data["{:d}".format(J)] sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis)
+        # mf_data["{:d}".format(J)] sample_multimodal_mvn(J, N, C_0, m_0, weights)
+        # mf_data["{:d}".format(J)] sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis)
+        # mf_data["{:d}".format(J)] sample_sphere(J, M, N)
+        # mf_data["{:d}".format(J)] sample_hyperplane(J, M, N)
+        mf_true = sample_hyperplane(J_true, M, N)
 
     plt.scatter(mf_data["{:d}".format(J_train[0])][:, 0], mf_data["{:d}".format(J_train[0])][:, 1])
     plt.savefig("scatter.png")
@@ -109,7 +119,7 @@ def main():
             p_samples, i = forward_sde_t(initial, rng, N, test_size, drift, dispersion, train_ts)
             p_samples = p_samples.transpose(0, 2, 1)[:-1]
             # Compute average mean squared distance between the samples
-            distance_p_samples = jnp.einsum('ijk, jk', ,p_samples)
+            distance_p_samples = jnp.einsum('ijk, jk', p_samples)
             distance_q_samples = jnp.einsum('ijk, jk', q_samples)
             assert 0
             distance_p_samples = p_samples[:, 1, :]

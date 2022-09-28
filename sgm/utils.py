@@ -11,7 +11,7 @@ from jax import grad, jit, vmap
 import jax.random as random
 from functools import partial
 from scipy.stats import norm
-from scipy.stats import qmc
+# from scipy.stats import qmc
 from jax.scipy.special import logsumexp
 from jax.scipy.linalg import cholesky
 from jax.scipy.linalg import solve_triangular
@@ -69,11 +69,8 @@ def sample_mvn(J, N, kernel=Linear(), m_0=0.0):
     rng, step_rng = jax.random.split(rng)  # the missing line
     # sample from an input space
     z = np.array(random.normal(step_rng, (N,)))
-    print(N)
     C_0 = kernel(z)
     C_0 = B.dense(C_0)
-    print(m_0)
-    print(C_0)
     manifold = scipy.stats.multivariate_normal.rvs(mean=m_0, cov=C_0, size=J)
     # Normalization is necessary because of the unit prior distribution
     manifold = manifold - jnp.mean(manifold, axis=0)
@@ -117,6 +114,65 @@ def sample_hyperplane(J, M, N):
         manifold = jnp.concatenate([manifold, jnp.zeros((J, N-(M)))], axis=1)
     manifold = manifold - jnp.mean(manifold, axis=0)
     manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
+    return manifold
+
+
+def sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis):
+    """
+    J: How many samples to generate
+    N: Dimension of the embedding space
+    Returns a (J, N) array of samples
+    """
+    rng = random.PRNGKey(123)
+    rng, step_rng = jax.random.split(rng)  # the missing line
+    # sample from an input space
+    manifold = scipy.stats.multivariate_normal.rvs(mean=m_0, cov=C_0, size=J)
+    # Normalization is done in practice because of the unit prior distribution
+    manifold = manifold - jnp.mean(manifold, axis=0)
+    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
+    # Project onto the tangent_basis
+    manifold = jnp.dot(manifold, tangent_basis)
+    return manifold
+
+
+def sample_multimodal_mvn(J, N, C_0, m_0, weights, tangent_basis):
+    """
+    J is approx number of samples
+    """
+    rng = random.PRNGKey(123)
+    rng, step_rng = jax.random.split(rng)
+    nmodes = jnp.shape(m_0)[0]
+    manifolds = []
+    print(m_0[0])
+    print(C_0[0])
+    print(int(J * weights[0]))
+    for i in range(nmodes):
+        manifolds.append(scipy.stats.multivariate_normal.rvs(mean=m_0[i], cov=C_0[i], size=int(J * weights[i])))
+    manifold = jnp.concatenate(manifolds, axis=0)
+    manifold = manifold - jnp.mean(manifold, axis=0)
+    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
+    return manifold
+
+
+def sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis):
+    """
+    J: How many samples to generate
+    N: Dimension of the embedding space
+    Returns a (J, N) array of samples
+    """
+    rng = random.PRNGKey(123)
+    rng, step_rng = jax.random.split(rng)  # the missing line
+    nmodes = jnp.shape(m_0)[0]
+    manifolds = []
+    print(m_0[0])
+    print(C_0[0])
+    print(int(J * weights[0]))
+    for i in range(nmodes):
+        manifolds.append(scipy.stats.multivariate_normal.rvs(mean=m_0[i], cov=C_0[i], size=int(J * weights[i])))
+    manifold = jnp.concatenate(manifolds, axis=0)
+    manifold = manifold - jnp.mean(manifold, axis=0)
+    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
+    manifold = jnp.dot(manifold, tangent_basis)
     return manifold
 
 

@@ -229,7 +229,7 @@ def true_loss_fn(params, model, rng, n_batch, m_0, C_0):
     return loss
 
 
-def train_linear_nn(rng, mf, batch_size, _model, N_epochs):
+def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
     rng, step_rng = random.split(rng)
     train_size = mf.shape[0]
     N = mf.shape[1]
@@ -237,9 +237,7 @@ def train_linear_nn(rng, mf, batch_size, _model, N_epochs):
     batch_size = min(train_size, batch_size)
     x = jnp.zeros(N*batch_size).reshape((batch_size, N))
     time = jnp.ones((batch_size, 1))
-    print(jnp.shape(x))
-    print(jnp.shape(time))
-    params = _model.init(step_rng, x, time)
+    params = score_model.init(step_rng, x, time)
     opt_state = optimizer.init(params)
     steps_per_epoch = train_size // batch_size
     for k in range(N_epochs):
@@ -251,12 +249,12 @@ def train_linear_nn(rng, mf, batch_size, _model, N_epochs):
         for perm in perms:
             batch = mf[perm, :]
             rng, step_rng = random.split(rng)
-            loss, params, opt_state = nonlinear_update_step(params, step_rng, batch, opt_state, _model, linear_loss_fn)
+            loss, params, opt_state = nonlinear_update_step(params, step_rng, batch, opt_state, score_model, linear_loss_fn)
             losses.append(loss)
         mean_loss = jnp.mean(jnp.array(losses))
         if k % 1 == 0:
             print("Epoch %d \t, Loss %f " % (k, mean_loss))
-    return _model, params
+    return score_model, params
 
 
 # @partial(jit, static_argnums=[6, 7, 8])

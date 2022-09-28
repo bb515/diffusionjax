@@ -14,6 +14,7 @@ cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
     optimizer, sample_hyperplane,
+    sample_sphere,
     train_ts, retrain_nn)
 from sgm.non_linear import (
     update_step, ApproximateScore,
@@ -34,7 +35,17 @@ def main():
     M = 1
     N = 2
 
+    # tangent_basis = jnp.zeros((N, N - M))
+    # tangent_basis = tangent_basis.at[jnp.array([[0, 0]])].set(jnp.sqrt(2)/2)
+    # tangent_basis = tangent_basis.at[jnp.array([[1, 0]])].set(jnp.sqrt(2)/2)
+
+    # mf = sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis)
+    # mf = sample_multimodal_mvn(J, N, C_0, m_0, weights)
+    # mf = sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis)
+    # mf = sample_sphere(J, M, N)
+    mf_true = sample_hyperplane(J_true, M, N)
     mf = sample_hyperplane(J, M, N)
+
     mf_true = {}
     plt.scatter(mf[:, 0], mf[:, 1])
     plt.savefig("scatter.png")

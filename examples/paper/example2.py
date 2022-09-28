@@ -34,12 +34,20 @@ def main():
     M = 1
     N = 2
 
+    # tangent_basis = jnp.zeros((N, N - M))
+    # tangent_basis = tangent_basis.at[jnp.array([[0, 0]])].set(jnp.sqrt(2)/2)
+    # tangent_basis = tangent_basis.at[jnp.array([[1, 0]])].set(jnp.sqrt(2)/2)
+
     # For 1D hyperplane example,
     C_0 = jnp.array([[1, 0], [0, 0]])
     m_0 = jnp.zeros(N)
 
-    mf = sample_hyperplane(J, M, N)
+    # mf = sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis)
+    # mf = sample_multimodal_mvn(J, N, C_0, m_0, weights)
+    # mf = sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis)
+    # mf = sample_sphere(J, M, N)
     mf_true = sample_hyperplane(J_true, M, N)
+    mf = sample_hyperplane(J, M, N)
 
     plt.scatter(mf[:, 0], mf[:, 1])
     plt.savefig("scatter.png")
