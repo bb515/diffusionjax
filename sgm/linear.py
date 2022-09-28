@@ -237,6 +237,8 @@ def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
     batch_size = min(train_size, batch_size)
     x = jnp.zeros(N*batch_size).reshape((batch_size, N))
     time = jnp.ones((batch_size, 1))
+    print(jnp.shape(x))
+    print(jnp.shape(time))
     params = score_model.init(step_rng, x, time)
     opt_state = optimizer.init(params)
     steps_per_epoch = train_size // batch_size
@@ -278,7 +280,7 @@ def update_step(n_batch, m_0, C_0, params, rng, opt_state, model, loss_fn, has_a
 
 def retrain_nn(
         n_batch, m_0, C_0, N_epochs, rng,
-        _model, params, opt_state, loss_fn,
+        score_model, params, opt_state, loss_fn,
         decomposition=False):
     if decomposition:
         L = 2
@@ -291,7 +293,7 @@ def retrain_nn(
         rng, step_rng = random.split(rng)
         loss, params, opt_state = update_step(
             n_batch, m_0, C_0, params, step_rng,
-            opt_state, _model, loss_fn,
+            opt_state, score_model, loss_fn,
             has_aux=decomposition)
         if decomposition:
             loss = loss[1]
@@ -301,4 +303,4 @@ def retrain_nn(
                 "Epoch {:d}, Loss {:.2f} ".format(i, loss))
             if L==2: print(
                 "Tangent loss {:.2f}, perpendicular loss {:.2f}".format(loss[0], loss[1]))
-    return _model, params, opt_state, mean_losses
+    return score_model, params, opt_state, mean_losses
