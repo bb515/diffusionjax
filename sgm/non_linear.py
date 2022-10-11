@@ -229,8 +229,8 @@ def train_nn(mf, N):
         mean_loss = jnp.mean(jnp.array(losses))
         if k % 10 == 0:
             print("Epoch %d \t, Loss %f " % (k, mean_loss))
-    trained_score = lambda x, t: score_model.apply(params, x, t)
     rng, step_rng = random.split(rng)
+    trained_score = lambda x, t: non_linear_trained_score(score_model, params, t, x)
     return reverse_sde(step_rng, N, 1000, drift, dispersion, trained_score, train_ts)
 
 
@@ -244,6 +244,14 @@ def nabla_log_pt_scalar_hyperplane(x, t):
     else:
         L_cov = matrix_cho(mat)
         return -matrix_solve(L_cov, x)
+
+
+def non_linear_trained_score(score_model, params, t, x):
+    v = var(t)  # (n_batch, N)
+    stds = jnp.sqrt(v)
+    s = score_model.apply(params, x, t)  # (n_samples, N + 1, N)
+    #return s
+    return s / stds
 
 
 # Get a jax grad function, which can be batched with vmap

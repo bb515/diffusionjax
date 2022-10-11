@@ -1,11 +1,30 @@
 """Compare samples from the forward and reverse diffusion processes."""
+
+import os
+num_threads = "6"
+os.environ["OMP_NUM_THREADS"] = num_threads
+os.environ["OPENBLAS_NUM_THREADS"] = num_threads
+os.environ["MKL_NUM_THREADS"] = num_threads
+os.environ["VECLIB_MAXIMUM_THREADS"] = num_threads
+os.environ["NUMEXPR_NUM_THREADS"] = num_threads
+os.environ["NUMBA_NUM_THREADS"] = num_threads
+os.environ["--xla_cpu_multi_thread_eigen"] = "false"
+os.environ["inta_op_parallelism_threads"] = num_threads
+# XLA_FLAGS="--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1" python my_file.py
+
+# assert 0
+# import tensorflow as tf
+# tf.config.threading.set_intra_op_parallelism_threads(int(num_threads))
+# tf.config.threading.set_inter_op_parallelism_threads(int(num_threads))
+
+
 import jax
 from jax import jit, vmap, grad
 import jax.numpy as jnp
 # enable 64 precision
 # from jax.config import config
 # config.update("jax_enable_x64", True)
-jax.config.update('jax_platform_name', 'cpu')
+jax.config.update('jax_platform_name', 'gpu')
 import matplotlib.pyplot as plt
 import jax.random as random
 import seaborn as sns
@@ -65,7 +84,7 @@ def main():
         # mf_data["{:d}".format(J)] sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis)
         # mf_data["{:d}".format(J)] sample_sphere(J, M, N)
         # mf_data["{:d}".format(J)] sample_hyperplane(J, M, N)
-        mf_true = sample_hyperplane(J_true, M, N)
+        # mf_true = sample_hyperplane(J_true, M, N)
 
     plt.scatter(mf_data["{:d}".format(J_train[0])][:, 0], mf_data["{:d}".format(J_train[0])][:, 1])
     plt.savefig("scatter.png")

@@ -31,8 +31,11 @@ beta_min = 0.001
 beta_max = 3
 
 # Grid over time
-R = 1000
-train_ts = jnp.arange(1, R)/(R-1)
+R = 10000
+
+# Could this be a nonlinear grid over time?
+train_ts = jnp.linspace(0, 1, R + 1)[1:]
+# train_ts = jnp.logspace(-4, 0, R)
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
@@ -65,17 +68,22 @@ def sample_mvn(J, N, kernel=Linear(), m_0=0.0):
     N: Dimension of the embedding space
     Returns a (J, N) array of samples
     """
-    rng = random.PRNGKey(123)
-    rng, step_rng = jax.random.split(rng)  # the missing line
+    # rng = random.PRNGKey(123)
+    # rng, step_rng = jax.random.split(rng)  # the missing line
     # sample from an input space
-    z = np.array(random.normal(step_rng, (N,)))
+    # z = np.array(random.normal(step_rng, (N,)))
+    z = np.linspace(-3, 3, N)
     C_0 = kernel(z)
     C_0 = B.dense(C_0)
     manifold = scipy.stats.multivariate_normal.rvs(mean=m_0, cov=C_0, size=J)
-    # Normalization is necessary because of the unit prior distribution
-    manifold = manifold - jnp.mean(manifold, axis=0)
-    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    return manifold, m_0, C_0, z
+    # Normalization may be necessary because of the unit prior distribution, but must unnormalize later
+    #manifold = manifold - jnp.mean(manifold, axis=0)
+    #manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
+    marginal_mean = jnp.mean(jnp.mean(manifold, axis=0))
+    manifold = manifold - marginal_mean
+    marginal_std = jnp.max(jnp.std(manifold, axis=0))
+    manifold = manifold / marginal_std
+    return manifold, m_0, C_0, z, marginal_mean, marginal_std
 
 
 def sample_sphere(J, M, N):
@@ -293,7 +301,7 @@ def w1_stdnormal(samples):
 #since jitted-functions cannot have functions as arguments. But it also 
 #no problem since these arguments will never/rarely change in our case,
 #therefore not triggering re-compilation.
-# @partial(jit, static_argnums=[1, 2,3,4,5])  # removed 1 because that's N
+@partial(jit, static_argnums=[1, 2,3,4,5])  # removed 1 because that's N
 def reverse_sde_t(rng, N, n_samples, forward_drift, dispersion, score, ts):
     """
     rng: random number generator (JAX rng)
@@ -361,7 +369,7 @@ def forward_sde_t(initial, rng, N, n_samples, forward_drift, dispersion, ts):
 #since jitted-functions cannot have functions as arguments. But it also 
 #no problem since these arguments will never/rarely change in our case,
 #therefore not triggering re-compilation.
-# @partial(jit, static_argnums=[1, 2,3,4,5])  # removed 1 because that's N
+@partial(jit, static_argnums=[1, 2, 3, 4, 5])
 def reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts):
     """
     rng: random number generator (JAX rng)

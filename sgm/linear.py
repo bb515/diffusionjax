@@ -122,6 +122,34 @@ def linear_loss_fn(params, model, rng, batch):
     return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
 
 
+def sqrt_linear_loss_fn(params, model, rng, batch):
+    """
+    params: the current weights of the model
+    model: the  function
+    rng: random number generator from jax
+    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+    
+    returns an random (MC) approximation to the loss \bar{L} explained above
+    """
+    rng, step_rng = random.split(rng)
+    n_batch = batch.shape[0]
+    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
+    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
+    v = var(time_samples)  # (n_batch, N)
+    stds = jnp.sqrt(v)
+    rng, step_rng = random.split(rng)
+    noise = random.normal(step_rng, batch.shape)
+    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
+    N = jnp.shape(x_t)[1]
+    s = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
+    L = s[:, :-1, :]  # (n_batch, N, N)
+    mu = s[:, -1, :]  # (n_batch, N)
+    s = jnp.einsum('ijk, ij -> ik', L, x_t)  # (n_batch, N)
+    s = jnp.einsum('ijk, ik -> ij', L, s)  # (n_batch, N)
+    s = (s + mu)  # (n_batch, N)  # L @ L.T @ x_t + mu
+    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
+
+
 def loss_fn(params, model, rng, batch):
     """
     params: the current weights of the model
@@ -259,7 +287,7 @@ def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
     return score_model, params
 
 
-# @partial(jit, static_argnums=[6, 7, 8])
+@partial(jit, static_argnums=[0, 1, 2, 6, 7, 8])
 def update_step(n_batch, m_0, C_0, params, rng, opt_state, model, loss_fn, has_aux=False):
     """
     params: the current weights of the model
@@ -272,6 +300,7 @@ def update_step(n_batch, m_0, C_0, params, rng, opt_state, model, loss_fn, has_a
     the value of the loss function (for metrics), the new params and the new optimizer state
     """
     # TODO: There isn't a more efficient place to factorize jax value_and_grad?
+    # Is this linear loss function
     val, grads = jax.value_and_grad(loss_fn, has_aux=has_aux)(params, model, rng, n_batch, m_0, C_0)
     updates, opt_state = optimizer.update(grads, opt_state)
     params = optax.apply_updates(params, updates)
@@ -304,3 +333,21 @@ def retrain_nn(
             if L==2: print(
                 "Tangent loss {:.2f}, perpendicular loss {:.2f}".format(loss[0], loss[1]))
     return score_model, params, opt_state, mean_losses
+
+
+def sqrt_linear_trained_score(score_model, params, t, N, x):
+    v = var(t)  # (n_batch, N)
+    stds = jnp.sqrt(v)
+    s = score_model.apply(params, t, N)
+    L = s[:, :-1, :]  # (n_batch, N, N)
+    mu = s[:, -1, :]  # (n_batch, N)
+    s = jnp.einsum('ijk, ij -> ik', L, x)  # (n_batch, N)
+    s = jnp.einsum('ijk, ik -> ij', L, s)  # (n_batch, N)
+    return (s + mu) / stds  # (n_batch, N)  # L @ L.T @ x_t + mu
+
+
+def linear_trained_score(score_model, params, t, N, x, n_samples):
+    v = var(t)  # (n_batch, N)
+    stds = jnp.sqrt(v)
+    s = score_model.apply(params, t, N)  # (n_samples, N + 1, N)
+    return jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((n_samples, 1)), x))) / stds

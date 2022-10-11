@@ -106,7 +106,7 @@ def plot_OH(forward_density):
 #     return error_score(mf, x, t, m_0, C_0) 
 
 
-def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score"):
+def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score.pdf"):
     if N != 2:
         raise ValueError("WARNING: This function expects the score to be a function R² -> R²")
     #this helper function is here so that we can jit it.
@@ -192,7 +192,7 @@ def plot_heatmap(positions, area_min=-3, area_max=3):
     plt.imshow(hm, cmap=cm, interpolation='nearest', extent=extent)
     ax = plt.gca()
     ax.invert_yaxis()
-    plt.savefig("plot_heatmap.png")
+    plt.savefig("plot_heatmap.pdf")
     plt.close()
 
 

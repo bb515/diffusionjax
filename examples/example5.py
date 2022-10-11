@@ -1,4 +1,11 @@
-from sre_parse import fix_flags
+import os
+os.environ["OMP_NUM_THREADS"] = "6" # export OMP_NUM_THREADS=4
+os.environ["OPENBLAS_NUM_THREADS"] = "6" # export OPENBLAS_NUM_THREADS=4 
+os.environ["MKL_NUM_THREADS"] = "6" # export MKL_NUM_THREADS=6
+os.environ["VECLIB_MAXIMUM_THREADS"] = "6" # export VECLIB_MAXIMUM_THREADS=4
+os.environ["NUMEXPR_NUM_THREADS"] = "6" # export NUMEXPR_NUM_THREADS=6
+os.environ["NUMBA_NUM_THREADS"] = "6"
+
 import jax
 from jax import jit, vmap, grad, value_and_grad
 import jax.numpy as jnp
@@ -13,7 +20,7 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff, plot_video
 from sgm.utils import (
-    optimizer, sample_hyperplane, retrain_nn, train_ts)
+    optimizer, sample_hyperplane, sample_sphere, retrain_nn, train_ts)
 from sgm.non_linear import (
     nabla_log_pt, loss_fn, loss_fn_t,
     orthogonal_loss_fn, orthogonal_loss_fn_t,
@@ -156,6 +163,7 @@ def main():
     else:
         loss_function = loss_fn
         loss_function_t = loss_fn_t
+
     score_model, params, opt_state, mean_losses = retrain_nn(
         2000, step_rng, mf, score_model, params, opt_state,
         loss_function, batch_size, decomposition=decomposition)
