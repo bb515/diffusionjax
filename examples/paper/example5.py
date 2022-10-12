@@ -12,7 +12,6 @@ os.environ["--xla_cpu_multi_thread_eigen"] = "false"
 os.environ["inta_op_parallelism_threads"] = num_threads
 # XLA_FLAGS="--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1" python my_file.py
 
-# assert 0
 # import tensorflow as tf
 # tf.config.threading.set_intra_op_parallelism_threads(int(num_threads))
 # tf.config.threading.set_inter_op_parallelism_threads(int(num_threads))
@@ -67,10 +66,10 @@ def main():
     # The data can be for example, pixels in an image, described by a single point in Euclidean space
     Jstart = 2  # 1
     Jstop = 4  # 4
-    Jnum = 6  # 10
+    Jnum = 1  # 10
     J_train = jnp.logspace(Jstart, Jstop, Jnum).astype(int)
     # J_test = jnp.logspace(Jstart, Jstop, Jnum).astype(int)
-    J_test = [10000]
+    J_test = [1000]
     M = 1
     N = 2
 
@@ -91,10 +90,10 @@ def main():
     plt.close()
 
     tang_basis = jnp.zeros((N, N - M))
-    tang_basis = tang_basis.at[jnp.array([[0, 0]])].set(1.0)
+    tang_basis = tang_basis.at[0].set(1.0)
 
     perp_basis = jnp.zeros((N, N - M))
-    perp_basis = perp_basis.at[jnp.array([[1, 0]])].set(1.0)
+    perp_basis = perp_basis.at[1].set(1.0)
 
     colors = plt.cm.jet(jnp.linspace(0,1,jnp.size(J_train)))
 
@@ -120,7 +119,7 @@ def main():
         params = score_model.init(step_rng, x, time)
         opt_state = optimizer.init(params)
 
-        N_epochs = 2000
+        N_epochs = 200
 
         score_model, params, opt_state, mean_losses = retrain_nn(
             update_step,
@@ -138,6 +137,9 @@ def main():
             p_samples, i = forward_sde_t(initial, rng, N, test_size, drift, dispersion, train_ts)
             p_samples = p_samples.transpose(0, 2, 1)[:-1]
             # Compute average mean squared distance between the samples
+            ## TODO: not sure what is meant here.
+            print(jnp.shape (p_samples))
+            assert 0
             distance_p_samples = jnp.einsum('ijk, jk', p_samples)
             distance_q_samples = jnp.einsum('ijk, jk', q_samples)
             assert 0
