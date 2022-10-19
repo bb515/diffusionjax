@@ -62,6 +62,10 @@ def matrix_solve(L_cov, b):
     return x
 
 
+def orthogonal_projection_matrix(tangent):
+    return 1./ jnp.linalg.norm(tangent) * jnp.array([[tangent[0]**2, tangent[0] * tangent[1]], [tangent[0] * tangent[1], tangent[1]**2]])
+
+
 def sample_mvn(J, N, kernel=Linear(), m_0=0.0):
     """
     J: How many samples to generate
@@ -125,7 +129,7 @@ def sample_hyperplane(J, M, N):
     return manifold
 
 
-def sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis):
+def sample_hyperplane_mvn(J, N, C_0, m_0, projection_matrix):
     """
     J: How many samples to generate
     N: Dimension of the embedding space
@@ -138,12 +142,12 @@ def sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis):
     # Normalization is done in practice because of the unit prior distribution
     manifold = manifold - jnp.mean(manifold, axis=0)
     manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    # Project onto the tangent_basis
-    manifold = jnp.dot(manifold, tangent_basis)
+    # Project onto the manifold
+    manifold = manifold @ projection_matrix.T
     return manifold
 
 
-def sample_multimodal_mvn(J, N, C_0, m_0, weights, tangent_basis):
+def sample_multimodal_mvn(J, N, C_0, m_0, weights):
     """
     J is approx number of samples
     """
@@ -162,7 +166,7 @@ def sample_multimodal_mvn(J, N, C_0, m_0, weights, tangent_basis):
     return manifold
 
 
-def sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis):
+def sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, projection_matrix):
     """
     J: How many samples to generate
     N: Dimension of the embedding space
@@ -181,8 +185,8 @@ def sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis):
     print(jnp.shape(manifold))
     manifold = manifold - jnp.mean(manifold, axis=0)
     manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    print(tangent_basis)
-    manifold = jnp.dot(manifold, tangent_basis)
+    # print(projection_matrix)
+    manifold = manifold @ projection_matrix.T  # transpose since it is right multiplied
     return manifold
 
 
@@ -499,7 +503,7 @@ def loss_fn_t(t, params, model, rng, batch):
     return jnp.mean(jnp.sum(e**2, axis=1))
 
 
-def orthogonal_loss_fn_t(tangent_basis):
+def orthogonal_loss_fn_t(projection_matrix):
     """
     params: the current weights of the model
     model: the score function
@@ -508,18 +512,18 @@ def orthogonal_loss_fn_t(tangent_basis):
     
     returns an random (MC) approximation to the loss \bar{L} explained above
     """
-    def decomposition(t, params, model, rng, batch, tangent_basis):
+    def decomposition(t, params, model, rng, batch, projection_matrix):
         rng, step_rng = random.split(rng)
         n_batch = batch.shape[0]
         e = errors_t(t, params, model, rng, batch)
         loss = jnp.mean(jnp.sum(e**2, axis=1))
-        parallel = jnp.mean(jnp.sum(jnp.dot(e, tangent_basis)**2, axis=1))
+        parallel = jnp.mean(jnp.sum(jnp.dot(e, projection_matrix.T)**2, axis=1))
         perpendicular = loss - parallel
         return loss, jnp.array([parallel, perpendicular]) 
-    return lambda t, params, model, rng, batch: decomposition(t, params, model, rng, batch, tangent_basis)
+    return lambda t, params, model, rng, batch: decomposition(t, params, model, rng, batch, projection_matrix)
 
 
-def orthogonal_loss_fn(tangent_basis):
+def orthogonal_loss_fn(projection_matrix):
     """
     params: the current weights of the model
     model: the score function
@@ -528,16 +532,16 @@ def orthogonal_loss_fn(tangent_basis):
     
     returns an random (MC) approximation to the loss \bar{L} explained above
     """
-    def decomposition(params, model, rng, batch, tangent_basis):
+    def decomposition(params, model, rng, batch, projection_matrix):
         rng, step_rng = random.split(rng)
         n_batch = batch.shape[0]
         time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
         e = errors(params, model, rng, batch)
         loss = jnp.mean(jnp.sum(e**2, axis=1))
-        parallel = jnp.mean(jnp.sum(jnp.dot(e, tangent_basis)**2, axis=1))
+        parallel = jnp.mean(jnp.sum(jnp.dot(e, projection_matrix.T)**2, axis=1))
         perpendicular = loss - parallel
         return loss, jnp.array([parallel, perpendicular]) 
-    return lambda params, model, rng, batch: decomposition(params, model, rng, batch, tangent_basis)
+    return lambda params, model, rng, batch: decomposition(params, model, rng, batch, projection_matrix)
 
 
 @partial(jit, static_argnums=[4, 5, 6])

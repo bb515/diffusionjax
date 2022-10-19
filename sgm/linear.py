@@ -139,7 +139,7 @@ def orthogonal_oracle_loss_fn_t(projection_matrix):
         mat = (m_t**2 / std) * C_0 + std
         mean = m_0 * m_t
         h = model.apply(params, t, N)  # (N, N+1) which is memory intense
-        mse, residual, intermediate, projection = oracle_loss(h, mat, mean, N, projection_matrix)
+        mse, residual, intermediate, projection = oracle_loss(h, mat, mean, std, N, projection_matrix)
         return mse, jnp.array([projection, mse - projection])
     return lambda t, params, model, m_0, C_0: decomposition(t, params, model, m_0, C_0, projection_matrix)
 
@@ -189,7 +189,7 @@ def oracle_loss(h, mat, mean, std, N, projection_matrix=None):
         projected_residual_loss = projected_residual.T @ projected_residual
         # projected_trace_loss = jnp.einsum('ij, ji -> ', projection_matrix @ intermediate, projection_matrix @ (H + mat_inv))
         
-        projected = projected_residual_loss + projected_trace_loss
+        projected = projected_residual_loss # + projected_trace_loss
         return loss, residual, intermediate, projected
     else:
         return loss, residual, intermediate

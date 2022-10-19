@@ -27,6 +27,7 @@ from sgm.utils import (
     sample_multimodal_mvn,
     sample_hyperplane_mvn,
     sample_sphere,
+    orthogonal_projection_matrix,
     train_ts, retrain_nn, update_step)
 from sgm.non_linear import NonLinear
 from sgm.linear import Matrix
@@ -41,25 +42,24 @@ def moving_average(a, n=100) :
 
 def get_mf(data_string, J, J_true, M, N):
     """Get the manifold data."""
-    projection_matrix = jnp.zeros((N, N))
-    projection_matrix = projection_matrix.at[0, 0].set(1.0)
+    # TODO: try a 2-D or M-D basis 
+    tangent_basis = 3.0 * jnp.array([1./jnp.sqrt(2), 1./jnp.sqrt(2)])
+    # Tangent vector needs to have unit norm
+    tangent_basis /= jnp.linalg.norm(tangent_basis)
+    # tangent_basis = jnp.array([1.0, 0.1])
+    projection_matrix = orthogonal_projection_matrix(tangent_basis)
     # Note so far that tangent_basis only implemented for 1D basis
     # tangent_basis is dotted with (N, n_batch) errors, so must be (N, 1)
-    tangent_basis = projection_matrix[0, :].reshape(-1, 1)
-
-    # TODO: try a 2D basis
-    # e.g. projection matrix is Q.T @ P @ Q, where Q is a rotation matrix
-    # projection_matrix = jnp.array([[],[]])
-    # tangent_basis = jnp.zeros((N, N - M))
-    # tangent_basis = tangent_basis.at[0, 0].set(0.1)
-    # tangent_basis = tangent_basis.at[1, 0].set(jnp.sqrt(2)/2)
+    tangent_basis = tangent_basis.reshape(-1, 1)
+    print(tangent_basis)
+    print(projection_matrix)
     if data_string=="hyperplane":
         # For 1D hyperplane example,
         C_0 = jnp.array([[1, 0], [0, 0]])
         m_0 = jnp.zeros(N)
         mf_true = sample_hyperplane(J_true, M, N)
     elif data_string=="hyperplane_mvn":
-        mf_true = sample_hyperplane_mvn(J_true, N, C_0, m_0, tangent_basis)
+        mf_true = sample_hyperplane_mvn(J_true, N, C_0, m_0, projection_matrix)
         C_0 = jnp.array([[1, 0], [0, 0]])
         m_0 = jnp.zeros(N)
     elif data_string=="multimodal_hyperplane_mvn":
@@ -67,13 +67,13 @@ def get_mf(data_string, J, J_true, M, N):
         m_0 = jnp.array([[0.0, 0.0], [1.0, 0.0]])
         C_0 = jnp.array(
             [
-                [[0.05, 0.0], [0.0, 0.00]],
-                [[0.05, 0.0], [0.0, 0.00]]
+                [[0.05, 0.0], [0.0, 0.1]],
+                [[0.05, 0.0], [0.0, 0.1]]
             ]
         )
         weights = jnp.array([0.5, 0.5])
         N = 100
-        mf_true = sample_multimodal_hyperplane_mvn(J_true, N, C_0, m_0, weights, tangent_basis)
+        mf_true = sample_multimodal_hyperplane_mvn(J_true, N, C_0, m_0, weights, projection_matrix)
     elif data_string=="multimodal_mvn":
         mf_true = sample_multimodal_mvn(J, N, C_0, m_0, weights)
     elif data_string=="sample_sphere":
@@ -101,11 +101,9 @@ def main():
     plt.savefig(path + "scatter.png")
     plt.close()
 
-    plt.scatter(mf_true[:, 0], mf_true[:, 1], alpha=0.09)
+    plt.scatter(mf_true[:, 0], mf_true[:, 1], alpha=0.01)
     plt.savefig(path + "mf_true.png")
     plt.close()
-
-    assert 0
 
     train_size = mf.shape[0]
     N = mf.shape[1]
@@ -115,7 +113,8 @@ def main():
     # time
     rng = random.PRNGKey(123)
     rng, step_rng = random.split(rng)
-    model = "non_linear"
+    # model = "non_linear"
+    model = "matrix"
     if model == "non_linear":
         score_model = NonLinear()
         params = score_model.init(step_rng, mf, time)
@@ -134,8 +133,8 @@ def main():
     if decomposition:
         # Plot projected and orthogonal components of loss
         from sgm.utils import orthogonal_loss_fn, orthogonal_loss_fn_t
-        loss_function = orthogonal_loss_fn(tangent_basis)
-        loss_function_t = orthogonal_loss_fn_t(tangent_basis)
+        loss_function = orthogonal_loss_fn(projection_matrix)
+        loss_function_t = orthogonal_loss_fn_t(projection_matrix)
         if model in ["matrix", "cholesky"]:
             from sgm.linear import orthogonal_oracle_loss_fn_t
             oracle_loss_function_t = orthogonal_oracle_loss_fn_t(projection_matrix)
@@ -169,30 +168,31 @@ def main():
         eval = lambda t: loss_function_t(t, params, score_model, rng, mf)
         eval_steps = vmap(eval, in_axes=(0), out_axes=(0))
         fx1 = eval_steps(train_ts[:])
-
-        fig, ax = plt.subplots(1)
-        ax.set_title("Orthogonal decomposition of losses")
-        ax.plot(train_ts, fx1[1][:, 0], label="tangent")
-        ax.plot(train_ts, fx1[1][:, 1], label="perpendicular")
-        ax.set_ylabel("Loss component")
-        ax.set_xlabel(r"$t$")
-        plt.legend()
-        plt.savefig(path + "losses_1.png")
-        plt.close()
-
         eval_true = lambda t: loss_function_t(t, params, score_model, rng, mf_true)
         eval_steps_true = vmap(eval_true, in_axes=(0), out_axes=(0))
         fx2 = eval_steps_true(train_ts[:])
 
         fig, ax = plt.subplots(1)
+        #ax.set_title("Orthogonal decomposition of losses")
+        ax.plot(train_ts, fx2[1][:, 0], 'r', label="tangent")
+        ax.plot(train_ts, fx2[1][:, 1], 'b', label="perpendicular")
+        #ax.set_ylabel("Loss component")
+        #ax.set_xlabel(r"$t$")
+        ylim = ax.get_ylim()
+        #plt.legend()
+        #plt.savefig(path + "losses_2.png")
+        #plt.close()
+
+        ax.set_ylim(ylim)
+
+        #fig, ax = plt.subplots(1)
         ax.set_title("Orthogonal decomposition of losses")
-        ax.plot(train_ts, fx2[1][:, 0], label="tangent")
-        ax.plot(train_ts, fx2[1][:, 1], label="perpendicular")
+        ax.plot(train_ts, fx1[1][:, 0], 'r', alpha=0.3) # , label="tangent")
+        ax.plot(train_ts, fx1[1][:, 1], 'b', alpha=0.3) # , label="perpendicular")
         ax.set_ylabel("Loss component")
         ax.set_xlabel(r"$t$")
-        ylim = ax.get_ylim()
         plt.legend()
-        plt.savefig(path + "losses_2.png")
+        plt.savefig(path + "losses_1.png")
         plt.close()
 
         if model in ["matrix", "cholesky"]:
