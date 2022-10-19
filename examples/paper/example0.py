@@ -40,7 +40,7 @@ def moving_average(a, n=100) :
     return ret[n - 1:] / n
 
 
-def get_mf(data_string, J, J_true, M, N):
+def get_mf(data_string, Js, J_true, M, N):
     """Get the manifold data."""
     # TODO: try a 2-D or M-D basis 
     tangent_basis = 3.0 * jnp.array([1./jnp.sqrt(2), 1./jnp.sqrt(2)])
@@ -82,20 +82,31 @@ def get_mf(data_string, J, J_true, M, N):
         mf_true = sample_sphere(J_true, M, N)
     else:
         raise NotImplementedError()
-    mf = mf_true[:J, ]
-    return mf, mf_true, m_0, C_0, tangent_basis, projection_matrix
+    mfs = {}
+    for J in Js:
+        mfs["{:d}".format(J)] = mf_true[:J, :]
+    return mfs, mf_true, m_0, C_0, tangent_basis, projection_matrix
 
 
 def main():
     rng = random.PRNGKey(123)
     rng, step_rng, step_rng2 = random.split(rng, 3)
-    J = 10
+    # Jstart = 2
+    # Jstop = 4
+    # Jnum = 6
+    # Js = jnp.logspace(Jstart, Jstop, Jnum).astype(int)
+    Js = [10, 100, 1000]
+    Jnum = len(Js)
+    colors = plt.cm.jet(jnp.linspace(0,1,Jnum))
     J_true = 3000
     M = 1
     N = 2
-    data_string = "multimodal_hyperplane_mvn"
-    # data_string = "hyperplane"
-    mf, mf_true, m_0, C_0, tangent_basis, projection_matrix = get_mf(data_string, J=J, J_true=J_true, M=M, N=N)
+    data_strings = ["hyperplane", "multimodal_hyperplane_mvn"]
+    data_string = data_strings[1]
+    mfs, mf_true, m_0, C_0, tangent_basis, projection_matrix = get_mf(data_string, Js=Js, J_true=J_true, M=M, N=N)
+
+    # TODO: include a for loop over data mf with different number of samples J
+    mf = mfs['{:d}'.format(Js[0])]
 
     plt.scatter(mf[:, 0], mf[:, 1])
     plt.savefig(path + "scatter.png")
@@ -110,18 +121,17 @@ def main():
     batch_size = train_size
     x = jnp.zeros(N*batch_size).reshape((batch_size, N))
     time = jnp.ones((batch_size, 1))
-    # time
     rng = random.PRNGKey(123)
     rng, step_rng = random.split(rng)
-    # model = "non_linear"
-    model = "matrix"
-    if model == "non_linear":
+    architectures = ["non_linear", "matrix", "cholesky"]
+    architecture = architectures[1]
+    if architecture == "non_linear":
         score_model = NonLinear()
         params = score_model.init(step_rng, mf, time)
-    elif model == "matrix":
+    elif architecture == "matrix":
         score_model = Matrix()
         params = score_model.init(step_rng, time, N)
-    elif model == "cholesky":
+    elif architecture == "cholesky":
         score_model = Cholesky()
         params = score_model.init(step_rng, time, N)
     else:
@@ -135,7 +145,7 @@ def main():
         from sgm.utils import orthogonal_loss_fn, orthogonal_loss_fn_t
         loss_function = orthogonal_loss_fn(projection_matrix)
         loss_function_t = orthogonal_loss_fn_t(projection_matrix)
-        if model in ["matrix", "cholesky"]:
+        if architecture in ["matrix", "cholesky"]:
             from sgm.linear import orthogonal_oracle_loss_fn_t
             oracle_loss_function_t = orthogonal_oracle_loss_fn_t(projection_matrix)
     else:
@@ -144,7 +154,7 @@ def main():
         from sgm.linear import oracle_loss_fn_t
         loss_function = loss_fn
         loss_function_t = loss_fn_t
-        if model in ["matrix", "cholesky"]:
+        if architecture in ["matrix", "cholesky"]:
             oracle_loss_function_t = oracle_loss_fn_t
 
     N_epochs = 2000
@@ -155,12 +165,12 @@ def main():
         loss_function, batch_size, decomposition=decomposition)
 
     if decomposition:
-        fig, ax = plt.subplots(1)
-        ax.set_title("Orthogonal decomposition of losses")
-        ax.plot(mean_losses[:, 0], label="tangent")
-        ax.plot(mean_losses[:, 1], label="perpendicular")
-        ax.set_ylabel("Loss component")
-        ax.set_xlabel("Number of epochs")
+        fig0, ax0 = plt.subplots(1)
+        ax0.set_title("Orthogonal decomposition of losses")
+        ax0.plot(mean_losses[:, 0], label="tangent")
+        ax0.plot(mean_losses[:, 1], label="perpendicular")
+        ax0.set_ylabel("Loss component")
+        ax0.set_xlabel("Number of epochs")
         plt.legend()
         plt.savefig(path + "losses.png")
         plt.close()
@@ -172,190 +182,175 @@ def main():
         eval_steps_true = vmap(eval_true, in_axes=(0), out_axes=(0))
         fx2 = eval_steps_true(train_ts[:])
 
-        fig, ax = plt.subplots(1)
-        #ax.set_title("Orthogonal decomposition of losses")
-        ax.plot(train_ts, fx2[1][:, 0], 'r', label="tangent")
-        ax.plot(train_ts, fx2[1][:, 1], 'b', label="perpendicular")
-        #ax.set_ylabel("Loss component")
-        #ax.set_xlabel(r"$t$")
-        ylim = ax.get_ylim()
-        #plt.legend()
-        #plt.savefig(path + "losses_2.png")
-        #plt.close()
-
-        ax.set_ylim(ylim)
-
-        #fig, ax = plt.subplots(1)
-        ax.set_title("Orthogonal decomposition of losses")
-        ax.plot(train_ts, fx1[1][:, 0], 'r', alpha=0.3) # , label="tangent")
-        ax.plot(train_ts, fx1[1][:, 1], 'b', alpha=0.3) # , label="perpendicular")
-        ax.set_ylabel("Loss component")
-        ax.set_xlabel(r"$t$")
+        fig1, ax1 = plt.subplots(1)
+        #ax1.set_title("Orthogonal decomposition of losses")
+        ax1.plot(train_ts, fx2[1][:, 0], 'r', label="tangent")
+        ax1.plot(train_ts, fx2[1][:, 1], 'b', label="perpendicular")
+        #ax1.set_ylabel("Loss component")
+        #ax1.set_xlabel(r"$t$")
+        ylim = ax1.get_ylim()
+        ax1.set_ylim(ylim)
+        ax1.set_title("Orthogonal decomposition of losses")
+        ax1.plot(train_ts, fx1[1][:, 0], 'r', alpha=0.3) # , label="tangent")
+        ax1.plot(train_ts, fx1[1][:, 1], 'b', alpha=0.3) # , label="perpendicular")
+        ax1.set_ylabel("Loss component")
+        ax1.set_xlabel(r"$t$")
         plt.legend()
-        plt.savefig(path + "losses_1.png")
+        plt.savefig(path + "losses_12.png")
         plt.close()
 
-        if model in ["matrix", "cholesky"]:
+        if architecture in ["matrix", "cholesky"]:
             eval = lambda t: oracle_loss_function_t(t, params, score_model, m_0, C_0)
             eval_steps = vmap(eval, in_axes=(0), out_axes=(0))
             fx0 = eval_steps(train_ts[:])
 
-            fig, ax = plt.subplots(1)
-            ax.set_title("Orthogonal decomposition of losses")
-            ax.plot(train_ts, fx0[1][:, 0], label="tangent")
-            ax.plot(train_ts, fx0[1][:, 1], label="perpendicular")
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            ax.set_ylim(ylim)
+            fig2, ax2 = plt.subplots(1)
+            ax2.set_title("Orthogonal decomposition of losses")
+            ax2.plot(train_ts, fx0[1][:, 0], label="tangent")
+            ax2.plot(train_ts, fx0[1][:, 1], label="perpendicular")
+            ax2.set_ylabel("Loss component")
+            ax2.set_xlabel(r"$t$")
+            ax2.set_ylim(ylim)
             plt.legend()
             plt.savefig(path + "losses_0.png")
             plt.close()
 
         d =  jnp.abs(-fx1[1][0, 0] + fx2[1][0, 0])
-        fig, ax = plt.subplots(1)
-        ax.set_title("Orthogonal decomposition of difference in loss, {:d} vs {:d} samples".format(J_true, J))
-        ax.plot(train_ts, jnp.abs(-fx1[1][:, 0] + fx2[1][:, 0]), label=r"tangent $|L(\theta) - \hat{L}(\theta)|$")
-        ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-        ax.set_ylabel("Loss component")
-        ax.set_xlabel(r"$t$")
-        # ax.set_xscale("log")
-        # ax.set_yscale("log")
+        fig3, ax3 = plt.subplots(1)
+        ax3.set_title("Orthogonal decomposition of difference in loss, {:d} vs {:d} samples".format(J_true, J))
+        ax3.plot(train_ts, jnp.abs(-fx1[1][:, 0] + fx2[1][:, 0]), label=r"tangent $|L(\theta) - \hat{L}(\theta)|$")
+        ax3.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
+        ax3.set_ylabel("Loss component")
+        ax3.set_xlabel(r"$t$")
+        # ax3.set_xscale("log")
+        # ax3.set_yscale("log")
         plt.legend()
         plt.savefig(path + "losses_d12parallel.png")
         plt.close()
 
         d =  jnp.abs(-fx1[1][0, 1] + fx2[1][0, 1])
-        fig, ax = plt.subplots(1)
-        ax.set_title("Orthogonal decomposition of difference in loss, {:d} vs {:d} samples".format(J_true, J))
-        ax.plot(train_ts, jnp.abs(-fx1[1][:, 1] + fx2[1][:, 1]), label=r"perpendicular $|L(\theta) - \hat{L}(\theta)|$")
-        ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-        ax.set_ylabel("Loss component")
-        ax.set_xlabel(r"$t$")
-        # ax.set_xscale("log")
-        # ax.set_yscale("log")
+        fig4, ax4 = plt.subplots(1)
+        ax4.set_title("Orthogonal decomposition of difference in loss, {:d} vs {:d} samples".format(J_true, J))
+        ax4.plot(train_ts, jnp.abs(-fx1[1][:, 1] + fx2[1][:, 1]), label=r"perpendicular $|L(\theta) - \hat{L}(\theta)|$")
+        ax4.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
+        ax4.set_ylabel("Loss component")
+        ax4.set_xlabel(r"$t$")
+        # ax4.set_xscale("log")
+        # ax4.set_yscale("log")
         plt.legend()
         plt.savefig(path + "losses_d12perpendicular.png")
 
 
-        if model in ["matrix", "cholesky"]:
+        if architecture in ["matrix", "cholesky"]:
             d =  jnp.abs(-fx0[1][0, 1] + fx1[1][0, 1])
-            fig, ax = plt.subplots(1)
-            ax.plot(train_ts, jnp.abs(-fx0[1][:, 1] + fx1[1][:, 1]), label=r"perpendicular $|L(\theta) - \hat{L}(\theta)|$")
-            ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            # ax.set_xscale("log")
-            # ax.set_yscale("log")
+            fig5, a5x = plt.subplots(1)
+            ax5.plot(train_ts, jnp.abs(-fx0[1][:, 1] + fx1[1][:, 1]), label=r"perpendicular $|L(\theta) - \hat{L}(\theta)|$")
+            ax5.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
+            ax5.set_ylabel("Loss component")
+            ax5.set_xlabel(r"$t$")
+            # ax5.set_xscale("log")
+            # ax5.set_yscale("log")
             plt.legend()
             plt.savefig(path + "losses_d01perpendicular.png")
             plt.close()
 
             d =  jnp.abs(-fx0[1][0, 0] + fx1[1][0, 0])
-            fig, ax = plt.subplots(1)
-            ax.plot(train_ts, jnp.abs(-fx0[1][:, 0] + fx1[1][:, 0]), label=r"tangent $|L(\theta) - \hat{L}(\theta)|$")
-            ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            # ax.set_xscale("log")
-            # ax.set_yscale("log")
+            fig6, ax6 = plt.subplots(1)
+            ax6.plot(train_ts, jnp.abs(-fx0[1][:, 0] + fx1[1][:, 0]), label=r"tangent $|L(\theta) - \hat{L}(\theta)|$")
+            ax6.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
+            ax6.set_ylabel("Loss component")
+            ax6.set_xlabel(r"$t$")
+            # ax6.set_xscale("log")
+            # ax6.set_yscale("log")
             plt.legend()
             plt.savefig(path + "losses_d01parallel.png")
             plt.close()
 
             d =  jnp.abs(-fx0[1][0, 1] + fx2[1][0, 1])
-            fig, ax = plt.subplots(1)
-            ax.plot(train_ts, jnp.abs(-fx0[1][:, 1] + fx2[1][:, 1]), label=r"perpendicular $|L(\theta) - \hat{L}(\theta)|$")
-            ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            # ax.set_xscale("log")
-            # ax.set_yscale("log")
+            fig7, ax7 = plt.subplots(1)
+            ax7.plot(train_ts, jnp.abs(-fx0[1][:, 1] + fx2[1][:, 1]), label=r"perpendicular $|L(\theta) - \hat{L}(\theta)|$")
+            ax7.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
+            ax7.set_ylabel("Loss component")
+            ax7.set_xlabel(r"$t$")
+            # ax7.set_xscale("log")
+            # ax7.set_yscale("log")
             plt.legend()
             plt.savefig(path + "losses_d02perpendicular.png")
             plt.close()
 
             d =  jnp.abs(-fx0[1][0, 0] + fx2[1][0, 0])
-            fig, ax = plt.subplots(1)
-            ax.plot(train_ts, jnp.abs(-fx0[1][:, 0] + fx2[1][:, 0]), label=r"tangent $|L(\theta) - \hat{L}(\theta)|$")
-            ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            # ax.set_xscale("log")
-            # ax.set_yscale("log")
+            fig8, ax8 = plt.subplots(1)
+            ax8.plot(train_ts, jnp.abs(-fx0[1][:, 0] + fx2[1][:, 0]), label=r"tangent $|L(\theta) - \hat{L}(\theta)|$")
+            ax8.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))
+            ax8.set_ylabel("Loss component")
+            ax8.set_xlabel(r"$t$")
+            # ax8.set_xscale("log")
+            # ax8.set_yscale("log")
             plt.legend()
             plt.savefig(path + "losses_d02parallel.png")
             plt.close()
 
     else:
-        fig, ax = plt.subplots(1)
-        ax.set_title("Loss")
-        ax.plot(mean_losses[:])
-        ax.plot(moving_average(mean_losses))
-        ax.set_ylabel("Loss")
-        ax.set_xlabel("Number of epochs")
+        fig9, ax9 = plt.subplots(1)
+        ax9.set_title("Loss")
+        ax9.plot(mean_losses[:])
+        ax9.plot(moving_average(mean_losses))
+        ax9.set_ylabel("Loss")
+        ax9.set_xlabel("Number of epochs")
         plt.savefig(path + "losses.png")
         plt.close()
 
         eval = lambda t: loss_function_t(t, params, score_model, rng, mf)
         eval_steps = vmap(eval, in_axes=(0), out_axes=(0))
-        fx1 = eval_steps(train_ts[:])
-        fig, ax = plt.subplots(1)
-        ax.set_title("Loss")
-        ax.plot(train_ts[:], fx1[:], label=r"$\hat{L}(\theta)$")
-        ylim = ax.get_ylim()
-        ax.set_ylabel("Loss")
-        ax.set_xlabel(r"$t$")
-        plt.savefig(path + "losses_1.png")
-        plt.close()
 
         eval_approx_true = lambda t: loss_function_t(t, params, score_model, rng, mf_true)
         eval_steps_approx_true = vmap(eval_approx_true, in_axes=(0), out_axes=(0))
         fx2 = eval_steps_approx_true(train_ts[:])
 
-        fig, ax = plt.subplots(1)
-        ax.plot(train_ts[:], fx2[:], label=r"$\tilde L(\theta)$")
-        ax.set_ylabel("Loss")
-        ax.set_xlabel(r"$t$")
-        # ax.set_xscale("log")
-        # ax.set_yscale("log")
+        fx1 = eval_steps(train_ts[:])
+        fig10, ax10 = plt.subplots(1)
+        ax10.set_title("Loss")
+        ax10.plot(train_ts[:], fx1[:], 'k', label=r"$\hat{L}(\theta)$", alpha=0.3)
+        ax10.plot(train_ts[:], fx2[:], 'k', label=r"$\tilde L(\theta)$")
+        ylim = ax10.get_ylim()
+        ax10.set_ylabel("Loss")
+        ax10.set_xlabel(r"$t$")
         plt.legend()
-        plt.savefig(path + "losses_2.png")
+        plt.savefig(path + "losses_12.png")
         plt.close()
 
-        if model in ["matrix", "cholesky"]:
+        if architecture in ["matrix", "cholesky"]:
             eval_oracle = lambda t: oracle_loss_function_t(t, params, score_model, m_0, C_0)
             eval_steps_oracle = vmap(eval_oracle, in_axes=(0), out_axes=(0))
             fx0 = eval_steps_oracle(train_ts[:])
 
-            fig, ax = plt.subplots(1)
-            ax.plot(train_ts[:], fx0[:], label=r"$L(\theta)$")
-            ax.set_ylabel("Loss")
-            ax.set_xlabel(r"$t$")
-            ax.set_ylim((0.0, ylim[1]))
+            fig12, ax12 = plt.subplots(1)
+            ax12.plot(train_ts[:], fx0[:], label=r"$L(\theta)$")
+            ax12.set_ylabel("Loss")
+            ax12.set_xlabel(r"$t$")
+            ax12.set_ylim((0.0, ylim[1]))
             plt.legend()
             plt.savefig(path + "losses_0.png")
             plt.close()
 
 
-            fig, ax = plt.subplots(1)
-            ax.set_title("Difference in loss, {:d} samples vs {:d} samples".format(J_true, J))
-            ax.plot(train_ts[:], (-fx0[:] + fx1[:]), label=r"$|L(\theta) - \hat{L}(\theta)|$")
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            # ax.set_xscale("log")
-            # ax.set_yscale("log")
+            fig13, ax13 = plt.subplots(1)
+            ax13.set_title("Difference in loss, {:d} samples vs {:d} samples".format(J_true, J))
+            ax13.plot(train_ts[:], (-fx0[:] + fx1[:]), label=r"$|L(\theta) - \hat{L}(\theta)|$")
+            ax13.set_ylabel("Loss component")
+            ax13.set_xlabel(r"$t$")
+            # ax13.set_xscale("log")
+            # ax13.set_yscale("log")
             plt.legend()
             plt.savefig(path + "losses_d01.png")
             plt.close()
 
-            # ax.plot(train_ts[:], d * jnp.exp(-2 * train_ts[:]), label=r"${:.2f}\exp (-2t)$".format(d))
-
-            fig, ax = plt.subplots(1)
-            ax.plot(train_ts[:],  (-fx0 + fx2), label=r"$|L(\theta) - \hat{L}(\theta)|$")
-            ax.set_ylabel("Loss component")
-            ax.set_xlabel(r"$t$")
-            # ax.set_xscale("log")
-            # ax.set_yscale("log")
+            fig14, ax14 = plt.subplots(1)
+            ax14.plot(train_ts[:],  (-fx0 + fx2), label=r"$|L(\theta) - \hat{L}(\theta)|$")
+            ax14.set_ylabel("Loss component")
+            ax14.set_xlabel(r"$t$")
+            # ax14.set_xscale("log")
+            # ax14.set_yscale("log")
             plt.legend()
             plt.savefig(path + "losses_d02.png")
             plt.close()
