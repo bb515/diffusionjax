@@ -1,3 +1,6 @@
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 import jax
 # enable 64 precision
 # from jax.config import config
@@ -35,7 +38,7 @@ def main():
     plt.scatter(mf[:, 0], mf[:, 1])
     plt.xlim((-3, 3))
     plt.ylim((-3, 3))
-    plt.savefig("scatter.pdf")
+    plt.savefig(path + "scatter.pdf")
     plt.close()
     rng = random.PRNGKey(123)
     score = lambda x, t: nabla_log_hat_pt(x, t, mf)

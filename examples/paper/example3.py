@@ -1,4 +1,7 @@
 """See the estimate of the Loss, as a function of t, converging with increased samples."""
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 import jax
 from jax import jit, vmap, grad
 import jax.numpy as jnp
@@ -54,7 +57,7 @@ def main():
 
     mf_true = {}
     plt.scatter(mf[:, 0], mf[:, 1])
-    plt.savefig("scatter.png")
+    plt.savefig(path + "scatter.png")
     plt.close()
 
     for i, J_true in enumerate(J_trues):
@@ -99,7 +102,7 @@ def main():
         # ax.set_ylabel("Loss component")
         # ax.set_xlabel("Number of epochs")
         # plt.legend()
-        # plt.savefig("losses1.png")
+        # plt.savefig(path + "losses1.png")
         # plt.close()
         #   # eval = lambda t: evaluate_step(t, params, rng, mf, score_model, loss_function_t, has_aux=True)
         # eval = lambda t: loss_function_t(t, params, score_model, rng, mf)
@@ -116,7 +119,7 @@ def main():
         # ax.set_ylabel("Loss component")
         # ax.set_xlabel(r"$t$")
         # plt.legend()
-        # plt.savefig("losses_t1.png")
+        # plt.savefig(path + "losses_t1.png")
         # plt.close()
 
         # # eval_true = lambda t: evaluate_step(t, params, rng, mf_true, score_model, loss_function_t, has_aux=True)
@@ -138,7 +141,7 @@ def main():
         # # ax.set_xscale("log")
         # # ax.set_yscale("log")
         # plt.legend()
-        # plt.savefig("losses_t1d.png")
+        # plt.savefig(path + "losses_t1d.png")
         # plt.close()
         assert 0  # not implemented
 
@@ -148,7 +151,7 @@ def main():
         ax.plot(mean_losses[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel("Number of epochs")
-        plt.savefig("losses0.png")
+        plt.savefig(path + "losses0.png")
         plt.close()
 
         # eval = lambda t: loss_function_t(params, score_model, t, m_0, C_0)
@@ -163,7 +166,7 @@ def main():
         ax.plot(train_ts[:], fx[:], label=r"$\hat{L}(\theta)$")
         ax.set_ylabel("Loss")
         ax.set_xlabel(r"$t$")
-        plt.savefig("losses_t0hat.png")
+        plt.savefig(path + "losses_t0hat.png")
         plt.close()
 
 
@@ -181,7 +184,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0approx.png")
+        plt.savefig(path + "losses_t0approx.png")
         plt.close()
 
         eval_true = lambda t: true_loss_fn_t(params, score_model, t, m_0, C_0)
@@ -200,7 +203,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0true.png")
+        plt.savefig(path + "losses_t0true.png")
         plt.close()
 
         fig, ax = plt.subplots(1)
@@ -211,7 +214,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0da.png")
+        plt.savefig(path + "losses_t0da.png")
         plt.close()
 
         # ax.plot(train_ts[100:], d * jnp.exp(-2 * train_ts[100:]), label=r"${:.2f}\exp (-2t)$".format(d))
@@ -223,7 +226,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0db.png")
+        plt.savefig(path + "losses_t0db.png")
         plt.close()
 
 

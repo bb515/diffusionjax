@@ -31,7 +31,7 @@ beta_min = 0.001
 beta_max = 3
 
 # Grid over time
-R = 10000
+R = 1000
 
 # Could this be a nonlinear grid over time?
 train_ts = jnp.linspace(0, 1, R + 1)[1:]
@@ -151,10 +151,10 @@ def sample_multimodal_mvn(J, N, C_0, m_0, weights, tangent_basis):
     rng, step_rng = jax.random.split(rng)
     nmodes = jnp.shape(m_0)[0]
     manifolds = []
-    print(m_0[0])
-    print(C_0[0])
-    print(int(J * weights[0]))
     for i in range(nmodes):
+        print(m_0[i])
+        print(C_0[i])
+        print(int(J * weights[i]))
         manifolds.append(scipy.stats.multivariate_normal.rvs(mean=m_0[i], cov=C_0[i], size=int(J * weights[i])))
     manifold = jnp.concatenate(manifolds, axis=0)
     manifold = manifold - jnp.mean(manifold, axis=0)
@@ -172,14 +172,16 @@ def sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis):
     rng, step_rng = jax.random.split(rng)  # the missing line
     nmodes = jnp.shape(m_0)[0]
     manifolds = []
-    print(m_0[0])
-    print(C_0[0])
-    print(int(J * weights[0]))
     for i in range(nmodes):
+        print(m_0[i])
+        print(C_0[i])
+        print(int(J * weights[i]))
         manifolds.append(scipy.stats.multivariate_normal.rvs(mean=m_0[i], cov=C_0[i], size=int(J * weights[i])))
     manifold = jnp.concatenate(manifolds, axis=0)
+    print(jnp.shape(manifold))
     manifold = manifold - jnp.mean(manifold, axis=0)
     manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
+    print(tangent_basis)
     manifold = jnp.dot(manifold, tangent_basis)
     return manifold
 
@@ -431,3 +433,129 @@ def retrain_nn(
             if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
             if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
     return score_model, params, opt_state, mean_losses
+
+
+def forward_marginals(rng, time_samples, batch):
+    mean_coeff = mean_factor(time_samples)
+    v = var(time_samples)
+    std = jnp.sqrt(v)
+    rng, step_rng = random.split(rng)
+    noise = random.normal(step_rng, batch.shape)
+    return rng, mean_coeff, std, mean_coeff * batch + stds * noise
+
+
+def errors(params, model, rng, batch):
+    """
+    params: the current weights of the model
+    model: the score function
+    rng: random number generator from jax
+    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+    
+    returns an random (MC) approximation to the loss \bar{L} explained above
+    """
+    rng, step_rng = random.split(rng)
+    n_batch = batch.shape[0]
+    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
+    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
+    v = var(time_samples)  # (n_batch, N)
+    stds = jnp.sqrt(v)
+    rng, step_rng = random.split(rng)
+    noise = random.normal(step_rng, batch.shape)
+    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
+    return noise + model.evaluate(params, x_t, time_samples)
+
+
+def errors_t(t, params, model, rng, batch):
+    """
+    params: the current weights of the model
+    model: the score function
+    rng: random number generator from jax
+    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+    
+    returns an random (MC) approximation to the loss \bar{L} explained above
+    """
+    n_batch = batch.shape[0]
+    times = jnp.ones((n_batch, 1)) * t
+    mean_coeff = mean_factor(times)  # (n_batch, N)
+    v = var(times)  # (n_batch, N)
+    stds = jnp.sqrt(v)
+    rng, step_rng = random.split(rng)
+    noise = random.normal(step_rng, batch.shape)
+    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
+    return noise + model.evaluate(params, x_t, times)
+
+
+def loss_fn(params, model, rng, batch):
+    e = errors(params, model, rng, batch)
+    # TODO: option for likelihood rescaling
+    # TODO: should be a lambda function of some variables?
+    return jnp.mean(jnp.sum(e**2, axis=1))
+
+
+def loss_fn_t(t, params, model, rng, batch):
+    e = errors_t(t, params, model, rng, batch)
+    # TODO: option for likelihood rescaling
+    # TODO: should be a lambda function of some variables?
+    return jnp.mean(jnp.sum(e**2, axis=1))
+
+
+def orthogonal_loss_fn_t(tangent_basis):
+    """
+    params: the current weights of the model
+    model: the score function
+    rng: random number generator from jax
+    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+    
+    returns an random (MC) approximation to the loss \bar{L} explained above
+    """
+    def decomposition(t, params, model, rng, batch, tangent_basis):
+        rng, step_rng = random.split(rng)
+        n_batch = batch.shape[0]
+        e = errors_t(t, params, model, rng, batch)
+        loss = jnp.mean(jnp.sum(e**2, axis=1))
+        parallel = jnp.mean(jnp.sum(jnp.dot(e, tangent_basis)**2, axis=1))
+        perpendicular = loss - parallel
+        return loss, jnp.array([parallel, perpendicular]) 
+    return lambda t, params, model, rng, batch: decomposition(t, params, model, rng, batch, tangent_basis)
+
+
+def orthogonal_loss_fn(tangent_basis):
+    """
+    params: the current weights of the model
+    model: the score function
+    rng: random number generator from jax
+    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+    
+    returns an random (MC) approximation to the loss \bar{L} explained above
+    """
+    def decomposition(params, model, rng, batch, tangent_basis):
+        rng, step_rng = random.split(rng)
+        n_batch = batch.shape[0]
+        time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
+        e = errors(params, model, rng, batch)
+        loss = jnp.mean(jnp.sum(e**2, axis=1))
+        parallel = jnp.mean(jnp.sum(jnp.dot(e, tangent_basis)**2, axis=1))
+        perpendicular = loss - parallel
+        return loss, jnp.array([parallel, perpendicular]) 
+    return lambda params, model, rng, batch: decomposition(params, model, rng, batch, tangent_basis)
+
+
+@partial(jit, static_argnums=[4, 5, 6])
+def update_step(params, rng, batch, opt_state, model, loss_fn, has_aux=False):
+    """
+    params: the current weights of the model
+    rng: random number generator from jax
+    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+    opt_state: the internal state of the optimizer
+    model: the score function
+
+    takes the gradient of the loss function and updates the model weights (params) using it. Returns
+    the value of the loss function (for metrics), the new params and the new optimizer state
+    """
+    # TODO: There isn't a more efficient place to factorize jax value_and_grad?
+    val, grads = jax.value_and_grad(loss_fn, has_aux=has_aux)(params, model, rng, batch)
+    updates, opt_state = optimizer.update(grads, opt_state)
+    params = optax.apply_updates(params, updates)
+    return val, params, opt_state
+
+

@@ -3,6 +3,9 @@ Hyperplane with given tangent,
 Spherical,
 Multimodal samples.
 """
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 import jax
 from jax import jit, vmap, grad
 import jax.numpy as jnp
@@ -67,7 +70,7 @@ def main():
     mf_true = sample_hyperplane(J_true, M, N)
 
     plt.scatter(mf[:, 0], mf[:, 1], alpha=0.2)
-    plt.savefig("scatter.png")
+    plt.savefig(path + "scatter.png")
     plt.close()
 
     train_size = mf.shape[0]
@@ -110,7 +113,7 @@ def main():
         ax.set_ylabel("Loss component")
         ax.set_xlabel(r"$t$")
         plt.legend()
-        plt.savefig("losses_t1.png")
+        plt.savefig(path + "losses_t1.png")
         plt.close()
 
         # eval_true = lambda t: evaluate_step(t, params, rng, mf_true, score_model, loss_function_t, has_aux=True)
@@ -130,7 +133,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t1d.png")
+        plt.savefig(path + "losses_t1d.png")
         plt.close()
 
     else:
@@ -139,9 +142,8 @@ def main():
         ax.plot(mean_losses[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel("Number of epochs")
-        plt.savefig("losses0.png")
+        plt.savefig(path + "losses0.png")
         plt.close()
-
 
         #eval = lambda t: evaluate_step(t, params, rng, mf, score_model, loss_function_t, has_aux=False)
         eval = lambda t: loss_function_t(t, params, score_model, rng, mf)
@@ -154,7 +156,7 @@ def main():
         ax.plot(train_ts, fx[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel(r"$t$")
-        plt.savefig("losses_t0hat.png")
+        plt.savefig(path + "losses_t0hat.png")
         plt.close()
 
         # eval_true = lambda t: evaluate_step(t, params, rng, mf_true, score_model, loss_function_t, has_aux=True)
@@ -162,13 +164,14 @@ def main():
         eval_steps_approx_true = vmap(eval_approx_true, in_axes=(0), out_axes=(0))
         #fx0true, fx1true = eval_steps_true(train_ts)
         fxapprox = eval_steps_approx_true(train_ts)
+        assert 0
 
         fig, ax = plt.subplots(1)
         ax.set_title("Loss")
         ax.plot(train_ts, fxapprox[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel(r"$t$")
-        plt.savefig("losses_t0approx.png")
+        plt.savefig(path + "losses_t0approx.png")
         plt.close()
 
         d = 0.06
@@ -180,7 +183,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0dapprox.png")
+        plt.savefig(path + "losses_t0dapprox.png")
         plt.close()
 
         # ax.plot(train_ts, d * jnp.exp(-2 * train_ts), label=r"${:.2f}\exp (-2t)$".format(d))

@@ -1,6 +1,7 @@
 """Compare samples from the forward and reverse diffusion processes."""
-
 import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 num_threads = "6"
 os.environ["OMP_NUM_THREADS"] = num_threads
 os.environ["OPENBLAS_NUM_THREADS"] = num_threads
@@ -47,12 +48,12 @@ def main():
 
     # # Plot drift and diffusion as functions of time
     # plt.plot(train_ts, drift(train_ts))
-    # plt.savefig("drift")
+    # plt.savefig(path + "drift")
     # plt.close()
 
     # Plot drift and diffusion as functions of time
     # plt.plot(train_ts, dispersion(train_ts))
-    # plt.savefig("dispersion")
+    # plt.savefig(path + "dispersion")
     # plt.close()
 
     # tangent_basis = jnp.zeros((N, N - M))
@@ -87,7 +88,7 @@ def main():
         # mf_true = sample_hyperplane(J_true, M, N)
 
     plt.scatter(mf_data["{:d}".format(J_train[0])][:, 0], mf_data["{:d}".format(J_train[0])][:, 1])
-    plt.savefig("scatter.png")
+    plt.savefig(path + "scatter.png")
     plt.close()
 
     tang_basis = jnp.zeros((N, N - M))
@@ -144,10 +145,10 @@ def main():
             distance_p_samples = p_samples[:, 1, :]
             distance_q_samples = q_samples[:, 1, :]
             plt.plot(train_ts[:-1], distance_p_samples[:, :100])
-            plt.savefig("testpperp.png")
+            plt.savefig(path + "testpperp.png")
             plt.close()
             plt.plot(train_ts[::-1][:-1], distance_q_samples[:, :100])
-            plt.savefig("testqperp.png")
+            plt.savefig(path + "testqperp.png")
             plt.close()
             distance_p_samples = distance_p_samples**2
             distance_q_samples = distance_q_samples**2
@@ -157,16 +158,16 @@ def main():
             plt.plot(train_ts[:-1], p_losses, label='p')  # , color=colors[i])
             plt.plot(train_ts[::-1][:-1], q_losses, '--', label='q')  # , color=colors[i])
             plt.ylim(0.0, 1.1)
-            plt.savefig("test_perp.png")
+            plt.savefig(path + "test_perp.png")
             plt.close()
 
             distance_p_samples = p_samples[:, 0, :]
             distance_q_samples = q_samples[:, 0, :]
             plt.plot(train_ts[:-1], distance_p_samples[:, :100])
-            plt.savefig("testpparallel.png")
+            plt.savefig(path + "testpparallel.png")
             plt.close()
             plt.plot(train_ts[::-1][:-1], distance_q_samples[:, :100])
-            plt.savefig("testqparallel.png")
+            plt.savefig(path + "testqparallel.png")
             plt.close()
             distance_p_samples = distance_p_samples**2
             distance_q_samples = distance_q_samples**2
@@ -175,7 +176,7 @@ def main():
             plt.plot(train_ts[:-1], p_losses, label='p')  # , color=colors[i])
             plt.plot(train_ts[::-1][:-1], q_losses, '--', label='q')  # , color=colors[i])
             plt.ylim(0.0, 1.1)
-            plt.savefig("test_parallel.png")
+            plt.savefig(path + "test_parallel.png")
             plt.close()
 
 

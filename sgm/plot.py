@@ -47,7 +47,6 @@ def plot_samples(x, index, lims=None):
     plt.close()
 
 
-
 def plot_video(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):
 
     ani = animation.FuncAnimation(
@@ -73,37 +72,6 @@ def plot_OH(forward_density):
     plt.savefig("contour.png")
     plt.close()
     return 0
-
-
-# def error_scores(mf, m_0, C_0, area_min=-1, area_max=1):
-#     """
-#     Returns 
-#     """
-#     D = 16
-#     x = jnp.linspace(area_min, area_max, D)
-#     x, y = jnp.meshgrid(x, x)
-#     grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
-#     t = jnp.ones((grid.shape[0], 1)) * t
-#     errors = jnp.empty(D, R)
-#     x = jnp.linspace(-3, 3, D)
-#     for i, t in enumerate(train_ts):
-#         # Need a cholesky for each t so do loop
-#         L_cov, mean = S_given_t(mf, t, m_0, C_0)
-#         errors[:, i] = error_score_given_t(mf, x, t, L_cov, mean)
-#     return errors
-
-
-# def error_scores_vmap(mf, m_0, C_0, area_min=-1, area_max=1):
-#     """
-#     Returns 
-#     """
-#     D = 16
-#     x = jnp.linspace(area_min, area_max, D)
-#     x, y = jnp.meshgrid(x, x)
-#     grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
-#     t = jnp.ones((grid.shape[0], 1)) * t
-#     x = jnp.linspace(-3, 3, D)
-#     return error_score(mf, x, t, m_0, C_0) 
 
 
 def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score.pdf"):

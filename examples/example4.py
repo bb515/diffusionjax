@@ -1,3 +1,6 @@
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 import jax
 from jax import jit, vmap, grad
 import jax.numpy as jnp
@@ -26,7 +29,7 @@ def main():
     # mf = sample_sphere(J, M, N)
     mf = sample_hyperplane(J, M, N)
     plt.scatter(mf[:, 0], mf[:, 1])
-    plt.savefig("scatter.png")
+    plt.savefig(path + "scatter.png")
     plt.close()
 
     (train_size, N) = mf.shape
@@ -106,7 +109,7 @@ def main():
             bottom=False,      # ticks along the bottom edge are off
             top=False,         # ticks along the top edge are off
             labelbottom=False)
-        # plt.savefig("plot_scorediff{}".format(i))
+        # plt.savefig(path + "plot_scorediff{}".format(i))
         return ((ax1, ax2), (ax3, ax4))
 
     # lim_tuple = (xlim_max, ylim_min_1, ylim_max_3, ylim_min_3, ylim_max_4, ylim_min_4)

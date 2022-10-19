@@ -13,7 +13,7 @@ from sgm.utils import (
 from functools import partial
 
 
-class ApproximateScore(nn.Module):
+class NonLinear(nn.Module):
     """A simple model with multiple fully connected layers and some fourier features for the time variable."""
 
     @nn.compact
@@ -21,7 +21,7 @@ class ApproximateScore(nn.Module):
         in_size = x.shape[1]
         n_hidden = 256
         act = nn.relu
-        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)],axis=1)
+        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
         x = jnp.concatenate([x, t],axis=1)
         x = nn.Dense(n_hidden)(x)
         x = nn.relu(x)
@@ -31,6 +31,9 @@ class ApproximateScore(nn.Module):
         x = nn.relu(x)
         x = nn.Dense(in_size)(x)
         return x
+
+    def evaluate(self, params, x_t, times):
+        return self.apply(params, x_t, times)  # score_t * std_t
 
 
 def log_hat_pt(x, t, mf):
@@ -66,135 +69,6 @@ def nabla_log_pt_scalar(x, t, m_0, C_0):
     else:
         L_cov = matrix_cho(mean_coeff**2 * C_0 + v)
         return -matrix_solve(L_cov, x - mean)
-
-
-def loss_fn(params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the score function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
-    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
-    v = var(time_samples)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    s = model.apply(params, x_t, time_samples)
-    return jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))  # TODO: maybe there is a mistake here? should it be scaled by root(v) instead?
-
-
-def loss_fn_t(t, params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the score function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    times = jnp.ones((n_batch, 1)) * t
-    mean_coeff = mean_factor(times)  # (n_batch, N)
-    v = var(times)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    s = model.apply(params, x_t, times)
-    return jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))
-
-
-def orthogonal_loss_fn_t(tangent_basis):
-    """
-    params: the current weights of the model
-    model: the score function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-
-    def loss_fn_t(t, params, model, rng, batch, tangent_basis):
-        """
-        params: the current weights of the model
-        model: the score function
-        rng: random number generator from jax
-        batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-        
-        returns an random (MC) approximation to the loss \bar{L} explained above
-        """
-        rng, step_rng = random.split(rng)
-        n_batch = batch.shape[0]
-        times = jnp.ones((n_batch, 1)) * t
-        mean_coeff = mean_factor(times)  # (n_batch, N)
-        v = var(times)  # (n_batch, N)
-        stds = jnp.sqrt(v)
-        rng, step_rng = random.split(rng)
-        noise = random.normal(step_rng, batch.shape)
-        x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-        s = model.apply(params, x_t, times)
-         # find orthogonal components of the loss
-        loss = jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))
-        parallel = jnp.mean(jnp.sum(jnp.dot(noise + s * stds, tangent_basis)**2, axis=1))
-        perpendicular = loss - parallel
-        return loss, jnp.array([parallel, perpendicular])
-
-    return lambda t, params, model, rng, batch: loss_fn_t(t, params, model, rng, batch, tangent_basis)
-
-
-def orthogonal_loss_fn(tangent_basis):
-    """
-    params: the current weights of the model
-    model: the score function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    def loss_fn(params, model, rng, batch, tangent_basis):
-        rng, step_rng = random.split(rng)
-        n_batch = batch.shape[0]
-        time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
-        mean_coeff = mean_factor(time_samples)  # (n_batch, N)
-        v = var(time_samples)  # (n_batch, N)
-        stds = jnp.sqrt(v)
-        rng, step_rng = random.split(rng)
-        noise = random.normal(step_rng, batch.shape)
-        x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-        s = model.apply(params, x_t, time_samples)  # (n_batch, N)
-        # find orthogonal components of the loss
-        loss = jnp.mean(jnp.sum((noise + s * stds)**2, axis=1))
-        parallel = jnp.mean(jnp.sum(jnp.dot(noise + s * stds, tangent_basis)**2, axis=1))
-        perpendicular = loss - parallel
-        return loss, jnp.array([parallel, perpendicular])
-    return lambda params, model, rng, batch: loss_fn(params, model, rng, batch, tangent_basis)
-
-
-@partial(jit, static_argnums=[4, 5, 6])
-def update_step(params, rng, batch, opt_state, model, loss_fn, has_aux=False):
-    """
-    params: the current weights of the model
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    opt_state: the internal state of the optimizer
-    model: the score function
-
-    takes the gradient of the loss function and updates the model weights (params) using it. Returns
-    the value of the loss function (for metrics), the new params and the new optimizer state
-    """
-    # TODO: There isn't a more efficient place to factorize jax value_and_grad?
-    val, grads = jax.value_and_grad(loss_fn, has_aux=has_aux)(params, model, rng, batch)
-    updates, opt_state = optimizer.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
-    return val, params, opt_state
 
 
 def train_nn(mf, N):

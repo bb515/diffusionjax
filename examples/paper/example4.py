@@ -1,4 +1,7 @@
 """See the estimate of the Loss, as a function of t, converging with increased samples."""
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 import jax
 from jax import jit, vmap, grad
 import jax.numpy as jnp
@@ -14,6 +17,9 @@ cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
     optimizer, sample_hyperplane,
+    sample_multimodal_hyperplane_mvn,
+    sample_multimodal_mvn,
+    sample_hyperplane_mvn,
     sample_sphere,
     train_ts, retrain_nn)
 from sgm.non_linear import (
@@ -39,16 +45,24 @@ def main():
     # tangent_basis = tangent_basis.at[jnp.array([[0, 0]])].set(jnp.sqrt(2)/2)
     # tangent_basis = tangent_basis.at[jnp.array([[1, 0]])].set(jnp.sqrt(2)/2)
 
-    # mf = sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis)
+    m_0 = jnp.array([0.0, 0.0])
+    C_0 = jnp.array([[1.0, 0.0], [0.0, 0.0]])
+    mf = sample_hyperplane_mvn(J, N, C_0, m_0, tangent_basis)
+    plt.scatter(mf[:, 0], mf[:, 1])
+    plt.savefig(path + "scatter.png")
+    plt.close()
+    assert 0
+
     # mf = sample_multimodal_mvn(J, N, C_0, m_0, weights)
     # mf = sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, tangent_basis)
+
     # mf = sample_sphere(J, M, N)
     mf_true = sample_hyperplane(J_true, M, N)
     mf = sample_hyperplane(J, M, N)
 
     mf_true = {}
     plt.scatter(mf[:, 0], mf[:, 1])
-    plt.savefig("scatter.png")
+    plt.savefig(path + "scatter.png")
     plt.close()
 
     for i, J_true in enumerate(J_trues):
@@ -89,7 +103,7 @@ def main():
         ax.plot(mean_losses[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel("Number of epochs")
-        plt.savefig("losses.png")
+        plt.savefig(path + "losses.png")
         plt.close()
 
         fig, ax = plt.subplots(1)
@@ -99,7 +113,7 @@ def main():
         ax.set_ylabel("Loss component")
         ax.set_xlabel("Number of epochs")
         plt.legend()
-        plt.savefig("lossescomponents.png")
+        plt.savefig(path + "lossescomponents.png")
         plt.close()
 
         eval = lambda t: loss_function_t(t, params, score_model, rng, mf)
@@ -114,7 +128,7 @@ def main():
         ax.set_ylabel("Loss component")
         ax.set_xlabel(r"$t$")
         ax.legend()
-        plt.savefig("losses_t1hat.png")
+        plt.savefig(path + "losses_t1hat.png")
         plt.close()
 
         fxapproxtrues = {}
@@ -135,7 +149,7 @@ def main():
         # ax2.set_xscale("log")
         # ax2.set_yscale("log")
         plt.legend(fontsize='xx-small')
-        plt.savefig("losses_t1approxparallelpng")
+        plt.savefig(path + "losses_t1approxparallelpng")
         plt.close()
 
         fig3, ax3 = plt.subplots(1)
@@ -147,7 +161,7 @@ def main():
         # ax3.set_xscale("log")
         # ax3.set_yscale("log")
         plt.legend(fontsize='xx-small')
-        plt.savefig("losses_t1approxperp.png")
+        plt.savefig(path + "losses_t1approxperp.png")
         plt.close()
 
         fig0, ax0 = plt.subplots(1)
@@ -159,7 +173,7 @@ def main():
         # ax0.set_xscale("log")
         # ax0.set_yscale("log")
         plt.legend(fontsize='xx-small')
-        plt.savefig("losses_t1dapproxparallelpng")
+        plt.savefig(path + "losses_t1dapproxparallelpng")
         plt.close()
 
         fig1, ax1 = plt.subplots(1)
@@ -171,7 +185,7 @@ def main():
         # ax1.set_xscale("log")
         # ax1.set_yscale("log")
         plt.legend(fontsize='xx-small')
-        plt.savefig("losses_t1dapproxperp.png")
+        plt.savefig(path + "losses_t1dapproxperp.png")
         plt.close()
 
         # ax.plot(train_ts[100:], d * jnp.exp(-2 * train_ts[100:]), label=r"${:.2f}\exp (-2t)$".format(d))
@@ -185,7 +199,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t1dapprox.png")
+        plt.savefig(path + "losses_t1dapprox.png")
         plt.close()
 
     else:
@@ -194,7 +208,7 @@ def main():
         ax.plot(mean_losses[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel("Number of epochs")
-        plt.savefig("losses0.png")
+        plt.savefig(path + "losses0.png")
         plt.close()
 
         # eval = lambda t: loss_function_t(params, score_model, t, m_0, C_0)
@@ -208,7 +222,7 @@ def main():
         ax.plot(train_ts[:], fx[:], label=r"$\hat{L}(\theta)$")
         ax.set_ylabel("Loss")
         ax.set_xlabel(r"$t$")
-        plt.savefig("losses_t0hat.png")
+        plt.savefig(path + "losses_t0hat.png")
         plt.close()
 
         colors = plt.cm.jet(jnp.linspace(0,1,Jnum))
@@ -223,7 +237,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend(fontsize='xx-small')
-        plt.savefig("losses_t0approx.png")
+        plt.savefig(path + "losses_t0approx.png")
         plt.close()
 
         print(fxapproxtrue)
@@ -238,7 +252,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0dapprox.png")
+        plt.savefig(path + "losses_t0dapprox.png")
         plt.close()
 
 

@@ -5,12 +5,13 @@ import flax.linen as nn
 import jax.random as random
 from jax import vmap, jit
 from sgm.utils import (
+    forward_marginals,
     mean_factor, var, R,
     matrix_inverse, matrix_solve,
     optimizer)
 from functools import partial
 from jax.experimental.host_callback import id_print
-from sgm.non_linear import update_step as nonlinear_update_step
+from sgm.utils import update_step as nonlinear_update_step
 
 
 # def S_given_t(mf, t, m_0, C_0):
@@ -34,7 +35,7 @@ from sgm.non_linear import update_step as nonlinear_update_step
 #     return -matrix_solve(L_cov, x - mean)
 
 
-class ApproximateScoreLinear(nn.Module):
+class Linear(nn.Module):
     """A simple model with multiple fully connected layers and some fourier features for the time variable."""
 
     @nn.compact
@@ -43,162 +44,107 @@ class ApproximateScoreLinear(nn.Module):
         N = jnp.shape(x)[1]
         in_size = (N + 1) * N
         n_hidden = 256
-        s = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)]).T
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(in_size)(s)
-        s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
-        s = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
-        return s  # (n_batch,)
+        h = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)]).T
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(in_size)(h)
+        h = jnp.reshape(h, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
+        h = jnp.einsum('ijk, ij -> ik', h, jnp.hstack((jnp.ones((batch_size, 1)), x)))
+        return h  # (n_batch,)
 
-    # def evaluate_eig(self, x, t):
-    #     batch_size = x.shape[0]
-    #     N = jnp.shape(x)[1]
-    #     in_size = (N + 1) * N
-    #     n_hidden = 256
-    #     s = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-    #     s = nn.Dense(n_hidden)(s)
-    #     s = nn.relu(s)
-    #     s = nn.Dense(n_hidden)(s)
-    #     s = nn.relu(s)
-    #     s = nn.Dense(n_hidden)(s)
-    #     s = nn.relu(s)
-    #     s = nn.Dense(in_size)(s)
-    #     s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
-    #     #print(s[0, :, 1])
-    #     #print(s[0, :, 1:])
-    #     x = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((batch_size, 1)), x)))
-    #     print(s[0, 0, :])
-    #     print(jnp.linalg.eig(s[0, 1:, :]))
-    #     print(jnp.hstack((jnp.ones((batch_size, 1)), x)))
+    def evaluate(self, params, x_t, times):
+        return model.apply(params, times, x_t)  #  (n_batch, N, N+1) which is quite memory intense
 
 
-class ApproximateScoreOperatorLinear(nn.Module):
+class Matrix(nn.Module):
     """A simple model with multiple fully connected layers and some fourier features for the time variable."""
-    # Not sure how to isolate the matrix, S, and have it included in a loss? Just write the loss in terms of the batches.
 
     @nn.compact
     def __call__(self, t, N):
         batch_size = jnp.size(t)
         in_size = (N + 1) * N
         n_hidden = 256
-        # s = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)  # (n_batch, 2)
-        s = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)]).T  # (n_batch, 2)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(n_hidden)(s)
-        s = nn.relu(s)
-        s = nn.Dense(in_size)(s)
-        s = jnp.reshape(s, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
-        return s
+        # h = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)  # (n_batch, 2)
+        h = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)]).T  # (n_batch, 2)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(in_size)(h)
+        h = jnp.reshape(h, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
+        return h
+
+    def evaluate(self, params, x_t, times):
+        h = self.apply(params, times, jnp.shape(x_t)[1])  #  (n_batch, N, N+1) which is quite memory intense
+        return jnp.einsum('ijk, ij -> ik', h, jnp.hstack((jnp.ones((jnp.shape(x_t)[0], 1)), x_t)))
+
+    def evaluate_eig(self, params, x_t, times):
+        h = model.apply(params, times, jnp.shape(x_t)[0])  #  (n_batch, N, N+1) which is quite memory intense
+        h = jnp.einsum('ijk, ij -> ik', h, jnp.hstack((jnp.ones((n_batch, 1)), x_t)))
+        H = h[0, :, 1]
+        mu = h[0, :, 1:]
+        x = jnp.einsum('ijk, ij -> ik', h, jnp.hstack((jnp.ones((batch_size, 1)), x)))
+        return  jnp.linalg.eig(h[0, 1:, :])
 
 
-def linear_loss_fn(params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the  function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
-    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
-    v = var(time_samples)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    N = jnp.shape(x_t)[1]
-    s = model.apply(params, x_t, time_samples)  #  (n_batch, N)
-    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
+class Cholesky(nn.Module):
+    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
+
+    @nn.compact
+    def __call__(self, t, N):
+        batch_size = jnp.size(t)
+        in_size = (N + 1) * N
+        n_hidden = 256
+        # h = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)  # (n_batch, 2)
+        h = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)]).T  # (n_batch, 2)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(in_size)(h)
+        h = jnp.reshape(h, (batch_size, N + 1, N))  # (batch_size, N + 1, N)
+        return h
+
+    def evaluate(self, params, x_t, times):
+        h = self.apply(params, times, jnp.shape(x_t)[0])  #  (n_batch, N, N+1) which is quite memory intense
+        L = h[:, :-1, :]  # (n_batch, N, N)
+        mu = h[:, -1, :]  # (n_batch, N)
+        h = jnp.einsum('ijk, ij -> ik', L, x_t)  # (n_batch, N)
+        h = jnp.einsum('ijk, ik -> ij', L, h)  # (n_batch, N)
+        return (h + mu)  # (n_batch, N)  # L @ L.T @ x_t + mu
+
+    def evaluate_eig(self, params, x_t, times):
+        h = self.apply(params, times, jnp.shape(x_t)[0])  #  (n_batch, N, N+1) which is quite memory intense
+        h = jnp.einsum('ijk, ij -> ik', h, jnp.hstack((jnp.ones((n_batch, 1)), x_t)))
+        L = h[:, :-1, :]  # (n_batch, N, N)
+        H = L.T @ L
+        return  jnp.linalg.eig(H)
 
 
-def sqrt_linear_loss_fn(params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the  function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
-    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
-    v = var(time_samples)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    N = jnp.shape(x_t)[1]
-    s = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
-    L = s[:, :-1, :]  # (n_batch, N, N)
-    mu = s[:, -1, :]  # (n_batch, N)
-    s = jnp.einsum('ijk, ij -> ik', L, x_t)  # (n_batch, N)
-    s = jnp.einsum('ijk, ik -> ij', L, s)  # (n_batch, N)
-    s = (s + mu)  # (n_batch, N)  # L @ L.T @ x_t + mu
-    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
+def orthogonal_oracle_loss_fn_t(projection_matrix):
+    """"""
+    def decomposition(t, params, model, m_0, C_0, projection_matrix): 
+        N = jnp.shape(m_0)[0]
+        v_t = var(t)  # (N,)
+        std = jnp.sqrt(v_t)
+        m_t = mean_factor(t)
+        mat = (m_t**2 / std) * C_0 + std
+        mean = m_0 * m_t
+        h = model.apply(params, t, N)  # (N, N+1) which is memory intense
+        mse, residual, intermediate, projection = oracle_loss(h, mat, mean, N, projection_matrix)
+        return mse, jnp.array([projection, mse - projection])
+    return lambda t, params, model, m_0, C_0: decomposition(t, params, model, m_0, C_0, projection_matrix)
 
 
-def loss_fn(params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the  function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)  # why these not independent? I guess that they can be? (n_samps,)
-    mean_coeff = mean_factor(time_samples)  # (n_batch, N)
-    v = var(time_samples)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    N = jnp.shape(x_t)[1]
-    s = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
-    s = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((n_batch, 1)), x_t)))
-    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
-
-
-def loss_fn_t(t, params, model, rng, batch):
-    """
-    params: the current weights of the model
-    model: the  function
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    
-    returns an random (MC) approximation to the loss \bar{L} explained above
-    """
-    rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    times = jnp.ones((n_batch, 1)) * t
-    mean_coeff = mean_factor(times)  # (n_batch, N)
-    v = var(times)  # (n_batch, N)
-    stds = jnp.sqrt(v)
-    rng, step_rng = random.split(rng)
-    noise = random.normal(step_rng, batch.shape)
-    x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    N = jnp.shape(x_t)[1]
-    s = model.apply(params, times, N)  #  (n_batch, N, N+1) which is quite memory intense
-    s = jnp.einsum('ijk, ij -> ik', s, jnp.hstack((jnp.ones((n_batch, 1)), x_t)))
-    return jnp.mean(jnp.sum((noise + s  * stds)**2, axis=1))
-
-
-def true_loss_fn_t(params, model, t, m_0, C_0):
+def oracle_loss_fn_t(t, params, model, m_0, C_0):
     """
     Analytical distribution  for normal distribution on the hyperplane.
     Requires a linear solve for each x
@@ -209,15 +155,19 @@ def true_loss_fn_t(params, model, t, m_0, C_0):
     """
     N = jnp.shape(m_0)[0]
     v_t = var(t)  # (N,)
+    std = jnp.sqrt(v_t)
     m_t = mean_factor(t)
-    mat = m_t**2 * C_0 + v_t
+    mat = (m_t**2 / std) * C_0 + std
     mean = m_0 * m_t
-    s = model.apply(params, t, N)  # (N, N+1) which is memory intense
-    loss, residual, intermediate = true_loss_scalar(s, mat, mean, N)
-    return loss * v_t
+    h = model.apply(params, t, N)  # (N, N+1) which is memory intense
+    mse, residual, intermediate = oracle_loss(h, mat, mean, std, N)
+    return mse
 
 
-def true_loss_scalar(s, mat, mean, N):
+def oracle_loss(h, mat, mean, std, N, projection_matrix=None):
+    """
+    arg projection_matrix: Projection matrix
+    """
     if N == 1:
         # mat_inv = 1./ mat
         # L_mat = jnp.sqrt(mat)
@@ -225,36 +175,47 @@ def true_loss_scalar(s, mat, mean, N):
         raise ValueError("Not implemented")
     else:
         mat_inv, _ = matrix_inverse(mat, N)
-    # It might be s[:, 0] and s[:, 1:]
-    S = s[:, 1:][0]
-    mu = s[:, 0][0]
-    residual = - S @ mean - mu
-    intermediate = S @ mat + jnp.eye(N)
+    mu = h[:, 0][0]
+    H = h[:, 1:][0]
+    residual = - (H @ mean + mu)
+    intermediate = std * (H @ mat + jnp.eye(N))
     residual_loss = residual.T @ residual
-    trace_loss = jnp.einsum('ij, ji -> ', intermediate, S + mat_inv)
-    loss = residual_loss + trace_loss
-    return loss, residual, intermediate
+    #trace_loss = jnp.trace((H @ mat + jnp.eye(N)) @ (2 * std * H).T)
+    # trace_loss = std * jnp.trace(H @ mat @ H.T) + std * jnp.trace(H) + std * jnp.trace(mat_inv)
+    # trace_loss = jnp.einsum('ij, ij -> ', intermediate, H + H)
+    loss = residual_loss  # + trace_loss
+    if projection_matrix is not None:
+        projected_residual = projection_matrix @ residual
+        projected_residual_loss = projected_residual.T @ projected_residual
+        # projected_trace_loss = jnp.einsum('ij, ji -> ', projection_matrix @ intermediate, projection_matrix @ (H + mat_inv))
+        
+        projected = projected_residual_loss + projected_trace_loss
+        return loss, residual, intermediate, projected
+    else:
+        return loss, residual, intermediate
 
 
-def true_loss_fn(params, model, rng, n_batch, m_0, C_0):
-    """
-    Analytical distribution  for normal distribution on the hyperplane.
-    Requires a linear solve for each x
-    Requires a cholesky for each t
-
-    x: One location in R^n, N should be 2 in special case example.
-    t: time
-    """
-    N = jnp.shape(m_0)[0]
-    rng, step_rng = random.split(rng)
-    time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)
-    v_t = var(time_samples)  # (n_batch, N)
-    m_t = mean_factor(time_samples)[0]  # (n_batch, N)
-    mat = m_t**2 * C_0 + v_t  # (n_batch, N, N+1)
-    mean = m_0 * m_t  # (n_batch, N)
-    s = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
-    loss = true_loss_scalar(s, mat, mean, N)
-    return loss
+# def oracle_loss_fn(params, model, rng, n_batch, m_0, C_0):
+#     """
+#     Analytical distribution  for normal distribution on the hyperplane.
+#     Requires a linear solve for each x
+#     Requires a cholesky for each t
+# 
+#     x: One location in R^n, N should be 2 in special case example.
+#     t: time
+#     """
+#     N = jnp.shape(m_0)[0]
+#     rng, step_rng = random.split(rng)
+#     # Expectation over t
+#     time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)
+#     v_t = var(time_samples)  # (n_batch, N)
+#     std= jnp.sqr(v_t)
+#     m_t = mean_factor(time_samples)[0]  # (n_batch, N)
+#     mat = (m_t**2 / std) * C_0 + std  # (n_batch, N, N+1)
+#     mean = m_0 * m_t  # (n_batch, N)
+#     h = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
+#     loss, residual, intermediate = oracle_loss(s, mat, mean, std, N)
+#     return loss
 
 
 def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
@@ -335,6 +296,7 @@ def retrain_nn(
     return score_model, params, opt_state, mean_losses
 
 
+# TODO: what are these for?
 def sqrt_linear_trained_score(score_model, params, t, N, x):
     v = var(t)  # (n_batch, N)
     stds = jnp.sqrt(v)
