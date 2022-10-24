@@ -22,6 +22,7 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
+    get_mf,
     optimizer, sample_hyperplane,
     sample_multimodal_hyperplane_mvn,
     sample_multimodal_mvn,
@@ -38,54 +39,6 @@ def moving_average(a, n=100) :
     ret = np.cumsum(a, dtype=float)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
-
-
-def get_mf(data_string, Js, J_true, M, N):
-    """Get the manifold data."""
-    # TODO: try a 2-D or M-D basis 
-    tangent_basis = 3.0 * jnp.array([1./jnp.sqrt(2), 1./jnp.sqrt(2)])
-    # Tangent vector needs to have unit norm
-    tangent_basis /= jnp.linalg.norm(tangent_basis)
-    # tangent_basis = jnp.array([1.0, 0.1])
-    projection_matrix = orthogonal_projection_matrix(tangent_basis)
-    # Note so far that tangent_basis only implemented for 1D basis
-    # tangent_basis is dotted with (N, n_batch) errors, so must be (N, 1)
-    tangent_basis = tangent_basis.reshape(-1, 1)
-    print(tangent_basis)
-    print(projection_matrix)
-    if data_string=="hyperplane":
-        # For 1D hyperplane example,
-        C_0 = jnp.array([[1, 0], [0, 0]])
-        m_0 = jnp.zeros(N)
-        mf_true = sample_hyperplane(J_true, M, N)
-    elif data_string=="hyperplane_mvn":
-        mf_true = sample_hyperplane_mvn(J_true, N, C_0, m_0, projection_matrix)
-        C_0 = jnp.array([[1, 0], [0, 0]])
-        m_0 = jnp.zeros(N)
-    elif data_string=="multimodal_hyperplane_mvn":
-        # For 1D multimodal hyperplane example,
-        m_0 = jnp.array([[0.0, 0.0], [1.0, 0.0]])
-        C_0 = jnp.array(
-            [
-                [[0.05, 0.0], [0.0, 0.1]],
-                [[0.05, 0.0], [0.0, 0.1]]
-            ]
-        )
-        weights = jnp.array([0.5, 0.5])
-        N = 100
-        mf_true = sample_multimodal_hyperplane_mvn(J_true, N, C_0, m_0, weights, projection_matrix)
-    elif data_string=="multimodal_mvn":
-        mf_true = sample_multimodal_mvn(J, N, C_0, m_0, weights)
-    elif data_string=="sample_sphere":
-        m_0 = None
-        C_0 = None
-        mf_true = sample_sphere(J_true, M, N)
-    else:
-        raise NotImplementedError()
-    mfs = {}
-    for J in Js:
-        mfs["{:d}".format(J)] = mf_true[:J, :]
-    return mfs, mf_true, m_0, C_0, tangent_basis, projection_matrix
 
 
 def main():
@@ -119,7 +72,6 @@ def main():
     train_size = mf.shape[0]
     N = mf.shape[1]
     batch_size = train_size
-    x = jnp.zeros(N*batch_size).reshape((batch_size, N))
     time = jnp.ones((batch_size, 1))
     rng = random.PRNGKey(123)
     rng, step_rng = random.split(rng)

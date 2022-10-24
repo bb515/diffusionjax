@@ -74,7 +74,7 @@ def plot_OH(forward_density):
     return 0
 
 
-def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score.pdf"):
+def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score"):
     if N != 2:
         raise ValueError("WARNING: This function expects the score to be a function R² -> R²")
     #this helper function is here so that we can jit it.
@@ -134,7 +134,7 @@ def plot_score_diff(ax, score1, score2, t, N, area_min=-1, area_max=1, fname="pl
     ax.quiver(grid[:, 0], grid[:, 1], diff[:, 0], diff[:, 1], angles='xy', scale_units='xy', scale=0.05)
 
 
-def plot_heatmap(positions, area_min=-3, area_max=3):
+def plot_heatmap(positions, area_min=-3, area_max=3, fname="plot_heatmap"):
     """
     positions: locations of all particles in R^2, array (J, 2)
     area_min: lowest x and y coordinate
@@ -160,11 +160,11 @@ def plot_heatmap(positions, area_min=-3, area_max=3):
     plt.imshow(hm, cmap=cm, interpolation='nearest', extent=extent)
     ax = plt.gca()
     ax.invert_yaxis()
-    plt.savefig("plot_heatmap.pdf")
+    plt.savefig(fname)
     plt.close()
 
 
-def heatmap_image(score, N, n_samps=5000, rng=random.PRNGKey(123)):
+def heatmap_image(score, N, n_samps=5000, rng=random.PRNGKey(123), fname="plot_heatmap"):
     rng, step_rng = random.split(rng)
     samples = reverse_sde(step_rng, N, n_samps, drift, dispersion, score, train_ts)
-    plot_heatmap(samples[:, [0,1]], -3, 3)
+    plot_heatmap(samples[:, [0,1]], -3, 3, fname=fname)

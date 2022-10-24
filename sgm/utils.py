@@ -28,6 +28,7 @@ import lab as B
 
 rng = random.PRNGKey(123)
 beta_min = 0.001
+# TODO: beta_max usually set to 2.0?
 beta_max = 3
 
 # Grid over time
@@ -203,6 +204,7 @@ def alpha_t(t):
     t: time (number)
     returns alpha_t as explained above
     """
+    # integral of beta_t dt up to a constant, 0
     return t * beta_min + 0.5 * t**2 * (beta_max - beta_min)
 
 
@@ -299,6 +301,16 @@ def w1_stdnormal(samples):
     true_inv_cdf = jax.scipy.stats.norm.ppf(jnp.linspace(0, 1, J)[1:-1])
     approx_inv_cdf = jnp.sort(samples)[1:-1]
     return jnp.mean(jnp.abs(true_inv_cdf - approx_inv_cdf))
+
+
+@partial(jit, static_argnums=[1, 2, 3, 4, 5])
+def reverse_sde_outer(rng, N, n_samples, forward_drift, dispersion, score, ts, indices):
+    xs = jnp.empty((jnp.size(indices), n_samples, N))
+    for i in indices:
+        train_ts = ts[:index]
+        x = reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts)
+        xs = xs.at[i, :, :].set(x)
+    return xs  # (size(indices), n_samples, N)
 
 
 #we jit the function, but we have to mark some of the arguments as static,
@@ -448,6 +460,23 @@ def forward_marginals(rng, time_samples, batch):
     return rng, mean_coeff, std, mean_coeff * batch + stds * noise
 
 
+def backwards_errors(params, model, rng, batch):
+    """
+    backwards loss, not differentiating through SDE solver. Just taking samples from it,
+    but need to evaluate the exact score via a large sum.
+    Likely to be slow
+    """
+    test_size = 1
+    rng, step_rng = random.split(rng)
+    n_batch = batch.shape[0]
+    times = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)
+    # Simulate reverse SDE up until that time.
+    # TODO investigate if should use intermediate values as well
+    samples = reverse_sde(step_rng, N, test_size, drift, dispersion, trained_score, train_ts)  # (test_size, N)
+    # Due to the concatenation of the samples, it is probably not possible to construct the loss
+    # that way, unless define an adjoint for the loss?
+    
+
 def errors(params, model, rng, batch):
     """
     params: the current weights of the model
@@ -562,4 +591,51 @@ def update_step(params, rng, batch, opt_state, model, loss_fn, has_aux=False):
     params = optax.apply_updates(params, updates)
     return val, params, opt_state
 
+
+def get_mf(data_string, Js, J_true, M, N):
+    """Get the manifold data."""
+    # TODO: try a 2-D or M-D basis 
+    tangent_basis = 3.0 * jnp.array([1./jnp.sqrt(2), 1./jnp.sqrt(2)])
+    # Tangent vector needs to have unit norm
+    tangent_basis /= jnp.linalg.norm(tangent_basis)
+    # tangent_basis = jnp.array([1.0, 0.1])
+    projection_matrix = orthogonal_projection_matrix(tangent_basis)
+    # Note so far that tangent_basis only implemented for 1D basis
+    # tangent_basis is dotted with (N, n_batch) errors, so must be (N, 1)
+    tangent_basis = tangent_basis.reshape(-1, 1)
+    print(tangent_basis)
+    print(projection_matrix)
+    if data_string=="hyperplane":
+        # For 1D hyperplane example,
+        C_0 = jnp.array([[1, 0], [0, 0]])
+        m_0 = jnp.zeros(N)
+        mf_true = sample_hyperplane(J_true, M, N)
+    elif data_string=="hyperplane_mvn":
+        mf_true = sample_hyperplane_mvn(J_true, N, C_0, m_0, projection_matrix)
+        C_0 = jnp.array([[1, 0], [0, 0]])
+        m_0 = jnp.zeros(N)
+    elif data_string=="multimodal_hyperplane_mvn":
+        # For 1D multimodal hyperplane example,
+        m_0 = jnp.array([[0.0, 0.0], [1.0, 0.0]])
+        C_0 = jnp.array(
+            [
+                [[0.05, 0.0], [0.0, 0.1]],
+                [[0.05, 0.0], [0.0, 0.1]]
+            ]
+        )
+        weights = jnp.array([0.5, 0.5])
+        N = 100
+        mf_true = sample_multimodal_hyperplane_mvn(J_true, N, C_0, m_0, weights, projection_matrix)
+    elif data_string=="multimodal_mvn":
+        mf_true = sample_multimodal_mvn(J, N, C_0, m_0, weights)
+    elif data_string=="sample_sphere":
+        m_0 = None
+        C_0 = None
+        mf_true = sample_sphere(J_true, M, N)
+    else:
+        raise NotImplementedError()
+    mfs = {}
+    for J in Js:
+        mfs["{:d}".format(J)] = mf_true[:J, :]
+    return mfs, mf_true, m_0, C_0, tangent_basis, projection_matrix
 
