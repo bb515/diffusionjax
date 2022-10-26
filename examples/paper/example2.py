@@ -107,10 +107,6 @@ def main():
         trained_score = lambda x, t: score_model.evaluate(params, x, t)
         rescaled_score = lambda x, t: score_model.evaluate(params, x, t)
     elif likelihood_flag==2:
-        # Jakiw training objective - has incorrect
-        trained_score = lambda x, t: score_model.evaluate(params, x, t)
-        rescaled_score = lambda x, t: score_model.evaluate(params, x, t)
-    elif likelihood_flag==3:
         # Not likelihood rescaling
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         trained_score = lambda x, t: score_model.evaluate(params, x, t)
@@ -121,12 +117,12 @@ def main():
     q_samples = reverse_sde(step_rng, N, J_test, drift, dispersion, trained_score, train_ts)
     plot_heatmap(q_samples, fname=path+"forward_heatmap.png")
     plot_samples(q_samples, fname=path+"forward_samples_qp.png", index=[0, 1], lims=((-3, 3), (-3, 3)))
-    assert 0
     from sgm.utils import flipped_loss_fn
     from sgm.utils import plot_errors
     loss_function = flipped_loss_fn
     print("errors", plot_errors(params, score_model, score, rng, N, 32, fpath=path, likelihood_flag=0))
     print(flipped_loss_fn(params, score_model, score, rng, jnp.ones((32, 2))))
+    assert 0
     # # Reset params
     # params = score_model.init(step_rng, mf, time)
     # opt_state = optimizer.init(params)

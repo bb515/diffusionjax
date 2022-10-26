@@ -510,10 +510,6 @@ def flipped_errors(params, model, score, rng, N, n_batch, likelihood_flag=0):
         trained_score = lambda x, t: model.evaluate(params, x, t)
         rescaled_score = lambda x, t: model.evaluate(params, x, t)
     elif likelihood_flag==2:
-        # Jakiw training objective - has incorrect
-        trained_score = lambda x, t: model.evaluate(params, x, t)
-        rescaled_score = lambda x, t: model.evaluate(params, x, t)
-    elif likelihood_flag==3:
         # Not likelihood rescaling
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         trained_score = lambda x, t: model.evaluate(params, x, t)
@@ -578,10 +574,6 @@ def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_fl
         trained_score = lambda x, t: model.evaluate(params, x, t)
         rescaled_score = lambda x, t: model.evaluate(params, x, t)
     elif likelihood_flag==2:
-        # Jakiw training objective - has incorrect
-        trained_score = lambda x, t: model.evaluate(params, x, t)
-        rescaled_score = lambda x, t: model.evaluate(params, x, t)
-    elif likelihood_flag==3:
         # Not likelihood rescaling
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         trained_score = lambda x, t: model.evaluate(params, x, t)
@@ -629,7 +621,13 @@ def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_fl
     plt.scatter(q_score[:, 1], p_score[:, 1], label="1")
     plt.xlim((-20.0, 20.0))
     plt.ylim((-20.0, 20.0))
-    plt.savefig(fpath + "q_p.png")
+    plt.savefig(fpath + "q_p20.png")
+    plt.xlim((-200.0, 200.0))
+    plt.ylim((-200.0, 200.0))
+    plt.savefig(fpath + "q_p200.png")
+    plt.xlim((-2000.0, 2000.0))
+    plt.ylim((-2000.0, 2000.0))
+    plt.savefig(fpath + "q_p2000.png")
     plt.close()
     errors = jnp.sum((q_score - p_score)**2, axis=1)
     plt.scatter(ts, errors.reshape(-1, 1), c=colors[indices])
@@ -673,9 +671,6 @@ def errors(params, model, rng, batch, likelihood_flag=0):
         # It seems to be best to scale by stds - implies learnign actual loss
         return noise + stds * model.evaluate(params, x_t, time_samples)
     elif likelihood_flag==2:
-        # Jakiw training objective - has incorrect
-        return noise + v * model.evaluate(params, x_t, time_samples)
-    elif likelihood_flag==3:
         # Not likelihood rescaling
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         return (noise / stds + model.evaluate(params, x_t, time_samples)) * dispersion(time_samples)
