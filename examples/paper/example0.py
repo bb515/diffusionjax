@@ -22,6 +22,7 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
+    moving_average,
     get_mf,
     optimizer, sample_hyperplane,
     sample_multimodal_hyperplane_mvn,
@@ -32,13 +33,6 @@ from sgm.utils import (
     train_ts, retrain_nn, update_step)
 from sgm.non_linear import NonLinear
 from sgm.linear import Matrix
-
-
-def moving_average(a, n=100) :
-    a = np.asarray(a)
-    ret = np.cumsum(a, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
 
 
 def main():

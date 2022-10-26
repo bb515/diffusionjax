@@ -26,7 +26,7 @@ FG_ALPHA = 0.4
 #     "font.sans-serif": ["Helvetica"]})
 
 
-def plot_samples(x, index, lims=None):
+def plot_samples(x, index, fname="samples.png", lims=None):
     fig, ax = plt.subplots(1, 1)
     fig.patch.set_facecolor('white')
     fig.patch.set_alpha(BG_ALPHA)
@@ -42,7 +42,7 @@ def plot_samples(x, index, lims=None):
     plt.gca().set_aspect('equal', adjustable='box')
     plt.draw()
     fig.savefig(
-        "samples_x{}_x{}.png".format(index[0], index[1]),
+        fname,
         facecolor=fig.get_facecolor(), edgecolor='none')
     plt.close()
 

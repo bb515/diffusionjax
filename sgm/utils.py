@@ -303,13 +303,14 @@ def w1_stdnormal(samples):
     return jnp.mean(jnp.abs(true_inv_cdf - approx_inv_cdf))
 
 
-@partial(jit, static_argnums=[1, 2, 3, 4, 5])
 def reverse_sde_outer(rng, N, n_samples, forward_drift, dispersion, score, ts, indices):
     xs = jnp.empty((jnp.size(indices), n_samples, N))
+    j = 0
     for i in indices:
-        train_ts = ts[:index]
-        x = reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts)
-        xs = xs.at[i, :, :].set(x)
+        train_ts = ts[:i]
+        x = reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, train_ts)
+        xs = xs.at[j, :, :].set(x)
+        j += 1
     return xs  # (size(indices), n_samples, N)
 
 
@@ -417,6 +418,38 @@ def reverse_sde(rng, N, n_samples, forward_drift, dispersion, score, ts):
     return x
 
 
+def retrain_nn_alt(update_step, N_epochs, rng, mf, score_model, params, opt_state, loss_fn, score, batch_size=5, decomposition=False):
+    if decomposition:
+        L = 2
+    else:
+        L = 1
+    train_size = mf.shape[0]
+    batch_size = min(train_size, batch_size)
+    steps_per_epoch = train_size // batch_size
+    mean_losses = jnp.zeros((N_epochs, L))
+    for i in range(N_epochs):
+        rng, step_rng = random.split(rng)
+        perms = jax.random.permutation(step_rng, train_size)
+        perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
+        perms = perms.reshape((steps_per_epoch, batch_size))
+        losses = jnp.zeros((jnp.shape(perms)[0], L))
+        for j, perm in enumerate(perms):
+            batch = mf[perm, :]
+            rng, step_rng = random.split(rng)
+            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss_fn, score, has_aux=decomposition)
+            if decomposition:
+                loss = loss[1]
+            losses = losses.at[j].set(loss)
+        # TODO: is mean_loss really what I need to plot? Loses the covariance between different directions
+        # For now, don't batch by setting train_size == batch_size == mf.shape[0]
+        mean_loss = jnp.mean(losses, axis=0)
+        mean_losses = mean_losses.at[i].set(mean_loss)
+        if i % 10 == 0:
+            if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
+            if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
+    return score_model, params, opt_state, mean_losses
+
+
 def retrain_nn(
         update_step, N_epochs, rng, mf, score_model, params,
         opt_state, loss_fn, batch_size=5, decomposition=False):
@@ -460,24 +493,159 @@ def forward_marginals(rng, time_samples, batch):
     return rng, mean_coeff, std, mean_coeff * batch + stds * noise
 
 
-def backwards_errors(params, model, rng, batch):
+# TODO: make it hard to jit compile with likelihood flag
+def flipped_errors(params, model, score, rng, N, n_batch, likelihood_flag=0):
     """
     backwards loss, not differentiating through SDE solver. Just taking samples from it,
     but need to evaluate the exact score via a large sum.
     Likely to be slow
     """
-    test_size = 1
+    if likelihood_flag==0:
+        # Song's likelihood rescaling
+        # model evaluate is h = -\sigma_t s(x_t)
+        trained_score = lambda x, t: -model.evaluate(params, x, t) / jnp.sqrt(var(t))
+        rescaled_score = lambda x, t: -model.evaluate(params, x, t)
+    elif likelihood_flag==1:
+        # What has worked previously for us, which learns a score
+        trained_score = lambda x, t: model.evaluate(params, x, t)
+        rescaled_score = lambda x, t: model.evaluate(params, x, t)
+    elif likelihood_flag==2:
+        # Jakiw training objective - has incorrect
+        trained_score = lambda x, t: model.evaluate(params, x, t)
+        rescaled_score = lambda x, t: model.evaluate(params, x, t)
+    elif likelihood_flag==3:
+        # Not likelihood rescaling
+        # model evaluate is s(x_t) errors are then scaled by \beta_t
+        trained_score = lambda x, t: model.evaluate(params, x, t)
+        rescaled_score = lambda x, t: model.evaluate(params, x, t)
     rng, step_rng = random.split(rng)
-    n_batch = batch.shape[0]
-    times = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)
-    # Simulate reverse SDE up until that time.
-    # TODO investigate if should use intermediate values as well
-    samples = reverse_sde(step_rng, N, test_size, drift, dispersion, trained_score, train_ts)  # (test_size, N)
-    # Due to the concatenation of the samples, it is probably not possible to construct the loss
-    # that way, unless define an adjoint for the loss?
-    
+    thinning = False
+    if thinning is True:
+        # Test size for last X_t on sample path
+        test_size = int(5.0**N)
+        indices = random.randint(step_rng, (n_batch,), 1, R)
+        samples = reverse_sde_outer(rng, N, test_size, drift,
+                                    dispersion, trained_score, train_ts, indices)  # (size(indices), test_size, N)
+        ts = train_ts[indices]
+    else:
+        # Test size for keeping all X from sample path
+        # Differnce is 10 times speed up in loss, not IID->introduces bias?
+        # TODO: do I need an adjoint for the loss to save memory?
+        test_size = int(5.0**N)
+        samples = reverse_sde_t(rng, N, test_size, drift, dispersion, trained_score, train_ts)  # (R, test_size, N)
+        ts = train_ts
+        indices = jnp.arange(0, R, dtype=int)
+    # Reshape
+    ts = ts.reshape(-1, 1)
+    ts = jnp.tile(ts, test_size)
+    ts = ts.reshape(-1, 1)
+    samples = samples.reshape(-1, samples.shape[2])
+    test_rescaling = 0
+    if test_rescaling:
+        # Probably not justified
+        return var(ts) * (trained_score(samples, ts) - score(samples, ts))
+    else:
+        # Doesn't seem to minimize score error well
+        return trained_score(samples, ts) - score(samples, ts)
+# return rescaled_score(samples, ts) + jnp.sqrt(var(ts)) * score(samples, ts)
+# return rescaled_score(samples, ts) - jnp.sqrt(var(ts)) * score(samples, ts)
+# return rescaled_score(samples, ts) - var(ts) * score(samples, ts)
 
-def errors(params, model, rng, batch):
+
+def moving_average(a, n=100) :
+    a = np.asarray(a)
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
+
+
+def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_flag=0):
+    """
+    backwards loss, not differentiating through SDE solver. Just taking samples from it,
+    but need to evaluate the exact score via a large sum.
+    Likely to be slow
+    """
+    rng, step_rng = random.split(rng)
+    #~
+    if likelihood_flag==0:
+        # Song's likelihood rescaling
+        # model evaluate is h = -\sigma_t s(x_t)
+        # Standard training objective without likelihood rescaling
+        trained_score = lambda x, t: -model.evaluate(params, x, t) / jnp.sqrt(var(t))
+        rescaled_score = lambda x, t: -model.evaluate(params, x, t)
+    elif likelihood_flag==1:
+        # What has worked previously for us, which learns a score
+        trained_score = lambda x, t: model.evaluate(params, x, t)
+        rescaled_score = lambda x, t: model.evaluate(params, x, t)
+    elif likelihood_flag==2:
+        # Jakiw training objective - has incorrect
+        trained_score = lambda x, t: model.evaluate(params, x, t)
+        rescaled_score = lambda x, t: model.evaluate(params, x, t)
+    elif likelihood_flag==3:
+        # Not likelihood rescaling
+        # model evaluate is s(x_t) errors are then scaled by \beta_t
+        trained_score = lambda x, t: model.evaluate(params, x, t)
+        rescaled_score = lambda x, t: model.evaluate(params, x, t)
+
+    thinning = False
+    if thinning is True:
+        # Test size fo X from sample path
+        test_size = int(5.0**N)
+        indices = random.randint(step_rng, (n_batch,), 1, R)
+        samples = reverse_sde_outer(rng, N, test_size, drift,
+                                    dispersion, trained_score, train_ts, indices)  # (size(indices), test_size, N)
+        ts = train_ts[indices]
+    else:
+        # Test size for keeping all X from sample path
+        # Differnce is 10 times speed up in loss, not IID->introduces bias?
+        # TODO: do I need an adjoint for the loss to save memory?
+        test_size = int(5.0**N)
+        samples = reverse_sde_t(rng, N, test_size, drift, dispersion, trained_score, train_ts)  # (R, test_size, N)
+        ts = train_ts
+        indices = jnp.arange(0, R, dtype=int)
+    # Reshape
+    ts = ts.reshape(-1, 1)
+    ts = jnp.tile(ts, test_size)
+    ts = ts.reshape(-1, 1)
+    indices = indices.reshape(-1, 1)
+    indices = jnp.tile(indices, test_size)
+    indices= indices.reshape(-1, 1).flatten()
+    samples = samples.reshape(-1, samples.shape[2])
+    q_score = trained_score(samples, ts)
+    p_score = score(samples, ts)
+    print("HERE")
+    id_print(q_score)
+    id_print(p_score)
+    print("THERE")
+    import matplotlib.pyplot as plt
+    cmap = plt.cm.get_cmap('viridis', n_batch)    # n_batch discrete colors
+    colors = cmap(jnp.arange(0, R)/R)
+    plt.scatter(samples[:, 0], samples[:, 1], c=colors[indices])
+    plt.xlim((-3, 3))
+    plt.ylim((-3, 3))
+    plt.savefig(fpath + "samples_over_t.png")
+    plt.close()
+    plt.scatter(q_score[:, 0], p_score[:, 0], label="0")
+    plt.scatter(q_score[:, 1], p_score[:, 1], label="1")
+    plt.xlim((-20.0, 20.0))
+    plt.ylim((-20.0, 20.0))
+    plt.savefig(fpath + "q_p.png")
+    plt.close()
+    errors = jnp.sum((q_score - p_score)**2, axis=1)
+    plt.scatter(ts, errors.reshape(-1, 1), c=colors[indices])
+    plt.savefig(fpath + "error_t.png")
+    plt.close()
+    # Experiment with likelihood rescaling
+    test_rescaling = 0
+    if test_rescaling:
+        # Probably not justified
+        return var(ts) * (trained_score(samples, ts) - score(samples, ts))
+    else:
+        # Doesn't seem to minimize score error well
+        return trained_score(samples, ts) - score(samples, ts)
+
+
+def errors(params, model, rng, batch, likelihood_flag=0):
     """
     params: the current weights of the model
     model: the score function
@@ -495,7 +663,22 @@ def errors(params, model, rng, batch):
     rng, step_rng = random.split(rng)
     noise = random.normal(step_rng, batch.shape)
     x_t = mean_coeff * batch + stds * noise # (n_batch, N)
-    return noise + model.evaluate(params, x_t, time_samples)
+    if likelihood_flag==0:
+        # Song's likelihood rescaling
+        # model evaluate is h = \sigma_t s(x_t)
+        # Standard training objective without likelihood rescaling
+        return noise - model.evaluate(params, x_t, time_samples)
+    elif likelihood_flag==1:
+        # What has worked previously for us, which learns a score
+        # It seems to be best to scale by stds - implies learnign actual loss
+        return noise + stds * model.evaluate(params, x_t, time_samples)
+    elif likelihood_flag==2:
+        # Jakiw training objective - has incorrect
+        return noise + v * model.evaluate(params, x_t, time_samples)
+    elif likelihood_flag==3:
+        # Not likelihood rescaling
+        # model evaluate is s(x_t) errors are then scaled by \beta_t
+        return (noise / stds + model.evaluate(params, x_t, time_samples)) * dispersion(time_samples)
 
 
 def errors_t(t, params, model, rng, batch):
@@ -518,11 +701,17 @@ def errors_t(t, params, model, rng, batch):
     return noise + model.evaluate(params, x_t, times)
 
 
+def flipped_loss_fn(params, model, score, rng, mf):
+    (n_batch, N) = jnp.shape(mf)
+    e = flipped_errors(params, model, score, rng, N, n_batch)
+    return jnp.mean(jnp.sum(e**2, axis=1))
+
+
 def loss_fn(params, model, rng, batch):
     e = errors(params, model, rng, batch)
+    return jnp.mean(jnp.sum(e**2, axis=1))
     # TODO: option for likelihood rescaling
     # TODO: should be a lambda function of some variables?
-    return jnp.mean(jnp.sum(e**2, axis=1))
 
 
 def loss_fn_t(t, params, model, rng, batch):
@@ -571,6 +760,17 @@ def orthogonal_loss_fn(projection_matrix):
         perpendicular = loss - parallel
         return loss, jnp.array([parallel, perpendicular]) 
     return lambda params, model, rng, batch: decomposition(params, model, rng, batch, projection_matrix)
+
+
+@partial(jit, static_argnums=[4, 5, 6, 7])
+# TODO work out workaround for it not being possible to jit dynamic indexing
+# of the sample time
+def reverse_update_step(params, rng, batch, opt_state, model, loss_fn, score, has_aux=False):
+    # TODO: There isn't a more efficient place to factorize jax value_and_grad?
+    val, grads = jax.value_and_grad(loss_fn, has_aux=has_aux)(params, model, score, rng, batch)
+    updates, opt_state = optimizer.update(grads, opt_state)
+    params = optax.apply_updates(params, updates)
+    return val, params, opt_state
 
 
 @partial(jit, static_argnums=[4, 5, 6])
