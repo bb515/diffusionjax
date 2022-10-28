@@ -35,8 +35,12 @@ beta_max = 3
 R = 1000
 
 # Could this be a nonlinear grid over time?
-train_ts = jnp.linspace(0, 1, R + 1)[1:]
+# Doesn't this mean we simulate until reverse time t=1.0, or forward time t=0.0?
+# train_ts = jnp.linspace(0, 1, R + 1)[1:]
+train_ts = jnp.linspace(0, 1, R + 1)[:-1]
+# train_ts = jnp.arange(1, R)/(R-1)
 # train_ts = jnp.logspace(-4, 0, R)
+
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
@@ -514,6 +518,10 @@ def flipped_errors(params, model, score, rng, N, n_batch, likelihood_flag=0):
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         trained_score = lambda x, t: model.evaluate(params, x, t)
         rescaled_score = lambda x, t: model.evaluate(params, x, t)
+    elif likelihood_flag==3:
+        # Song's without likelihood rescaling
+        trained_score = lambda x, t: -model.evaluate(params, x, t) / jnp.sqrt(var(t))
+        rescaled_score = lambda x, t: -model.evaluate(params, x, t)
     rng, step_rng = random.split(rng)
     thinning = False
     if thinning is True:
@@ -530,19 +538,29 @@ def flipped_errors(params, model, score, rng, N, n_batch, likelihood_flag=0):
         test_size = int(5.0**N)
         samples = reverse_sde_t(rng, N, test_size, drift, dispersion, trained_score, train_ts)  # (R, test_size, N)
         ts = train_ts
-        indices = jnp.arange(0, R, dtype=int)
+        indices = jnp.arange(R, dtype=int)
     # Reshape
     ts = ts.reshape(-1, 1)
     ts = jnp.tile(ts, test_size)
     ts = ts.reshape(-1, 1)
     samples = samples.reshape(-1, samples.shape[2])
     test_rescaling = 0
-    if test_rescaling:
-        # Probably not justified
-        return var(ts) * (trained_score(samples, ts) - score(samples, ts))
-    else:
+    if test_rescaling==0:
+        # Does result in losses are small and do not decrease
+        return rescaled_score(samples, 1-ts) - jnp.sqrt(var(1-ts)) * score(samples, 1-ts)
+    elif test_rescaling==1:
+        # This leads to losses that are numerically very large, since
+        # there is no rescaling going on to weight small time
+        # less than large time
         # Doesn't seem to minimize score error well
-        return trained_score(samples, ts) - score(samples, ts)
+        return (trained_score(samples, 1-ts) - score(samples, 1-ts)) # * dispersion(1-ts)
+    elif test_rescaling==2:
+        # This has losses that are numerically sensible, and decrease
+        return jnp.sqrt(var(1-ts)) * (rescaled_score(samples, 1-ts) - jnp.sqrt(var(1-ts)) * score(samples, 1-ts))
+    elif test_rescaling==3:
+        # Check the errors of the scores here. Should really plot absolute errors
+        # This has losses that are numerically sensible, and decrease
+        return rescaled_score(samples, 1-ts) - var(1-ts) * score(samples, 1-ts)
 # return rescaled_score(samples, ts) + jnp.sqrt(var(ts)) * score(samples, ts)
 # return rescaled_score(samples, ts) - jnp.sqrt(var(ts)) * score(samples, ts)
 # return rescaled_score(samples, ts) - var(ts) * score(samples, ts)
@@ -578,6 +596,10 @@ def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_fl
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         trained_score = lambda x, t: model.evaluate(params, x, t)
         rescaled_score = lambda x, t: model.evaluate(params, x, t)
+    elif likelihood_flag==3:
+        # Song's without likelihood rescaling
+        trained_score = lambda x, t: -model.evaluate(params, x, t) / jnp.sqrt(var(t))
+        rescaled_score = lambda x, t: -model.evaluate(params, x, t)
 
     thinning = False
     if thinning is True:
@@ -594,6 +616,7 @@ def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_fl
         test_size = int(5.0**N)
         samples = reverse_sde_t(rng, N, test_size, drift, dispersion, trained_score, train_ts)  # (R, test_size, N)
         ts = train_ts
+        # R corresponds to t=1.0, and don't want to sample to 1-t = 0.0 so we put R-1
         indices = jnp.arange(0, R, dtype=int)
     # Reshape
     ts = ts.reshape(-1, 1)
@@ -603,22 +626,29 @@ def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_fl
     indices = jnp.tile(indices, test_size)
     indices= indices.reshape(-1, 1).flatten()
     samples = samples.reshape(-1, samples.shape[2])
-    q_score = trained_score(samples, ts)
-    p_score = score(samples, ts)
+    # maybe it is better to plot the rescaled score
+    # Need to think carefully about this
+    plot_rescaled_score = 0
+    if plot_rescaled_score==0:
+        q_score = trained_score(samples, 1-ts)
+        p_score = score(samples, 1-ts)
+    elif plot_rescaled_score==1:
+        q_score = rescaled_score(samples, 1-ts)
+        p_score = score(samples, 1-ts) * jnp.sqrt(var(1-ts))
     print("HERE")
     id_print(q_score)
     id_print(p_score)
     print("THERE")
     import matplotlib.pyplot as plt
     cmap = plt.cm.get_cmap('viridis', n_batch)    # n_batch discrete colors
-    colors = cmap(jnp.arange(0, R)/R)
+    colors = cmap(jnp.arange(R)/(R))
     plt.scatter(samples[:, 0], samples[:, 1], c=colors[indices])
     plt.xlim((-3, 3))
     plt.ylim((-3, 3))
     plt.savefig(fpath + "samples_over_t.png")
     plt.close()
-    plt.scatter(q_score[:, 0], p_score[:, 0], label="0")
-    plt.scatter(q_score[:, 1], p_score[:, 1], label="1")
+    plt.scatter(q_score[:, 0][::-1], p_score[:, 0][::-1], c=colors[indices], label="0", alpha=0.1)
+    plt.scatter(q_score[:, 1][::-1], p_score[:, 1][::-1], c=colors[indices], label="1", alpha=0.1)
     plt.xlim((-20.0, 20.0))
     plt.ylim((-20.0, 20.0))
     plt.savefig(fpath + "q_p20.png")
@@ -635,12 +665,17 @@ def plot_errors(params, model, score, rng, N, n_batch, fpath=None, likelihood_fl
     plt.close()
     # Experiment with likelihood rescaling
     test_rescaling = 0
-    if test_rescaling:
+    if test_rescaling==0:
         # Probably not justified
-        return var(ts) * (trained_score(samples, ts) - score(samples, ts))
-    else:
+        return rescaled_score(samples, 1-ts) - jnp.sqrt(var(1-ts)) * score(samples, 1-ts)
+    elif test_rescaling==1:
         # Doesn't seem to minimize score error well
-        return trained_score(samples, ts) - score(samples, ts)
+        return (trained_score(samples, 1-ts) - score(samples, 1-ts))  # * dispersion(1-ts)
+    elif test_rescaling==2:
+        return jnp.sqrt(var(1-ts)) * (rescaled_score(samples, 1-ts) - jnp.sqrt(var(1-ts)) * score(samples, 1-ts))
+    elif test_rescaling==3:
+        # This has losses that are numerically sensible, and decrease
+        return rescaled_score(samples, 1-ts) - var(1-ts) * score(samples, 1-ts)
 
 
 def errors(params, model, rng, batch, likelihood_flag=0):
@@ -674,6 +709,9 @@ def errors(params, model, rng, batch, likelihood_flag=0):
         # Not likelihood rescaling
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         return (noise / stds + model.evaluate(params, x_t, time_samples)) * dispersion(time_samples)
+    elif likelihood_flag==3:
+        # Song's without likelihood rescaling
+        return 1./stds * (noise - model.evaluate(params, x_t, time_samples))
 
 
 def errors_t(t, params, model, rng, batch):

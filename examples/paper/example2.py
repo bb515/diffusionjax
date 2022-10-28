@@ -90,7 +90,7 @@ def main():
                 oracle_loss_function_t = oracle_loss_fn_t
 
     opt_state = optimizer.init(params)
-    N_epochs = 20000
+    N_epochs = 9000
     score_model, params, opt_state, mean_losses = retrain_nn(
         update_step,
         N_epochs, step_rng, mf, score_model, params, opt_state,
@@ -103,6 +103,8 @@ def main():
         trained_score = lambda x, t: -score_model.evaluate(params, x, t) / jnp.sqrt(var(t))
         rescaled_score = lambda x, t: -score_model.evaluate(params, x, t)
     elif likelihood_flag==1:
+        # This is not such a good option, since the scores are large for small t
+        # and 
         # What has worked previously for us, which learns a score
         trained_score = lambda x, t: score_model.evaluate(params, x, t)
         rescaled_score = lambda x, t: score_model.evaluate(params, x, t)
@@ -111,6 +113,11 @@ def main():
         # model evaluate is s(x_t) errors are then scaled by \beta_t
         trained_score = lambda x, t: score_model.evaluate(params, x, t)
         rescaled_score = lambda x, t: score_model.evaluate(params, x, t)
+    elif likelihood_flag==3:
+        # Song's without likelihood rescaling
+        trained_score = lambda x, t: -score_model.evaluate(params, x, t) / jnp.sqrt(var(t))
+        rescaled_score = lambda x, t: -score_model.evaluate(params, x, t)
+
     plot_score(trained_score, 1.00, N, -3, 3, fname=path + "trainedscore100.png")
     plot_score(trained_score, 0.60, N, -3, 3, fname=path + "trainedscore60.png")
     plot_score(trained_score, 0.01, N, -3, 3, fname=path + "trainedscore1.png")
@@ -122,11 +129,10 @@ def main():
     loss_function = flipped_loss_fn
     print("errors", plot_errors(params, score_model, score, rng, N, 32, fpath=path, likelihood_flag=0))
     print(flipped_loss_fn(params, score_model, score, rng, jnp.ones((32, 2))))
-    assert 0
     # # Reset params
     # params = score_model.init(step_rng, mf, time)
     # opt_state = optimizer.init(params)
-    N_epochs = 1000
+    N_epochs = 100
     score_model, params, opt_state, mean_losses = retrain_nn_alt(
         reverse_update_step,
         N_epochs, step_rng, mf, score_model, params, opt_state,
@@ -144,10 +150,10 @@ def main():
     # multiplied by \var(t)
     test_rescaling = 0  # hack. remember to change in utilts.py
     if test_rescaling:
-        trained_score = lambda x, t: score_model.evaluate(params, x, t) / var(t)
+        trained_score = lambda x, t: -score_model.evaluate(params, x, t) / var(t)
     else:
-        trained_score = lambda x, t: score_model.evaluate(params, x, t) / jnp.sqrt(t)
-    print("errors", plot_errors(params, score_model, score, rng, N, 32, fpath=path + "reverse"), likelihood_flag=0)
+        trained_score = lambda x, t: -score_model.evaluate(params, x, t) / jnp.sqrt(t)
+    print("errors", plot_errors(params, score_model, score, rng, N, 32, fpath=path + "reverse", likelihood_flag=0))
     plot_score(trained_score, 1.00, N, -3, 3, fname=path + "reversetrainedscore100.png")
     plot_score(trained_score, 0.60, N, -3, 3, fname=path + "reversetrainedscore60.png")
     plot_score(trained_score, 0.01, N, -3, 3, fname=path + "reversetrainedscore1.png")
