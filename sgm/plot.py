@@ -13,7 +13,6 @@ import seaborn as sns
 sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 import matplotlib.animation as animation
-from sgm.utils import drift, dispersion, train_ts, reverse_sde
 
 
 BG_ALPHA = 1.0
@@ -58,6 +57,7 @@ def plot_video(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):
     ani.save('{}.mp4'.format(fname), writer=writer, dpi=dpi)
 
 
+# TODO: SS
 def plot_OH(forward_density):
     # define data point
     x_0 = 2
@@ -139,7 +139,7 @@ def plot_heatmap(positions, area_min=-3, area_max=3, fname="plot_heatmap"):
     positions: locations of all particles in R^2, array (J, 2)
     area_min: lowest x and y coordinate
     area_max: highest x and y coordinate
- 
+
     will plot a heatmap of all particles in the area [area_min, area_max] x [area_min, area_max]
     """
     def small_kernel(z, area_min, area_max):
@@ -164,7 +164,7 @@ def plot_heatmap(positions, area_min=-3, area_max=3, fname="plot_heatmap"):
     plt.close()
 
 
-def heatmap_image(score, N, n_samps=5000, rng=random.PRNGKey(123), fname="plot_heatmap"):
+def heatmap_image(sde, score, N, n_samples=5000, rng=random.PRNGKey(123), fname="plot_heatmap"):
     rng, step_rng = random.split(rng)
-    samples = reverse_sde(step_rng, N, n_samps, drift, dispersion, score, train_ts)
+    samples = sde.reverse_sde(step_rng, N, n_samples, score)
     plot_heatmap(samples[:, [0,1]], -3, 3, fname=fname)

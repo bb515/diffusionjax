@@ -5,34 +5,11 @@ import flax.linen as nn
 import jax.random as random
 from jax import vmap, jit
 from sgm.utils import (
-    forward_marginals,
-    mean_factor, var, R,
     matrix_inverse, matrix_solve,
     optimizer)
 from functools import partial
 from jax.experimental.host_callback import id_print
 from sgm.utils import update_step as nonlinear_update_step
-
-
-# def S_given_t(mf, t, m_0, C_0):
-#     N = mf.shape[0]
-#     mean_coeff = mean_factor(t)
-#     mean = m_0 * mean_coeff
-#     v = var(t)
-#     L_cov = matrix_cho(mean_coeff**2 * C_0 + v)
-#     return L_cov, mean
-
-
-# def log_pt_factored_t(x, L_cov, mean):
-#     """
-#     Analytical distribution  for normal distribution on the hyperplane.
-#     Requires a linear solve for each x
-#     Requires a cholesky for each t
-
-#     x: One location in R^n, N should be 2 in special case example.
-#     t: time    
-#     """
-#     return -matrix_solve(L_cov, x - mean)
 
 
 class Linear(nn.Module):
@@ -127,95 +104,6 @@ class Cholesky(nn.Module):
         L = h[:, :-1, :]  # (n_batch, N, N)
         H = L.T @ L
         return  jnp.linalg.eig(H)
-
-
-def orthogonal_oracle_loss_fn_t(projection_matrix):
-    """"""
-    def decomposition(t, params, model, m_0, C_0, projection_matrix): 
-        N = jnp.shape(m_0)[0]
-        v_t = var(t)  # (N,)
-        std = jnp.sqrt(v_t)
-        m_t = mean_factor(t)
-        mat = (m_t**2 / std) * C_0 + std
-        mean = m_0 * m_t
-        h = model.apply(params, t, N)  # (N, N+1) which is memory intense
-        mse, residual, intermediate, projection = oracle_loss(h, mat, mean, std, N, projection_matrix)
-        return mse, jnp.array([projection, mse - projection])
-    return lambda t, params, model, m_0, C_0: decomposition(t, params, model, m_0, C_0, projection_matrix)
-
-
-def oracle_loss_fn_t(t, params, model, m_0, C_0):
-    """
-    Analytical distribution  for normal distribution on the hyperplane.
-    Requires a linear solve for each x
-    Requires a cholesky for each t
-
-    x: One location in R^n, N should be 2 in special case example.
-    t: time    
-    """
-    N = jnp.shape(m_0)[0]
-    v_t = var(t)  # (N,)
-    std = jnp.sqrt(v_t)
-    m_t = mean_factor(t)
-    mat = (m_t**2 / std) * C_0 + std
-    mean = m_0 * m_t
-    h = model.apply(params, t, N)  # (N, N+1) which is memory intense
-    mse, residual, intermediate = oracle_loss(h, mat, mean, std, N)
-    return mse
-
-
-def oracle_loss(h, mat, mean, std, N, projection_matrix=None):
-    """
-    arg projection_matrix: Projection matrix
-    """
-    if N == 1:
-        # mat_inv = 1./ mat
-        # L_mat = jnp.sqrt(mat)
-        # return (x - m_0) / mat
-        raise ValueError("Not implemented")
-    else:
-        mat_inv, _ = matrix_inverse(mat, N)
-    mu = h[:, 0][0]
-    H = h[:, 1:][0]
-    residual = - (H @ mean + mu)
-    intermediate = std * (H @ mat + jnp.eye(N))
-    residual_loss = residual.T @ residual
-    #trace_loss = jnp.trace((H @ mat + jnp.eye(N)) @ (2 * std * H).T)
-    # trace_loss = std * jnp.trace(H @ mat @ H.T) + std * jnp.trace(H) + std * jnp.trace(mat_inv)
-    # trace_loss = jnp.einsum('ij, ij -> ', intermediate, H + H)
-    loss = residual_loss  # + trace_loss
-    if projection_matrix is not None:
-        projected_residual = projection_matrix @ residual
-        projected_residual_loss = projected_residual.T @ projected_residual
-        # projected_trace_loss = jnp.einsum('ij, ji -> ', projection_matrix @ intermediate, projection_matrix @ (H + mat_inv))
-        
-        projected = projected_residual_loss # + projected_trace_loss
-        return loss, residual, intermediate, projected
-    else:
-        return loss, residual, intermediate
-
-
-# def oracle_loss_fn(params, model, rng, n_batch, m_0, C_0):
-#     """
-#     Analytical distribution  for normal distribution on the hyperplane.
-#     Requires a linear solve for each x
-#     Requires a cholesky for each t
-# 
-#     x: One location in R^n, N should be 2 in special case example.
-#     t: time
-#     """
-#     N = jnp.shape(m_0)[0]
-#     rng, step_rng = random.split(rng)
-#     # Expectation over t
-#     time_samples = random.randint(step_rng, (n_batch, 1), 1, R) / (R - 1)
-#     v_t = var(time_samples)  # (n_batch, N)
-#     std= jnp.sqr(v_t)
-#     m_t = mean_factor(time_samples)[0]  # (n_batch, N)
-#     mat = (m_t**2 / std) * C_0 + std  # (n_batch, N, N+1)
-#     mean = m_0 * m_t  # (n_batch, N)
-#     h = model.apply(params, time_samples, N)  #  (n_batch, N, N+1) which is quite memory intense
-#     loss, residual, intermediate = oracle_loss(s, mat, mean, std, N)
-#     return loss
 
 
 def train_linear_nn(rng, mf, batch_size, score_model, N_epochs):
