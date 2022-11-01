@@ -5,7 +5,7 @@ Compare samples from the forward and reverse diffusion processes.
 import os
 path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
 
-num_threads = "6"
+num_threads = "8"
 os.environ["OMP_NUM_THREADS"] = num_threads
 os.environ["OPENBLAS_NUM_THREADS"] = num_threads
 os.environ["MKL_NUM_THREADS"] = num_threads
@@ -15,12 +15,6 @@ os.environ["NUMBA_NUM_THREADS"] = num_threads
 os.environ["--xla_cpu_multi_thread_eigen"] = "false"
 os.environ["inta_op_parallelism_threads"] = num_threads
 # XLA_FLAGS="--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1" python my_file.py
-
-# assert 0
-# import tensorflow as tf
-# tf.config.threading.set_intra_op_parallelism_threads(int(num_threads))
-# tf.config.threading.set_inter_op_parallelism_threads(int(num_threads))
-
 
 import jax
 from jax import jit, vmap, grad
@@ -36,14 +30,44 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
+    inverse_scaler,
     get_mf,
     update_step,
     optimizer,
-    train_ts, retrain_nn, beta_t, drift, dispersion,
-    reverse_sde_t, forward_sde_hyperplane_t,
-    forward_sde_t)
+    retrain_nn,
+    forward_sde_hyperplane_t)
 from sgm.non_linear import NonLinear
 from sgm.linear import Matrix
+from sgm.sde import get_sde
+
+# predictor corrector stuff
+from sgm.sampling import EulerMaruyamaPredictor, ReverseDiffusionPredictor, LangevinCorrector
+from sgm.sampling import get_pc_sampler
+from sgm.utils import get_default_configs
+## TODO: temporary
+import flax
+
+
+def get_config():
+  config = get_default_configs()
+  # # training
+  # training = config.training
+  # training.sde = 'vpsde'
+  # training.continuous = True
+  # training.reduce_mean = True
+
+  # sampling
+  sampling = config.sampling
+  sampling.method = 'pc'
+  sampling.predictor = 'reverse_diffusion'
+  sampling.corrector = 'none'
+  ##BB
+  sampling.noise_removal = False
+  sampling.snr = 0.16
+
+  ## data
+  ## model
+  return config
 
 
 def main():
@@ -51,15 +75,6 @@ def main():
     rng, step_rng, step_rng2 = random.split(rng, 3)
     reduce_mean = True
     reduce_op = jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
-
-    # Plot drift and diffusion as functions of time
-
-    plt.plot(train_ts, beta_t(train_ts))
-    plt.savefig(path + "drift")
-    plt.close()
-    plt.plot(train_ts, dispersion(train_ts))
-    plt.savefig(path + "dispersion")
-    plt.close()
 
     # The data can be for example, pixels in an image, described by a single point in Euclidean space
     # Jstart = 2
@@ -73,15 +88,20 @@ def main():
     J_test = [100]
     M = 1
     N = 2
-    data_strings = ["hyperplane", "multimodal_hyperplane_mvn"]
-    data_string = data_strings[1]
-    _, test_data, *_ = get_mf(
-        data_string, Js=J_test, J_true=J_test[0], M=M, N=N)
-    mfs, mf_true, m_0, C_0, tangent_basis, projection_matrix = get_mf(data_string, Js=Js, J_true=Js[-1], M=M, N=N)
+    data_strings = ["hyperplane_mvn", "multimodal_hyperplane_mvn"]
+    data_string = data_strings[0]
+    # tangent_basis = 1.0 * jnp.array([0., 1.])
+    tangent_basis = 3.0 * jnp.array([1./jnp.sqrt(2) , 1./jnp.sqrt(2)])
+    m_0 = jnp.zeros(N)
+    C_0 = jnp.array([[1.0, 0.0], [0.0, 1.0]])
+    _, test_data, *_ = get_mf(tangent_basis, m_0, C_0, data_string, Js=J_test, J_true=J_test[0], M=M, N=N)
+    mfs, mf_true, projection_matrix = get_mf(tangent_basis, m_0, C_0, data_string, Js=Js, J_true=Js[-1], M=M, N=N)
+    mf = mfs['{:d}'.format(Js[0])]
 
-
-    plt.scatter(mfs["{:d}".format(Js[0])][:, 0], mfs["{:d}".format(Js[0])][:, 1])
-    plt.savefig(path + "scatter.png")
+    plt.scatter(mf_true[:, 0], mf_true[:, 1], label="mf", alpha=0.01)
+    plt.scatter(mf[:, 0], mf[:, 1], label="data")
+    plt.legend()
+    plt.savefig(path + "mf_data.png")
     plt.close()
 
     architectures = ["non_linear", "matrix", "cholesky"]
@@ -97,26 +117,30 @@ def main():
 
     colors = plt.cm.jet(jnp.linspace(0,1,Jnum))
 
+    # Get sde model
+    sde = get_sde("OU")
+
     # Get functions that return loss
     decomposition = False
     if decomposition:
         # Plot projected and orthogonal components of loss
-        from sgm.utils import orthogonal_loss_fn, orthogonal_loss_fn_t
-        loss_function = orthogonal_loss_fn(projection_matrix)
-        loss_function_t = orthogonal_loss_fn_t(projection_matrix)
+        from sgm.losses import sde_projected_loss_fn
+        loss_fn = get_projected_loss_fn(projection_matrix, sde, score_model, score_scaling=True, likelihood_weighting=False)
+        loss_fn_t = get_projected_loss_fn(projection_matrix, sde, score_model, score_scaling=True, likelihood_weighting=False, pointwise_t=True)
         if architecture in ["matrix", "cholesky"]:
-            from sgm.linear import orthogonal_oracle_loss_fn_t
-            oracle_loss_function_t = orthogonal_oracle_loss_fn_t(projection_matrix)
+            from sgm.losses import get_oracle_loss_fn
+            oracle_loss_fn = get_oracle_loss_fn(sde, score_model, m_0, C_0, score_scaling=True, likelihood_weighting=False, projection_matrix=projection_matrix)
+            oracle_loss_fn_t = get_oracle_loss_fn(sde, score_model, m_0, C_0, score_scaling=True, likelihood_weighting=False, pointwise_t=True, projection_matrix=projection_matrix)
     else:
-        from sgm.utils import loss_fn
-        from sgm.utils import loss_fn_t
-        from sgm.linear import oracle_loss_fn_t
-        loss_function = loss_fn
-        loss_function_t = loss_fn_t
+        from sgm.losses import get_loss_fn
+        loss_fn = get_loss_fn(sde, score_model, score_scaling=True, likelihood_weighting=False)
+        loss_fn_t = get_loss_fn(sde, score_model, score_scaling=True, likelihood_weighting=False, pointwise_t=True)
         if architecture in ["matrix", "cholesky"]:
-            oracle_loss_function_t = oracle_loss_fn_t
+            from sgm.losses import get_oracle_loss_fn
+            oracle_loss_fn = get_oracle_loss_fn(sde, score_model, m_0, C_0, score_scaling=True, likelihood_weighting=False)
+            oracle_loss_fn_t = get_oracle_loss_fn(sde, score_model, m_0, C_0, score_scaling=True, likelihood_weighting=False, pointwise_t=True)
 
-    N_epochs = 10000
+    N_epochs = 100  # 10000
     for i, train_size in enumerate(Js):
         mf = mfs["{:d}".format(train_size)]
         train_size = mf.shape[0]
@@ -134,17 +158,40 @@ def main():
         score_model, params, opt_state, mean_losses = retrain_nn(
             update_step,
             N_epochs, step_rng, mf, score_model, params, opt_state,
-            loss_function, batch_size, decomposition=decomposition)
+            loss_fn, batch_size, decomposition=decomposition)
 
         trained_score = lambda x, t: score_model.evaluate(params, x, t)
 
         rng, step_rng = random.split(rng)
         for j, test_size in enumerate(J_test):
-            q_samples = reverse_sde_t(step_rng, N, test_size, drift, dispersion, trained_score, train_ts)
+            # sampling
+            random_seed = 0
+            shape = (batch_size, N)  # expected shape of a single sample
+            predictor = ReverseDiffusionPredictor
+            corrector = LangevinCorrector
+            snr = 0.16
+            n_steps = 1
+            probability_flow = False
+            sampling_eps = 1e-3
+            config = get_config()
+            sampling_fn = get_pc_sampler(
+                sde, score_model, shape, predictor, corrector,
+                inverse_scaler, snr, n_steps=n_steps,
+                probability_flow=probability_flow,
+                continuous=config.training.continuous,
+                eps=sampling_eps)
+            rng, step_rng = random.split(rng)
+            step_rng = jnp.asarray(step_rng)
+            # This is gonna be a problem
+            pstate = flax.jax_utils.replicate(state)
+            x, n = sampling_fn(step_rng, pstate)
+            assert 0
+
+            q_samples = sde.reverse_sde_t(step_rng, N, test_size, trained_score, sde.train_ts)
             q_samples = q_samples.transpose(0, 2, 1)[1:]
             #forward_sde_hyperplane = jit(vmap(lambda t: forward_sde_hyperplane_t(t, rng, test_size, m_0, C_0), in_axes=(0), out_axes=(0)))
             rng, step_rng = random.split(rng)
-            p_samples, i = forward_sde_t(test_data, rng, N, test_size, drift, dispersion, train_ts)
+            p_samples, i = sde.forward_sde_t(test_data, rng, N, test_size, sde.train_ts)
             p_samples = p_samples.transpose(0, 2, 1)[:-1]
             # Compute average mean squared distance between the samples
             # TODO with the projection matrix at hand, finding the distances should be easier than below
@@ -163,17 +210,17 @@ def main():
             distance_qs = jnp.linalg.norm(perpendicular_q_samples, axis=1)
             distance_p = jnp.mean(distance_ps, axis=1)
             distance_q = jnp.mean(distance_qs, axis=1)
-            plt.plot(train_ts[::-1][1:], distance_qs[:], color='k', alpha=0.2)
+            plt.plot(sde.train_ts[::-1][1:], distance_qs[:], color='k', alpha=0.2)
             plt.savefig(path + "testqparallel.png")
             plt.close()
 
-            plt.plot(train_ts[::-1][1:], distance_p_q[:], label='q')
-            plt.plot(train_ts[:-1], distance_p_p[:], label='p')
+            plt.plot(sde.train_ts[::-1][1:], distance_p_q[:], label='q')
+            plt.plot(sde.train_ts[:-1], distance_p_p[:], label='p')
             plt.legend()
             plt.savefig(path + "testparallel.png")
             plt.close()
-            plt.plot(train_ts[::-1][1:], distance_q[:], label='q')
-            plt.plot(train_ts[:-1], distance_p[:], label='p')
+            plt.plot(sde.train_ts[::-1][1:], distance_q[:], label='q')
+            plt.plot(sde.train_ts[:-1], distance_p[:], label='p')
             plt.legend()
             plt.savefig(path + "testperpendicular.png")
             plt.close()
@@ -183,26 +230,26 @@ def main():
             p_losses = reduce_op(distance_p_samples.reshape((distance_p_samples.shape[0], -1)), axis=-1)
             q_losses = reduce_op(distance_q_samples.reshape((distance_q_samples.shape[0], -1)), axis=-1)
 
-            plt.plot(train_ts[:-1], p_losses, label='p')  # , color=colors[i])
-            plt.plot(train_ts[::-1][:-1], q_losses, '--', label='q')  # , color=colors[i])
+            plt.plot(sde.train_ts[:-1], p_losses, label='p')  # , color=colors[i])
+            plt.plot(sde.train_ts[::-1][:-1], q_losses, '--', label='q')  # , color=colors[i])
             plt.ylim(0.0, 1.1)
             plt.savefig(path + "test_perp.png")
             plt.close()
 
             distance_p_samples = p_samples[:, 0, :]
             distance_q_samples = q_samples[:, 0, :]
-            plt.plot(train_ts[:-1], distance_p_samples[:, :100])
+            plt.plot(sde.train_ts[:-1], distance_p_samples[:, :100])
             plt.savefig(path + "testpparallel.png")
             plt.close()
-            plt.plot(train_ts[::-1][:-1], distance_q_samples[:, :100])
+            plt.plot(sde.train_ts[::-1][:-1], distance_q_samples[:, :100])
             plt.savefig(path + "testqparallel.png")
             plt.close()
             distance_p_samples = distance_p_samples**2
             distance_q_samples = distance_q_samples**2
             p_losses = reduce_op(distance_p_samples.reshape((distance_p_samples.shape[0], -1)), axis=-1)
             q_losses = reduce_op(distance_q_samples.reshape((distance_q_samples.shape[0], -1)), axis=-1)
-            plt.plot(train_ts[:-1], p_losses, label='p')  # , color=colors[i])
-            plt.plot(train_ts[::-1][:-1], q_losses, '--', label='q')  # , color=colors[i])
+            plt.plot(sde.train_ts[:-1], p_losses, label='p')  # , color=colors[i])
+            plt.plot(sde.train_ts[::-1][:-1], q_losses, '--', label='q')  # , color=colors[i])
             plt.ylim(0.0, 1.1)
             plt.savefig(path + "test_parallel.png")
             plt.close()
