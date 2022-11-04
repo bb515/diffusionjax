@@ -32,18 +32,6 @@ class SDE(abc.ABC):
         """Parameters to determine the marginal distribution of the SDE, $p_t(x)$."""
         pass
 
-    def simulate(rng, N, n_samples, discretize):
-        def f(carry, params):
-            t, dt = params
-            x, rng = carry
-            rng, step_rng = jax.random.split(rng)
-            z = random.normal(step_rng, x.shape)
-            f, G = discretize(x, t)
-            x = x + f + G * z
-            return (x, rng), ()
-        rng, step_rng = random.split(rng)
-        initial = random.noral(step_rng, (n_samples, N))
-        (x, _), _ = scan(f)
 
     def discretize(self, x, t):
         """Discretize the SDE in the form: x_{i+1} = x_{i} + f_i(x_i) + G_i z_i
@@ -58,7 +46,7 @@ class SDE(abc.ABC):
         Returns:
             f, G
         """
-        dt = 1. / self.N
+        dt = 1. / self.n_steps
         drift, diffusion = self.sde(x, t)
         f = drift * dt
         G = diffusion * jnp.sqrt(dt)
@@ -178,20 +166,23 @@ class OU(SDE):
         score_fn: A time-dependent score-based model that takes x and t and returns the score.
         probability_flow: If `True`, create the reverse-time ODE used for probability flow sampling.
         """
-        N = self.N
+        n_steps = self.n_steps
         sde_fn = self.sde
+        discretize_fn = self.discretize
+        train_ts = self.train_ts  # definately there is a better way of doing this
 
         class RSDE(self.__class__):
 
             def __init__(self):
-                self.N = N
+                self.n_steps = n_steps
                 self.probability_flow = probability_flow
+                self.train_ts = train_ts
 
-                def sde(self, x, t):
-                    """Create the drift adn diffusion functions for the reverse SDE/ODE."""
-                    drift, diffusion = sde_fn(x, t)
-                    score = score_fn(x, t)
-                    drift = drift - diffusion**2 * score * (0.5 if self.probability_flow else 1.)
+            def sde(self, x, t):
+                """Create the drift adn diffusion functions for the reverse SDE/ODE."""
+                drift, diffusion = sde_fn(x, t)
+                score = score_fn(x, t)
+                drift = drift - diffusion**2 * score * (0.5 if self.probability_flow else 1.)
                 # Set the diffusion function to zero for ODEs
                 diffusion = jnp.zeros_like(diffusion) if self.probability_flow else diffusion
                 return drift, diffusion
@@ -200,7 +191,7 @@ class OU(SDE):
                 """Create discretized iteration rules for the reverse diffusion sampler."""
                 f, G = discretize_fn(x, t)
                 rev_f = f - G**2 * score_fn(x, t) * (0.5 if self.probability_flow else 1.)
-                ref_G = jnp.zeros_like(G) if self.probability_flow else G
+                rev_G = jnp.zeros_like(G) if self.probability_flow else G
                 return rev_f, rev_G
 
         return RSDE()

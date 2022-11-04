@@ -30,7 +30,8 @@ sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 from sgm.plot import plot_score_ax, plot_score_diff
 from sgm.utils import (
-    inverse_scaler,
+    get_score_fn, 
+    get_solver,
     get_mf,
     update_step,
     optimizer,
@@ -39,13 +40,6 @@ from sgm.utils import (
 from sgm.non_linear import NonLinear
 from sgm.linear import Matrix
 from sgm.sde import get_sde
-
-# predictor corrector stuff
-from sgm.sampling import EulerMaruyamaPredictor, ReverseDiffusionPredictor, LangevinCorrector
-from sgm.sampling import get_pc_sampler
-from sgm.utils import get_default_configs
-## TODO: temporary
-import flax
 
 
 def get_config():
@@ -160,31 +154,18 @@ def main():
             N_epochs, step_rng, mf, score_model, params, opt_state,
             loss_fn, batch_size, decomposition=decomposition)
 
-        trained_score = lambda x, t: score_model.evaluate(params, x, t)
+        score_fn = get_score_fn(sde, score_model, params, score_scaling=True)
+        rsde = sde.reverse(score_fn)
 
+        f, g = rsde.discretize(jnp.array([[0.0, 0.0], [0.1, -0.1]]), jnp.array([0.5, 0.5]))
+        print(f)
+        print(g)
+
+        solve = get_solver(rsde, pointwise_t=True)
         rng, step_rng = random.split(rng)
         for j, test_size in enumerate(J_test):
-            # sampling
-            random_seed = 0
-            shape = (batch_size, N)  # expected shape of a single sample
-            predictor = ReverseDiffusionPredictor
-            corrector = LangevinCorrector
-            snr = 0.16
-            n_steps = 1
-            probability_flow = False
-            sampling_eps = 1e-3
-            config = get_config()
-            sampling_fn = get_pc_sampler(
-                sde, score_model, shape, predictor, corrector,
-                inverse_scaler, snr, n_steps=n_steps,
-                probability_flow=probability_flow,
-                continuous=config.training.continuous,
-                eps=sampling_eps)
-            rng, step_rng = random.split(rng)
-            step_rng = jnp.asarray(step_rng)
-            # This is gonna be a problem
-            pstate = flax.jax_utils.replicate(state)
-            x, n = sampling_fn(step_rng, pstate)
+            q_samples = solve(step_rng, N, test_size, sde.train_ts)
+            print(q_samples)
             assert 0
 
             q_samples = sde.reverse_sde_t(step_rng, N, test_size, trained_score, sde.train_ts)
