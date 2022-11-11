@@ -1,3 +1,6 @@
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 import jax
 from jax import jit
 import jax.numpy as jnp
@@ -46,33 +49,33 @@ def main():
     plt.plot(Js, wasserstein_generated_analytic, label="wasserstein_generated_analytic")
     plt.plot(Js, wasserstein_train_analytic, label="twasserstein_train_analytic")
     plt.legend()
-    plt.savefig("lineplot.png")
+    plt.savefig(path + "lineplot.png")
     plt.xscale("log")
-    plt.savefig("lineplot_log.png")
+    plt.savefig(path + "lineplot_log.png")
     plt.close()
 
     plt.title(r"$\ell^{2}$ distance to hyperplane")
     plt.plot(Js, wasserstein_generated_train)
     plt.xscale("log")
-    plt.savefig("lineplot_log_sm_mf.png")
+    plt.savefig(path + "lineplot_log_sm_mf.png")
     plt.close()
 
     plt.title("Wasserstein distance between empirical distribution and samples")
     plt.plot(Js, average_distance_to_hyperplanes)
     plt.xscale("log")
-    plt.savefig("lineplot_log_sm_td.png")
+    plt.savefig(path + "lineplot_log_sm_td.png")
     plt.close()
 
     plt.title("Wasserstein distance between samples and normal")
     plt.plot(Js, wasserstein_generated_analytic)
     plt.xscale("log")
-    plt.savefig("lineplot_log_sm_no.png")
+    plt.savefig(path + "lineplot_log_sm_no.png")
     plt.close()
 
     plt.title("Wasserstein distance between empirical distribution and normal")
     plt.plot(Js, wasserstein_generated_train)
     plt.xscale("log")
-    plt.savefig("lineplot_log_tf_no.png")
+    plt.savefig(path + "lineplot_log_tf_no.png")
     plt.close()
 
 

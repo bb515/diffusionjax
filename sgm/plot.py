@@ -13,7 +13,6 @@ import seaborn as sns
 sns.set_style("darkgrid")
 cm = sns.color_palette("mako_r", as_cmap=True)
 import matplotlib.animation as animation
-from sgm.utils import drift, dispersion, train_ts, reverse_sde
 
 
 BG_ALPHA = 1.0
@@ -26,7 +25,7 @@ FG_ALPHA = 0.4
 #     "font.sans-serif": ["Helvetica"]})
 
 
-def plot_samples(x, index, lims=None):
+def plot_samples(x, index, fname="samples.png", lims=None):
     fig, ax = plt.subplots(1, 1)
     fig.patch.set_facecolor('white')
     fig.patch.set_alpha(BG_ALPHA)
@@ -42,10 +41,9 @@ def plot_samples(x, index, lims=None):
     plt.gca().set_aspect('equal', adjustable='box')
     plt.draw()
     fig.savefig(
-        "samples_x{}_x{}.png".format(index[0], index[1]),
+        fname,
         facecolor=fig.get_facecolor(), edgecolor='none')
     plt.close()
-
 
 
 def plot_video(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):
@@ -59,6 +57,7 @@ def plot_video(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):
     ani.save('{}.mp4'.format(fname), writer=writer, dpi=dpi)
 
 
+# TODO: SS
 def plot_OH(forward_density):
     # define data point
     x_0 = 2
@@ -75,38 +74,7 @@ def plot_OH(forward_density):
     return 0
 
 
-# def error_scores(mf, m_0, C_0, area_min=-1, area_max=1):
-#     """
-#     Returns 
-#     """
-#     D = 16
-#     x = jnp.linspace(area_min, area_max, D)
-#     x, y = jnp.meshgrid(x, x)
-#     grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
-#     t = jnp.ones((grid.shape[0], 1)) * t
-#     errors = jnp.empty(D, R)
-#     x = jnp.linspace(-3, 3, D)
-#     for i, t in enumerate(train_ts):
-#         # Need a cholesky for each t so do loop
-#         L_cov, mean = S_given_t(mf, t, m_0, C_0)
-#         errors[:, i] = error_score_given_t(mf, x, t, L_cov, mean)
-#     return errors
-
-
-# def error_scores_vmap(mf, m_0, C_0, area_min=-1, area_max=1):
-#     """
-#     Returns 
-#     """
-#     D = 16
-#     x = jnp.linspace(area_min, area_max, D)
-#     x, y = jnp.meshgrid(x, x)
-#     grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
-#     t = jnp.ones((grid.shape[0], 1)) * t
-#     x = jnp.linspace(-3, 3, D)
-#     return error_score(mf, x, t, m_0, C_0) 
-
-
-def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score.pdf"):
+def plot_score(score, t, N, area_min=-1, area_max=1, fname="plot_score"):
     if N != 2:
         raise ValueError("WARNING: This function expects the score to be a function R² -> R²")
     #this helper function is here so that we can jit it.
@@ -166,12 +134,12 @@ def plot_score_diff(ax, score1, score2, t, N, area_min=-1, area_max=1, fname="pl
     ax.quiver(grid[:, 0], grid[:, 1], diff[:, 0], diff[:, 1], angles='xy', scale_units='xy', scale=0.05)
 
 
-def plot_heatmap(positions, area_min=-3, area_max=3):
+def plot_heatmap(positions, area_min=-3, area_max=3, fname="plot_heatmap"):
     """
     positions: locations of all particles in R^2, array (J, 2)
     area_min: lowest x and y coordinate
     area_max: highest x and y coordinate
- 
+
     will plot a heatmap of all particles in the area [area_min, area_max] x [area_min, area_max]
     """
     def small_kernel(z, area_min, area_max):
@@ -192,11 +160,11 @@ def plot_heatmap(positions, area_min=-3, area_max=3):
     plt.imshow(hm, cmap=cm, interpolation='nearest', extent=extent)
     ax = plt.gca()
     ax.invert_yaxis()
-    plt.savefig("plot_heatmap.pdf")
+    plt.savefig(fname)
     plt.close()
 
 
-def heatmap_image(score, N, n_samps=5000, rng=random.PRNGKey(123)):
+def heatmap_image(sde, score, N, n_samples=5000, rng=random.PRNGKey(123), fname="plot_heatmap"):
     rng, step_rng = random.split(rng)
-    samples = reverse_sde(step_rng, N, n_samps, drift, dispersion, score, train_ts)
-    plot_heatmap(samples[:, [0,1]], -3, 3)
+    samples = sde.reverse_sde(step_rng, N, n_samples, score)
+    plot_heatmap(samples[:, [0,1]], -3, 3, fname=fname)

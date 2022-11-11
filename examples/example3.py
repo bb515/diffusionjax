@@ -1,3 +1,6 @@
+import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 from ensurepip import bootstrap
 import jax
 from jax import jit
@@ -98,7 +101,7 @@ def main():
             plt.title("Samples of x, plotted as images")
             plt.ylabel(r"$x_{i}$")
             plt.xlabel("'pixel' space")
-            plt.savefig("tmp1.png")
+            plt.savefig(path + "tmp1.png")
             plt.close()
 
             fig = plt.figure()
@@ -111,7 +114,7 @@ def main():
             xlim2 = ax.get_xlim()
             plt.grid()
             plt.title("mf")
-            plt.savefig("tmp0.png")
+            plt.savefig(path + "tmp0.png")
             plt.close()
 
             train_size = mf.shape[0]
@@ -150,7 +153,7 @@ def main():
                 ax.set_ylabel("Loss component")
                 ax.set_xlabel("Number of epochs")
                 plt.legend()
-                plt.savefig("losses1.png")
+                plt.savefig(path + "losses1.png")
                 plt.close()
             else:
                 fig, ax = plt.subplots(1)
@@ -158,7 +161,7 @@ def main():
                 ax.plot(mean_losses[:])
                 ax.set_ylabel("Loss")
                 ax.set_xlabel("Number of epochs")
-                plt.savefig("losses0.png")
+                plt.savefig(path + "losses0.png")
                 plt.close()
 
             if model in ["non_linear", "linear"]:
@@ -180,7 +183,7 @@ def main():
             ax.scatter(samples[:, 0], samples[:, 1])
             ax.scatter(samples[:, 0], samples[:, 2])
             plt.title("learned mf")
-            plt.savefig("tmp2.png")
+            plt.savefig(path + "tmp2.png")
             plt.close()
 
             fig = plt.figure()
@@ -194,7 +197,7 @@ def main():
             plt.title("Samples of x, plotted as images")
             plt.ylabel(r"$x_{i}$")
             plt.xlabel("'pixel' space")
-            plt.savefig("tmp3.png")
+            plt.savefig(path + "tmp3.png")
             plt.close()
 
             # Calculate the MMD with a polynomial kernel
@@ -217,7 +220,7 @@ def main():
             plt.title(r"Bootstrap $\ell_2$ norm error in sample mean")
             plt.ylabel("count")
             plt.xlabel(r"$\|E(x) - m_0\|_2$")
-            plt.savefig("error_mean.png")
+            plt.savefig(path + "error_mean.png")
             plt.close()
 
             empirical_cov = jnp.zeros((n_bootstraps, N, N))
@@ -243,7 +246,7 @@ def main():
             plt.title(r"Bootstrap Frobenius norm of the error in sample covariance")
             plt.ylabel("count")
             plt.xlabel(r"$\|E(x x^{T}) - C_0 \|_2$")
-            plt.savefig("error_cov.png")
+            plt.savefig(path + "error_cov.png")
             plt.close()
             assert 0
             error_means.append(error_mean)
@@ -267,40 +270,40 @@ def main():
     # plt.plot(Ns, error_means_mean, label="Frobenius norm")
     plt.errorbar(Ns, error_means_mean, yerr=error_means_std, label=r"Frobenius norm $m_{0} - m_{est}$")
     plt.legend()
-    plt.savefig("error_mean.png")
+    plt.savefig(path + "error_mean.png")
     plt.xscale("log")
     plt.yscale("log")
-    plt.savefig("error_mean_log.png")
+    plt.savefig(path + "error_mean_log.png")
     plt.close()
 
     plt.title("error in cov")
     # plt.plot(Ns, error_covs, label="Frobenius norm")
     plt.errorbar(Ns, error_covs_mean, yerr=error_covs_std, label=r"Frobenius norm $C_{0} - C_{est}$")
     plt.legend()
-    plt.savefig("error_cov.png")
+    plt.savefig(path + "error_cov.png")
     plt.xscale("log")
     plt.yscale("log")
-    plt.savefig("error_cov_log.png")
+    plt.savefig(path + "error_cov_log.png")
     plt.close()
 
     plt.title("error in mean")
     # plt.plot(Ns, jnp.array(error_means) / jnp.array(Ns), label="Frobenius norm")
     plt.errorbar(Ns, error_means_mean / jnp.array(Ns), yerr=error_means_std / jnp.array(Ns), label=r"Frobenius norm $C_{0} - C_{est}$")
     plt.legend()
-    plt.savefig("error_mean_N.png")
+    plt.savefig(path + "error_mean_N.png")
     plt.xscale("log")
     plt.yscale("log")
-    plt.savefig("error_mean_N_log.png")
+    plt.savefig(path + "error_mean_N_log.png")
     plt.close()
 
     plt.title("error in cov")
     # plt.plot(Ns, jnp.array(error_covs) / jnp.array(Ns), label="Frobenius norm")
     plt.errorbar(Ns, error_covs_mean / jnp.array(Ns), yerr=error_covs_std / jnp.array(Ns), label=r"Frobenius norm $C_{0} - C_{est}$")
     plt.legend()
-    plt.savefig("error_cov_N.png")
+    plt.savefig(path + "error_cov_N.png")
     plt.xscale("log")
     plt.yscale("log")
-    plt.savefig("error_cov_N_log.png")
+    plt.savefig(path + "error_cov_N_log.png")
     plt.close()
 
 

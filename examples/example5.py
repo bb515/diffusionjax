@@ -1,4 +1,6 @@
 import os
+path = os.path.join(os.path.expanduser('~'), 'sync', 'exp/')
+
 os.environ["OMP_NUM_THREADS"] = "6" # export OMP_NUM_THREADS=4
 os.environ["OPENBLAS_NUM_THREADS"] = "6" # export OPENBLAS_NUM_THREADS=4 
 os.environ["MKL_NUM_THREADS"] = "6" # export MKL_NUM_THREADS=6
@@ -44,7 +46,7 @@ def main():
     # mf = sample_hyperplane(J, M, N)
     mf_true = sample_hyperplane(J_true, M, N)
     plt.scatter(mf[:, 0], mf[:, 1])
-    plt.savefig("scatter.png")
+    plt.savefig(path + "scatter.png")
     plt.close()
 
     # lim_tuple = (xlim_max, ylim_min_1, ylim_max_3, ylim_min_3, ylim_max_4, ylim_min_4)
@@ -120,7 +122,7 @@ def main():
             bottom=False,      # ticks along the bottom edge are off
             top=False,         # ticks along the top edge are off
             labelbottom=False)
-        # plt.savefig("plot_scorediff{}".format(i))
+        # plt.savefig(path + "plot_scorediff{}".format(i))
         return ((ax1, ax2), (ax3, ax4))
 
     fig, ax = plt.subplots(_J, _K, figsize=(10,5))
@@ -184,7 +186,7 @@ def main():
         ax.set_ylabel("Loss component")
         ax.set_xlabel(r"$t$")
         plt.legend()
-        plt.savefig("losses_t1.png")
+        plt.savefig(path + "losses_t1.png")
         plt.close()
 
         # eval_true = lambda t: evaluate_step(t, params, rng, mf_true, score_model, loss_function_t, has_aux=True)
@@ -206,7 +208,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t1d.png")
+        plt.savefig(path + "losses_t1d.png")
         plt.close()
 
     else:
@@ -222,7 +224,7 @@ def main():
         ax.plot(train_ts, fx[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel(r"$t$")
-        plt.savefig("losses_t0.png")
+        plt.savefig(path + "losses_t0.png")
         plt.close()
 
         # eval_true = lambda t: evaluate_step(t, params, rng, mf_true, score_model, loss_function_t, has_aux=True)
@@ -243,7 +245,7 @@ def main():
         # ax.set_xscale("log")
         # ax.set_yscale("log")
         plt.legend()
-        plt.savefig("losses_t0d.png")
+        plt.savefig(path + "losses_t0d.png")
         plt.close()
 
     assert 0
@@ -256,7 +258,7 @@ def main():
         ax.set_ylabel("Loss component")
         ax.set_xlabel("Number of epochs")
         plt.legend()
-        plt.savefig("losses1.png")
+        plt.savefig(path + "losses1.png")
         plt.close()
     else:
         fig, ax = plt.subplots(1)
@@ -264,7 +266,7 @@ def main():
         ax.plot(mean_losses[:])
         ax.set_ylabel("Loss")
         ax.set_xlabel("Number of epochs")
-        plt.savefig("losses0.png")
+        plt.savefig(path + "losses0.png")
         plt.close()
 
     trained_score = jit(lambda x, t: score_model.apply(params, x, t))
