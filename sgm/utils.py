@@ -1,291 +1,66 @@
 import jax.numpy as jnp
-import jax
-# enable 64 precision
-# from jax.config import config
-# config.update("jax_enable_x64", True)
-jax.config.update('jax_platform_name', 'cpu')
-from jax.experimental.host_callback import id_print
-import matplotlib.pyplot as plt
 from jax.lax import scan
-from jax import grad, jit, vmap
+from jax import vmap, jit, grad, value_and_grad
 import jax.random as random
 from functools import partial
-from scipy.stats import norm
-# from scipy.stats import qmc
-from jax.scipy.special import logsumexp
-from jax.scipy.linalg import cholesky
-from jax.scipy.linalg import solve_triangular
-import flax.linen as nn
 import optax
-import scipy
-import seaborn as sns
-sns.set_style("darkgrid")
-cm = sns.color_palette("mako_r", as_cmap=True)
-import numpy as np  # for plotting
-# For sampling from MVN
-from mlkernels import Linear
-import lab as B
-# For configs
-import ml_collections
+import flax.linen as nn
 
-rng = random.PRNGKey(123)
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
 
 
-def get_solver(sde, pointwise_t=False):
-    """Temporary method for getting an Euler-Maruyama solver."""
-    discretize = sde.discretize
-    train_ts = sde.train_ts
+class NonLinear(nn.Module):
+    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
 
-    if not pointwise_t:
-        @partial(jit, static_argnums=[1,2])  #  removed 1 because that's N
-        def solve(rng, N, n_samples):
-            def f(carry, params):
-                t = params
-                x, rng = carry
-                rng, step_rng = jax.random.split(rng)
-                z = random.normal(step_rng, x.shape)
-                f, G = discretize(x, t)
-                x = x + f + G * z
-                return (x, rng), ()
-            rng, step_rng = random.split(rng)
-            initial = random.noral(step_rng, (n_samples, N))
-            params = train_ts  # TODO should I restrict ts
-            (x, _), _ = scan(f, (initial, x), params)
-    else:
-        @partial(jit, static_argnums=[1,2])  # removed 1 because that's N
-        def solve(rng, N, n_samples, ts):
-            def f(carry, params):
-                t = params
-                x, xs, i, rng = carry
-                i += 1
-                rng, step_rng = jax.random.split(rng)
-                z = random.normal(step_rng, x.shape)
-                f, G = discretize(x, t)
-                x = x + f + G * z
-                xs = xs.at[i, :, :].set(x)
-                return (x, xs, i, rng), ()
-            rng, step_rng = random.split(rng)
-            initial = random.normal(step_rng, (n_samples, N))
-            params = ts  # TODO need to limit ts?
-            xs = jnp.empty((jnp.size(ts), n_samples, N))
-            (_, xs, _, _), _ = scan(f, (initial, xs, 0, rng), params)
-            return xs
-    return solve
+    @nn.compact
+    def __call__(self, x, t):
+        in_size = x.shape[1]
+        n_hidden = 256
+        act = nn.relu
+        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
+        x = jnp.concatenate([x, t], axis=1)
+        x = nn.Dense(n_hidden)(x)
+        x = nn.relu(x)
+        x = nn.Dense(n_hidden)(x)
+        x = nn.relu(x)
+        x = nn.Dense(n_hidden)(x)
+        x = nn.relu(x)
+        x = nn.Dense(in_size)(x)
+        return x
 
-
-@partial(jax.jit, static_argnames=['N'])  # TODO: keep this here?
-def matrix_inverse(matrix, N):
-    L_cov = cholesky(matrix, lower=True)
-    L_covT_inv = solve_triangular(L_cov, jnp.eye(N), lower=True)
-    cov = solve_triangular(L_cov.T, L_covT_inv, lower=False)
-    return cov, L_cov
-
-
-@partial(jax.jit)
-def matrix_cho(matrix):
-    L_cov = cholesky(matrix, lower=True)
-    return L_cov
-
-
-@partial(jax.jit)
-def matrix_solve(L_cov, b):
-    x = solve_triangular(
-        L_cov, b, lower=True)
-    return x
-
-
-def inverse_scaler(x):
-    """TODO make this better"""
-    return x
-
-
-def orthogonal_projection_matrix(tangent):
-    return 1./ jnp.linalg.norm(tangent) * jnp.array([[tangent[0]**2, tangent[0] * tangent[1]], [tangent[0] * tangent[1], tangent[1]**2]])
-
-
-def sample_mvn(J, N, kernel=Linear(), m_0=0.0):
-    """
-    J: How many samples to generate
-    N: Dimension of the embedding space
-    Returns a (J, N) array of samples
-    """
-    # rng = random.PRNGKey(123)
-    # rng, step_rng = jax.random.split(rng)  # the missing line
-    # sample from an input space
-    # z = np.array(random.normal(step_rng, (N,)))
-    z = np.linspace(-3, 3, N)
-    C_0 = kernel(z)
-    C_0 = B.dense(C_0)
-    manifold = scipy.stats.multivariate_normal.rvs(mean=m_0, cov=C_0, size=J)
-    # Normalization may be necessary because of the unit prior distribution, but must unnormalize later
-    #manifold = manifold - jnp.mean(manifold, axis=0)
-    #manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    marginal_mean = jnp.mean(jnp.mean(manifold, axis=0))
-    manifold = manifold - marginal_mean
-    marginal_std = jnp.max(jnp.std(manifold, axis=0))
-    manifold = manifold / marginal_std
-    return manifold, m_0, C_0, z, marginal_mean, marginal_std
-
-
-def sample_sphere(J, M, N):
-    """
-    J: How many samples to generate
-    M: Dimension of the submanifold
-    N: Dimension of the embedding space
-    Returns a (J, N) array of samples
-    """
-    assert M <= N-1
-    #Implement for other dimensions than two
-    dist = scipy.stats.qmc.MultivariateNormalQMC(mean=jnp.zeros(M+1))
-    manifold = jnp.array(dist.random(J))
-    norms = jnp.sqrt(jnp.sum(manifold**2, axis=1).reshape((J, 1)))
-    manifold = manifold/norms
-    norms = jnp.sum(manifold**2, axis=1).reshape((J, 1))
-    if M+1 < N:
-        manifold = jnp.concatenate([manifold, jnp.zeros((J, N-(M+1)))], axis=1)
-    #normalization
-    manifold = manifold - jnp.mean(manifold, axis=0)
-    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    return manifold
-
-
-def sample_hyperplane_mvn(J, N, C_0, m_0, projection_matrix):
-    """
-    J: How many samples to generate
-    N: Dimension of the embedding space
-    Returns a (J, N) array of samples
-    """
-    rng = random.PRNGKey(123)
-    rng, step_rng = jax.random.split(rng)  # the missing line
-    # sample from an input space
-    manifold = scipy.stats.multivariate_normal.rvs(mean=m_0, cov=C_0, size=J)
-    # Normalization is done in practice because of the unit prior distribution
-    manifold = manifold - jnp.mean(manifold, axis=0)
-    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    # Project onto the manifold
-    manifold = manifold @ projection_matrix.T
-    return manifold
-
-
-def sample_multimodal_mvn(J, N, C_0, m_0, weights):
-    """
-    J is approx number of samples
-    """
-    rng = random.PRNGKey(123)
-    rng, step_rng = jax.random.split(rng)
-    nmodes = jnp.shape(m_0)[0]
-    manifolds = []
-    for i in range(nmodes):
-        print(m_0[i])
-        print(C_0[i])
-        print(int(J * weights[i]))
-        manifolds.append(scipy.stats.multivariate_normal.rvs(mean=m_0[i], cov=C_0[i], size=int(J * weights[i])))
-    manifold = jnp.concatenate(manifolds, axis=0)
-    manifold = manifold - jnp.mean(manifold, axis=0)
-    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    return manifold
-
-
-def sample_multimodal_hyperplane_mvn(J, N, C_0, m_0, weights, projection_matrix):
-    """
-    J: How many samples to generate
-    N: Dimension of the embedding space
-    Returns a (J, N) array of samples
-    """
-    rng = random.PRNGKey(123)
-    rng, step_rng = jax.random.split(rng)  # the missing line
-    nmodes = jnp.shape(m_0)[0]
-    manifolds = []
-    for i in range(nmodes):
-        print(m_0[i])
-        print(C_0[i])
-        print(int(J * weights[i]))
-        manifolds.append(scipy.stats.multivariate_normal.rvs(mean=m_0[i], cov=C_0[i], size=int(J * weights[i])))
-    manifold = jnp.concatenate(manifolds, axis=0)
-    print(jnp.shape(manifold))
-    manifold = manifold - jnp.mean(manifold, axis=0)
-    manifold = manifold / jnp.max(jnp.var(manifold, axis=0))
-    # print(projection_matrix)
-    manifold = manifold @ projection_matrix.T  # transpose since it is right multiplied
-    return manifold
-
-
-def forward_sde_hyperplane_t(t, rng, N_samps, m_0, C_0):
-    # Exact transition kernel for sampling from a OU with Gaussian inital law
-    rng, step_rng = jax.random.split(rng)
-    z = random.normal(step_rng, (m_0.shape[0], N_samps))
-    m_t = mean_factor(t)
-    m_0 = m_0.reshape(-1, 1)
-    v_t = var(t)
-    C = m_t**2 * C_0 + v_t * jnp.eye(jnp.shape(m_0)[0])
-    L_cov = matrix_cho(C)
-    return m_t * m_0 + L_cov @ z
-
-
-def retrain_nn_alt(update_step, N_epochs, rng, mf, score_model, params, opt_state, loss_fn, score, batch_size=5, decomposition=False):
-    if decomposition:
-        L = 2
-    else:
-        L = 1
-    train_size = mf.shape[0]
-    batch_size = min(train_size, batch_size)
-    steps_per_epoch = train_size // batch_size
-    mean_losses = jnp.zeros((N_epochs, L))
-    for i in range(N_epochs):
-        rng, step_rng = random.split(rng)
-        perms = jax.random.permutation(step_rng, train_size)
-        perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
-        perms = perms.reshape((steps_per_epoch, batch_size))
-        losses = jnp.zeros((jnp.shape(perms)[0], L))
-        for j, perm in enumerate(perms):
-            batch = mf[perm, :]
-            rng, step_rng = random.split(rng)
-            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss_fn, score, has_aux=decomposition)
-            if decomposition:
-                loss = loss[1]
-            losses = losses.at[j].set(loss)
-        # TODO: is mean_loss really what I need to plot? Loses the covariance between different directions
-        # For now, don't batch by setting train_size == batch_size == mf.shape[0]
-        mean_loss = jnp.mean(losses, axis=0)
-        mean_losses = mean_losses.at[i].set(mean_loss)
-        if i % 10 == 0:
-            if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
-            if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
-    return score_model, params, opt_state, mean_losses
+    def evaluate(self, params, x_t, times):
+        return self.apply(params, x_t, times)  # score_t * std_t
 
 
 def retrain_nn(
-        update_step, N_epochs, rng, mf, score_model, params,
+        update_step, num_epochs, step_rng, samples, score_model, params,
         opt_state, loss_fn, batch_size=5, decomposition=False):
     if decomposition:
         L = 2
     else:
         L = 1
-    train_size = mf.shape[0]
+    train_size = samples.shape[0]
     batch_size = min(train_size, batch_size)
     steps_per_epoch = train_size // batch_size
-    mean_losses = jnp.zeros((N_epochs, L))
-    for i in range(N_epochs):
-        rng, step_rng = random.split(rng)
-        perms = jax.random.permutation(step_rng, train_size)
+    mean_losses = jnp.zeros((num_epochs, L))
+    for i in range(num_epochs):
+        rng, step_rng = random.split(step_rng)
+        perms = random.permutation(step_rng, train_size)
         perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
         perms = perms.reshape((steps_per_epoch, batch_size))
         losses = jnp.zeros((jnp.shape(perms)[0], L))
         for j, perm in enumerate(perms):
-            batch = mf[perm, :]
+            batch = samples[perm, :]
             rng, step_rng = random.split(rng)
             loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss_fn, has_aux=decomposition)
             if decomposition:
                 loss = loss[1]
             losses = losses.at[j].set(loss)
-        # TODO: is mean_loss really what I need to plot? Loses the covariance between different directions
-        # For now, don't batch by setting train_size == batch_size == mf.shape[0]
         mean_loss = jnp.mean(losses, axis=0)
         mean_losses = mean_losses.at[i].set(mean_loss)
-        if i % 10 == 0:
+        if i % 1000 == 0:
             if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
             if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
     return score_model, params, opt_state, mean_losses
@@ -293,90 +68,28 @@ def retrain_nn(
 
 def get_score_fn(sde, model, params, score_scaling):
     if score_scaling is True:
-        # Scale score by a marginal stddev
-        # model.evaluate is h = -\sigma_t s(x_t)
         return lambda x, t: -model.evaluate(params, x, t) / sde.marginal_prob(x, t)[1]
     else:
-        # Not likelihood rescaling
         return lambda x, t: -model.evaluate(params, x, t)
-
-
-def moving_average(a, n=100) :
-    a = np.asarray(a)
-    ret = np.cumsum(a, dtype=float)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1:] / n
-
-
-#@partial(jit, static_argnums=[4, 5, 6, 7])
-# TODO work out workaround for it not being possible to jit dynamic indexing
-# of the sample time
-def reverse_update_step(params, rng, batch, opt_state, model, loss_fn, score, has_aux=False):
-    # TODO: There isn't a more efficient place to factorize jax value_and_grad?
-    val, grads = jax.value_and_grad(loss_fn, has_aux=has_aux)(params, model, score, rng, batch)
-    updates, opt_state = optimizer.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
-    return val, params, opt_state
 
 
 @partial(jit, static_argnums=[4, 5, 6])
 def update_step(params, rng, batch, opt_state, model, loss_fn, has_aux=False):
     """
-    params: the current weights of the model
-    rng: random number generator from jax
-    batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-    opt_state: the internal state of the optimizer
-    model: the score function
-
-    takes the gradient of the loss function and updates the model weights (params) using it. Returns
-    the value of the loss function (for metrics), the new params and the new optimizer state
+    Takes the gradient of the loss function and updates the model weights (params) using it.
+    Args:
+        params: the current weights of the model
+        rng: random number generator from jax
+        batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+        opt_state: the internal state of the optimizer
+        model: the score function
+        loss_fn: A loss function that can be used for score matching training.
+        has_aux:
+    Returns:
+        The value of the loss function (for metrics), the new params and the new optimizer states function (for metrics), the new params and the new optimizer state.
     """
-    # TODO: There isn't a more efficient place to factorize jax value_and_grad?
-    val, grads = jax.value_and_grad(loss_fn, has_aux=has_aux)(params, model, rng, batch)
+    val, grads = value_and_grad(loss_fn, has_aux=has_aux)(params, model, rng, batch)
     updates, opt_state = optimizer.update(grads, opt_state)
     params = optax.apply_updates(params, updates)
     return val, params, opt_state
 
-
-def get_mf(tangent_basis, m_0, C_0, data_string, Js, J_true, M, N, weights=None):
-    """Get the manifold data."""
-    # Tangent vector needs to have unit norm
-    tangent_basis /= jnp.linalg.norm(tangent_basis)
-    print(tangent_basis)
-    projection_matrix = orthogonal_projection_matrix(tangent_basis)
-    # Note so far that tangent_basis only implemented for 1D basis
-    # tangent_basis is dotted with (N, n_batch) errors, so must be (N, 1)
-    tangent_basis = tangent_basis.reshape(-1, 1)
-    if data_string=="hyperplane_mvn":
-        # For ND hyperplane example,
-        check_dims(m_0, C_0)
-        mf_true = sample_hyperplane_mvn(J_true, N, C_0, m_0, projection_matrix)
-    elif data_string=="multimodal_hyperplane_mvn":
-        # For 1D multimodal hyperplane example,
-        # e.g.,
-        # m_0 = jnp.array([[0.0, 0.0], [1.0, 0.0]])
-        # C_0 = jnp.array(
-            # [
-                # [[0.05, 0.0], [0.0, 0.1]],
-                # [[0.05, 0.0], [0.0, 0.1]]
-            # ]
-        # )
-        # weights = jnp.array([0.5, 0.5])
-        N = 100
-        mf_true = sample_multimodal_hyperplane_mvn(J_true, N, C_0, m_0, weights, projection_matrix)
-    elif data_string=="multimodal_mvn":
-        mf_true = sample_multimodal_mvn(J, N, C_0, m_0, weights)
-    elif data_string=="sample_sphere":
-        mf_true = sample_sphere(J_true, M, N)
-    else:
-        raise NotImplementedError()
-    mfs = {}
-    for J in Js:
-        mfs["{:d}".format(J)] = mf_true[:J, :]
-    return mfs, mf_true, projection_matrix
-
-
-def check_dims(m_0, C_0):
-    J = jnp.size(m_0)
-    if (jnp.shape(m_0) != (J,) or jnp.shape(C_0) != (J, J)):
-        raise ValueError("Unexpected shape for (m_0, C_0), expected ({}, {}), got ({} , {})".format((J,), (J, J), jnp.shape(m_0), jnp.shape(C_0)))
