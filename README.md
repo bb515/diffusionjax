@@ -1,8 +1,8 @@
 sgm
 ===
-sgm is a lightweight, open-source introduction to 'score-based generative models' (SGMs), also known as 'diffusion models'. It is implemented in Python via the autodiff framework JAX. In particular, sgm uses the flax library for the neural network approximator of the score.
+sgm is a lightweight, open-source introduction to 'score-based generative models' (SGMs), also known as 'diffusion models'. It is implemented in Python via the autodiff framework, [JAX](https://github.com/google/jax). In particular, sgm uses the [Flax](https://github.com/google/flax) library for the neural network approximator of the score.
 
-Based off the Jupyter notebook by Jakiw Pidstrigach https://jakiw.com/sgm_intro , a tutorial on the theoretical and implementation aspects of SGMs.
+Based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by Jakiw Pidstrigach, a tutorial on the theoretical and implementation aspects of SGMs.
 
 The development of sgm has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event “Accelerating generative models and nonconvex optimisation”, which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
 
