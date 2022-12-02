@@ -12,6 +12,7 @@ class EulerMaruyama():
         Args:
             sde: A valid SDE class.
             score_fn: A valid score function.
+,
         """
         self.sde = sde
         # Compute the reverse sde
