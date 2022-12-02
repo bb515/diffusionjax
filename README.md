@@ -25,7 +25,7 @@ Get started
 
 - The package requires Python 3.9+
 - Clone the repository `git clone git@github.com:bb515/sgm.git`
-- Install using pip `pip install -e .` from the root directory of the repository
+- Install using pip `pip install -e .` from the root directory of the repository (see the `setup.py` for the requirements that this command installs).
 
 ### Running examples ###
 
