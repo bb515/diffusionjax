@@ -28,7 +28,6 @@ setup(
     install_requires=[
         'numpy==1.23.4',
         'scipy==1.9.2',
-        'tqdm==4.64.1',
         'matplotlib==3.6.1',
         'optax==0.1.3',
         'jax==0.3.23',

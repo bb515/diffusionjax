@@ -36,8 +36,8 @@ def sample_circle(num_samples):
     alphas = jnp.linspace(0, 2 * jnp.pi * (1 - 1/num_samples), num_samples)
     xs = jnp.cos(alphas)
     ys = jnp.sin(alphas)
-    mf = jnp.stack([xs, ys], axis=1)
-    return mf
+    samples = jnp.stack([xs, ys], axis=1)
+    return samples
 
 
 def main():
