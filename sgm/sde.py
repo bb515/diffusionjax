@@ -5,6 +5,10 @@ import jax.numpy as jnp
 from jax import vmap, jit
 
 
+def batch_mul(a, b):
+    return vmap(lambda a, b: a * b)(a, b)
+
+
 class SDE(abc.ABC):
     """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
@@ -16,6 +20,9 @@ class SDE(abc.ABC):
         super().__init__()
         self.n_steps = n_steps
         self.train_ts = jnp.linspace(0, 1, self.n_steps + 1)[:-1]
+        # print(self.train_ts.shape)
+        # self.train_ts = jnp.linspace(0, 1, self.n_steps + 1)[:-1].reshape(-1, 1)
+        print(self.train_ts.shape)
 
     @abc.abstractmethod
     def sde(self, x, t):
@@ -84,7 +91,8 @@ class OU(SDE):
             diffusion: dispersion function of the forward SDE
         """
         beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
-        drift = -0.5 * beta_t * x  # batch mul
+        drift = -0.5 * batch_mul(beta_t, x)
+        # drift = -0.5 * beta_t * x  # batch mul
         diffusion = jnp.sqrt(beta_t)
         return drift, diffusion
 
@@ -99,7 +107,10 @@ class OU(SDE):
 
     def marginal_prob(self, x, t):
         m = self.mean_coeff(t)
-        mean = m * x
+        # mean = m * x
+        # TODO problem is that sometimes this is used for batch t
+        # and other times, scalar t
+        mean = batch_mul(m, x)
         std = jnp.sqrt(self.variance(t))
         return mean, std
 
@@ -151,7 +162,12 @@ class OU(SDE):
                 f, G
                 """
                 f, G = discretize_fn(x, t)
-                rev_f = -f + G**2 * score_fn(x, t)
+                score_fn(x, t)
+                G**2
+                batch_mul(G**2, score_fn(x, t))
+                -f + batch_mul(G**2, score_fn(x, t))
+                rev_f = -f + batch_mul(G**2, score_fn(x, t))
+                # rev_f = -f + G**2 * score_fn(x, t)
                 return rev_f, G
 
         return RSDE()

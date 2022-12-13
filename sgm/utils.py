@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax.lax import scan
+from jax.lax import scan, conv_general_dilated
 from jax import vmap, jit, grad, value_and_grad
 import jax.random as random
 from functools import partial
@@ -9,6 +9,47 @@ import flax.linen as nn
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
+
+
+class GMRF(nn.Module):
+    """
+    GMRF model for x
+
+    x needs to be like (N, H, W, C)
+    """
+    @nn.compact
+    def __call__(self, x, t):
+        batch_size = x.shape[0]
+        N = x.shape[1]
+        in_size = 4
+        n_hidden = 256
+        h = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)])
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        h = nn.Dense(n_hidden)(h)
+        h = nn.relu(h)
+        conv_kernel_weights = nn.Dense(in_size**2)(h)  # (batch_size, in_size)
+        conv_kernel_weights = conv_kernel_weights.reshape(batch_size, in_size, in_size, 1, 1)
+        kernel = jnp.tile(conv_kernel_weights, (1, 1, 1, num_channels, num_channels))
+
+        nbatch = conv_kernel_weights.shape[0]
+        nh = conv_kernel_weights.shape[1]
+        nw = conv_kernel_weights.shape[2]
+        nci = conv_kernel_weights.shape[3]
+        nco = conv_kernel_weights.shape[4]
+
+        dimension_numbers = conv_dimension_numbers(
+            x.shape,
+            kernel.shape,
+            ('NHWC', 'NHWIO', 'NHWC'))
+        h = conv_general_dilated(
+            x,  # (N,H,W,C)
+            kernel,  # (NHWIO), 
+            window_strides=(1, 1),
+            padding='SAME',
+            dimension_numbers=dimension_numbers)
 
 
 class NonLinear(nn.Module):
@@ -60,7 +101,7 @@ def retrain_nn(
             losses = losses.at[j].set(loss)
         mean_loss = jnp.mean(losses, axis=0)
         mean_losses = mean_losses.at[i].set(mean_loss)
-        if i % 1000 == 0:
+        if i % 10 == 0:
             if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
             if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
     return score_model, params, opt_state, mean_losses

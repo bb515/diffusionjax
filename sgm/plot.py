@@ -105,5 +105,5 @@ def plot_score_ax(ax, score, t, area_min=-1, area_max=1, fname="plot_score"):
         scores = score(grid, t)
         return grid, scores
     grid, scores = helper(score, t, area_min, area_max)
-    ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 1])
+    ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 3])
 

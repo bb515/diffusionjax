@@ -43,7 +43,7 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
     if pointwise_t:
         def loss_fn(t, params, model, rng, batch):
             n_batch = batch.shape[0]
-            ts = jnp.ones((n_batch, 1)) * t
+            ts = jnp.ones((n_batch,)) * t
             score_fn = get_score_fn(sde, model, params, score_scaling)
             e = errors(ts, sde, score_fn, rng, batch, likelihood_weighting)
             if likelihood_weighting:
@@ -54,12 +54,13 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
         def loss_fn(params, model, rng, batch):
             rng, step_rng = random.split(rng)
             n_batch = batch.shape[0]
-            ts = random.randint(step_rng, (n_batch, 1), 1, sde.n_steps) / (sde.n_steps - 1)
+            ts = random.randint(step_rng, (n_batch,), 1, sde.n_steps) / (sde.n_steps - 1)
             score_fn = get_score_fn(sde, model, params, score_scaling)
             e = errors(ts, sde, score_fn, rng, batch, likelihood_weighting)
             if likelihood_weighting:
                 g = sde.sde(jnp.zeros_like(batch), ts)[1]
                 e = e * g
+                # TODO reduce loss in a more general way
             return jnp.mean(jnp.sum(e**2, axis=1))
     return loss_fn
 
