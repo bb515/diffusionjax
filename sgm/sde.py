@@ -103,14 +103,6 @@ class OU(SDE):
         std = jnp.sqrt(self.variance(t))
         return mean, std
 
-    def forward_potential(self, x_0, x, t):
-        mean, std = self.marginal_prob(x_0, t)
-        return (x.reshape(-1, 1) - mean) / std**2
-
-    def forward_density(self, x_0, x, t):
-        mean, std = self.marginal_prob(x_0, t)
-        return norm.pdf(x.reshape(-1, 1), loc=mean, scale=std)
-
     def reverse(self, score_fn):
         """Create the reverse-time SDE/ODE
 
