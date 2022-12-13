@@ -15,6 +15,7 @@ from sgm.samplers import EulerMaruyama
 from sgm.utils import (
     NonLinear,
     GMRF,
+    FullyConnected,
     get_score_fn,
     update_step,
     optimizer,
@@ -27,6 +28,11 @@ import numpy as np
 import lab as B
 
 from jax.experimental.host_callback import id_print
+
+
+from jax import vmap
+def batch_mul(a, b):
+    return vmap(lambda a, b: a * b)(a, b)
 
 
 def image_grid(x, image_size, num_channels):
@@ -60,7 +66,7 @@ def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
 
 
 def main():
-    num_epochs = 9000
+    num_epochs = 10
     rng = random.PRNGKey(2023)
     rng, step_rng = random.split(rng, 2)
     num_samples = 32 # 1024
@@ -76,35 +82,6 @@ def main():
     print(samples.shape)
     # Get sde model
     sde = get_sde("OU")
-
-    # test conv_general_dilated
-    kernel = jnp.zeros((3, 3, 3, 3), dtype=jnp.float32)
-    # spatial kernel is replicated across all input channel dimension and output channel dimension
-    kernel += jnp.array([[1, 1, 0],
-                         [1, 0, -1],
-                         [0, -1, -1]])[:, :, jnp.newaxis, jnp.newaxis]
-    plt.imshow(kernel[:, :, 0, 0])
-    plt.savefig("kernel")
-    plt.close()
-    from jax import lax
-    # N is the batch dimension
-    # H is the spatial height
-    # W is the spatial width
-    # C is the channel dimension
-    # I is the kernel input channel dimension
-    # O is the kernel output channel dimension
-    out = lax.conv(jnp.transpose(samples, [0, 3, 1, 2]),  # lhs = NCHW image tensor
-                   jnp.transpose(kernel, [3, 2, 0, 1]),  # rhs = OIHW conv kernel tensor
-                   (1, 1),  # window strides
-                   'SAME'  # padding mod
-                   )
-    print("out shape: ", out.shape)
-    plt.figure(figsize=(8,8))
-    # plt.imshow(np.array(out)[0,:,:,:].transpose([1, 2, 0]))
-    plt.imshow(np.array(out)[0,0,:,:])
-    plt.savefig("convout")
-    plt.close()
-
 
     def log_hat_pt_tmp(x, t):
         """
@@ -152,9 +129,6 @@ def main():
     # Running the reverse SDE with the empirical drift
     # plot_score(score=nabla_log_hat_pt_tmp, t=0.01, area_min=-3, area_max=3, fname="empirical score")
     sampler = EulerMaruyama(sde, nabla_log_hat_pt).get_sampler()
-    shape = (image_size, image_size, num_channels)
-    n_samples_shape = (64,) + shape
-    print(n_samples_shape)
     q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
     plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
@@ -170,10 +144,11 @@ def main():
     # Neural network training via score matching
     # batch_size=32
     batch_size = 4
-    score_model = NonLinear()
+    # score_model = NonLinear()
     # score_model = GMRF()
+    score_model = FullyConnected()
     # Initialize parameters
-    params = score_model.init(step_rng, jnp.zeros((batch_size, image_size**2 * num_channels)), jnp.ones((batch_size, 1)))
+    params = score_model.init(step_rng, jnp.zeros((batch_size, image_size, image_size, num_channels)), jnp.ones(batch_size))
     # Initialize optimizer
     opt_state = optimizer.init(params)
     # Get loss function

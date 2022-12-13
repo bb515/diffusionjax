@@ -2,11 +2,12 @@
 import abc
 from functools import partial
 import jax.numpy as jnp
-from jax import vmap, jit
+from jax import jit
+from sgm.utils import batch_mul
 
 
-def batch_mul(a, b):
-    return vmap(lambda a, b: a * b)(a, b)
+from jax.experimental.host_callback import id_print
+
 
 
 class SDE(abc.ABC):
@@ -110,7 +111,15 @@ class OU(SDE):
         # mean = m * x
         # TODO problem is that sometimes this is used for batch t
         # and other times, scalar t
-        mean = batch_mul(m, x)
+        id_print(m.shape)
+        id_print(x.shape)
+        print("Hello")
+        print(m.shape)
+        print(x.shape)
+        try:
+            mean = batch_mul(m, x)
+        except:
+            mean = m * x
         std = jnp.sqrt(self.variance(t))
         return mean, std
 
@@ -162,10 +171,6 @@ class OU(SDE):
                 f, G
                 """
                 f, G = discretize_fn(x, t)
-                score_fn(x, t)
-                G**2
-                batch_mul(G**2, score_fn(x, t))
-                -f + batch_mul(G**2, score_fn(x, t))
                 rev_f = -f + batch_mul(G**2, score_fn(x, t))
                 # rev_f = -f + G**2 * score_fn(x, t)
                 return rev_f, G

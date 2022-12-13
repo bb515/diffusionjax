@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jax.lax import scan, conv_general_dilated
+from jax.lax import scan, conv_general_dilated, conv_dimension_numbers
 from jax import vmap, jit, grad, value_and_grad
 import jax.random as random
 from functools import partial
@@ -11,6 +11,10 @@ import flax.linen as nn
 optimizer = optax.adam(1e-3)
 
 
+def batch_mul(a, b):
+    return vmap(lambda a, b: a * b)(a, b)
+
+
 class GMRF(nn.Module):
     """
     GMRF model for x
@@ -20,36 +24,39 @@ class GMRF(nn.Module):
     @nn.compact
     def __call__(self, x, t):
         batch_size = x.shape[0]
+        num_channels = x.shape[3]
         N = x.shape[1]
-        in_size = 4
+        in_size = 3
         n_hidden = 256
-        h = jnp.array([t - 0.5, jnp.cos(2*jnp.pi*t)])
+        h = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)])
         h = nn.Dense(n_hidden)(h)
         h = nn.relu(h)
         h = nn.Dense(n_hidden)(h)
         h = nn.relu(h)
         h = nn.Dense(n_hidden)(h)
         h = nn.relu(h)
-        conv_kernel_weights = nn.Dense(in_size**2)(h)  # (batch_size, in_size)
-        conv_kernel_weights = conv_kernel_weights.reshape(batch_size, in_size, in_size, 1, 1)
-        kernel = jnp.tile(conv_kernel_weights, (1, 1, 1, num_channels, num_channels))
+        conv_kernel_weights = nn.Dense(in_size**2)(h)  # (in_size)
+        conv_kernel_weights = conv_kernel_weights.reshape(in_size, in_size, 1, 1)
+        kernel = jnp.tile(conv_kernel_weights, (1, 1, num_channels, num_channels))
 
-        nbatch = conv_kernel_weights.shape[0]
-        nh = conv_kernel_weights.shape[1]
-        nw = conv_kernel_weights.shape[2]
-        nci = conv_kernel_weights.shape[3]
-        nco = conv_kernel_weights.shape[4]
+        nh = conv_kernel_weights.shape[0]
+        nw = conv_kernel_weights.shape[1]
+        nci = conv_kernel_weights.shape[2]
+        nco = conv_kernel_weights.shape[3]
 
         dimension_numbers = conv_dimension_numbers(
             x.shape,
             kernel.shape,
-            ('NHWC', 'NHWIO', 'NHWC'))
+            ('NHWC', 'HWIO', 'NHWC'))
         h = conv_general_dilated(
-            x,  # (N,H,W,C)
-            kernel,  # (NHWIO), 
+            x,  # (NHWC)
+            kernel,  # (HWIO), 
             window_strides=(1, 1),
             padding='SAME',
             dimension_numbers=dimension_numbers)
+
+    def evaluate(self, params, x_t, times):
+        return self.apply(params, x_t, times)  # score_t * std_t
 
 
 class NonLinear(nn.Module):
@@ -69,6 +76,35 @@ class NonLinear(nn.Module):
         x = nn.Dense(n_hidden)(x)
         x = nn.relu(x)
         x = nn.Dense(in_size)(x)
+        return x
+
+    def evaluate(self, params, x_t, times):
+        return self.apply(params, x_t, times)  # score_t * std_t
+
+
+# TODO: experimental layer, doesn't work so look at other examples
+class FullyConnected(nn.Module):
+
+    @nn.compact
+    def __call__(self, x, t):
+        x_shape = x.shape
+        in_size = jnp.prod(jnp.array(x_shape[1:]))
+        n_hidden = 256
+        act = nn.relu
+        x = x.reshape(x_shape[0], -1)  # (n_batch, size**2 * channels)
+        t = t.reshape(-1, 1)
+        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
+        # concatenate pixels and channels
+        x = jnp.concatenate([x, t], axis=1)
+        x = nn.Dense(n_hidden)(x)
+        x = nn.relu(x)
+        x = nn.Dense(n_hidden)(x)
+        x = nn.relu(x)
+        x = nn.Dense(n_hidden)(x)
+        x = nn.relu(x)
+        x = nn.Dense(in_size)(x)
+        # Rearrange score for pixels and channels
+        x = x.reshape(x_shape)
         return x
 
     def evaluate(self, params, x_t, times):

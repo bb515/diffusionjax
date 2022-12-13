@@ -3,11 +3,7 @@ import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
 from jax import vmap
-
-
-# TODO TMP
-def batch_mul(a, b):
-    return vmap(lambda a, b: a * b)(a, b)
+from sgm.utils import batch_mul
 
 
 class EulerMaruyama():
@@ -73,10 +69,11 @@ class EulerMaruyama():
                 x = random.normal(step_rng, n_samples_shape)
                 def f(carry, t):
                     rng, x, x_mean = carry
-                    vec_t = jnp.ones(shape[0]) * (1 - t)
+                    vec_t = jnp.ones(n_samples) * (1 - t)
                     rng, step_rng = random.split(rng)
                     x, x_mean = update(rng, x, t)
                     return (rng, x, x_mean), x
+                id_print(x.shape)
                 (_, _, _), xs = scan(f, (rng, x, x), ts)
                 return xs
         return sampler
