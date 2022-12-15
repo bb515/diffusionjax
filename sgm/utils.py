@@ -7,7 +7,6 @@ import optax
 import flax.linen as nn
 from math import prod
 
-from jax.experimental.host_callback import id_print
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)

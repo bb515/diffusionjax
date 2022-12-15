@@ -6,10 +6,6 @@ from jax import jit
 from sgm.utils import batch_mul
 
 
-from jax.experimental.host_callback import id_print
-
-
-
 class SDE(abc.ABC):
     """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
@@ -160,7 +156,6 @@ class OU(SDE):
                 """
                 f, G = discretize_fn(x, t)
                 rev_f = -f + batch_mul(G**2, score_fn(x, t))
-                # rev_f = -f + G**2 * score_fn(x, t)
                 return rev_f, G
 
         return RSDE()

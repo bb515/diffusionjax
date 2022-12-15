@@ -107,17 +107,3 @@ def plot_score_ax(ax, score, t, area_min=-1, area_max=1, fname="plot_score"):
     grid, scores = helper(score, t, area_min, area_max)
     ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 3])
 
-
-def plot_score_ax_sample(ax, sample, score, t, area_min=-1, area_max=1, fname="plot_score"):
-    @partial(jit, static_argnums=[0,])
-    def helper(score, t, area_min, area_max):
-        x = jnp.linspace(area_min, area_max, 16)
-        x, y = jnp.meshgrid(x, x)
-        grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
-        sample = jnp.tile(sample, (len(x.flatten()), 1, 1, 1))
-        sample[:, [0, 1], 0, 0] = grid
-        t = jnp.ones((grid.shape[0],)) * t
-        scores = score(grid, t)
-        return grid, scores
-    grid, scores = helper(score, t, area_min, area_max)
-    ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 3])
