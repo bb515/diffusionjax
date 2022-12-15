@@ -56,7 +56,7 @@ class EulerMaruyama():
                 x = random.normal(step_rng, n_samples_shape)
                 def f(carry, t):
                     rng, x, x_mean = carry
-                    vec_t = jnp.ones(n_samples) * (1 - t)
+                    vec_t = jnp.ones((n_samples, 1)) * (1 - t)
                     rng, step_rng = random.split(rng)
                     x, x_mean = update(rng, x, vec_t)
                     return (rng, x, x_mean), ()
@@ -69,7 +69,7 @@ class EulerMaruyama():
                 x = random.normal(step_rng, n_samples_shape)
                 def f(carry, t):
                     rng, x, x_mean = carry
-                    vec_t = jnp.ones(n_samples) * (1 - t)
+                    vec_t = jnp.ones((n_samples, 1)) * (1 - t)
                     rng, step_rng = random.split(rng)
                     x, x_mean = update(rng, x, t)
                     return (rng, x, x_mean), x

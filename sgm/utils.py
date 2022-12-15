@@ -5,7 +5,9 @@ import jax.random as random
 from functools import partial
 import optax
 import flax.linen as nn
+from math import prod
 
+from jax.experimental.host_callback import id_print
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
@@ -50,7 +52,7 @@ class GMRF(nn.Module):
             ('NHWC', 'HWIO', 'NHWC'))
         h = conv_general_dilated(
             x,  # (NHWC)
-            kernel,  # (HWIO), 
+            kernel,  # (HWIO),
             window_strides=(1, 1),
             padding='SAME',
             dimension_numbers=dimension_numbers)
@@ -59,16 +61,17 @@ class GMRF(nn.Module):
         return self.apply(params, x_t, times)  # score_t * std_t
 
 
-class NonLinear(nn.Module):
+class MLP(nn.Module):
     """A simple model with multiple fully connected layers and some fourier features for the time variable."""
-
     @nn.compact
     def __call__(self, x, t):
-        in_size = x.shape[1]
+        x_shape = x.shape
+        in_size = prod(x_shape[1:])
         n_hidden = 256
-        act = nn.relu
-        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-        x = jnp.concatenate([x, t], axis=1)
+        t = t.reshape((t.shape[0], -1))
+        x = x.reshape((x.shape[0], -1))  # flatten
+        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=-1)
+        x = jnp.concatenate([x, t], axis=-1)
         x = nn.Dense(n_hidden)(x)
         x = nn.relu(x)
         x = nn.Dense(n_hidden)(x)
@@ -76,35 +79,24 @@ class NonLinear(nn.Module):
         x = nn.Dense(n_hidden)(x)
         x = nn.relu(x)
         x = nn.Dense(in_size)(x)
-        return x
+        return x.reshape(x_shape)
 
     def evaluate(self, params, x_t, times):
         return self.apply(params, x_t, times)  # score_t * std_t
 
 
-# TODO: experimental layer, doesn't work so look at other examples
-class FullyConnected(nn.Module):
-
+class CNN(nn.Module):
     @nn.compact
     def __call__(self, x, t):
         x_shape = x.shape
-        in_size = jnp.prod(jnp.array(x_shape[1:]))
+        ndim = x.ndim
         n_hidden = 256
-        act = nn.relu
-        x = x.reshape(x_shape[0], -1)  # (n_batch, size**2 * channels)
-        t = t.reshape(-1, 1)
-        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-        # concatenate pixels and channels
-        x = jnp.concatenate([x, t], axis=1)
-        x = nn.Dense(n_hidden)(x)
-        x = nn.relu(x)
-        x = nn.Dense(n_hidden)(x)
-        x = nn.relu(x)
-        x = nn.Dense(n_hidden)(x)
-        x = nn.relu(x)
-        x = nn.Dense(in_size)(x)
-        # Rearrange score for pixels and channels
-        x = x.reshape(x_shape)
+        t = t.reshape((t.shape[0],) + (1,) * (ndim - 1))
+        t = jnp.tile(t, (1,) + x_shape[1:-1] + (1,))
+        # Add time as another channel
+        x = jnp.concatenate((x, t), axis=-1)
+        # Global convolution
+        x = nn.Conv(x_shape[-1], kernel_size=(5, 5))(x)
         return x
 
     def evaluate(self, params, x_t, times):
@@ -145,7 +137,7 @@ def retrain_nn(
 
 def get_score_fn(sde, model, params, score_scaling):
     if score_scaling is True:
-        return lambda x, t: -model.evaluate(params, x, t) / sde.marginal_prob(x, t)[1]
+        return lambda x, t: -batch_mul(model.evaluate(params, x, t), 1. / sde.marginal_prob(x, t)[1])
     else:
         return lambda x, t: -model.evaluate(params, x, t)
 

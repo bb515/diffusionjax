@@ -3,6 +3,8 @@ import jax.numpy as jnp
 import jax.random as random
 from sgm.utils import get_score_fn, batch_mul
 
+from jax.experimental.host_callback import id_print
+
 
 def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
     """
@@ -19,13 +21,15 @@ def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
     mean, std = sde.marginal_prob(batch, ts)
     rng, step_rng = random.split(rng)
     noise = random.normal(step_rng, batch.shape)
-    # x_t = mean + std * noise
+    print(mean.shape)
+    print(std.shape)
+    print(noise.shape)
     x_t = mean + batch_mul(std, noise)
+    print(x_t.shape)
     if not likelihood_weighting:
         # return noise + std * score_fn(x_t, ts)
-        return noise + batch_mul(std, score_fn(x_t, ts))
+        return noise + batch_mul(score_fn(x_t, ts), std)
     else:
-        # return noise / std + score_fn(x_t, ts)
         return noise / std + score_fn(x_t, ts)
 
 

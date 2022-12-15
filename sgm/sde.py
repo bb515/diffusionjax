@@ -20,10 +20,7 @@ class SDE(abc.ABC):
         """
         super().__init__()
         self.n_steps = n_steps
-        self.train_ts = jnp.linspace(0, 1, self.n_steps + 1)[:-1]
-        # print(self.train_ts.shape)
-        # self.train_ts = jnp.linspace(0, 1, self.n_steps + 1)[:-1].reshape(-1, 1)
-        print(self.train_ts.shape)
+        self.train_ts = jnp.linspace(0, 1, self.n_steps + 1)[:-1].reshape(-1, 1)
 
     @abc.abstractmethod
     def sde(self, x, t):
@@ -93,7 +90,6 @@ class OU(SDE):
         """
         beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
         drift = -0.5 * batch_mul(beta_t, x)
-        # drift = -0.5 * beta_t * x  # batch mul
         diffusion = jnp.sqrt(beta_t)
         return drift, diffusion
 
@@ -108,14 +104,6 @@ class OU(SDE):
 
     def marginal_prob(self, x, t):
         m = self.mean_coeff(t)
-        # mean = m * x
-        # TODO problem is that sometimes this is used for batch t
-        # and other times, scalar t
-        id_print(m.shape)
-        id_print(x.shape)
-        print("Hello")
-        print(m.shape)
-        print(x.shape)
         try:
             mean = batch_mul(m, x)
         except:
@@ -141,7 +129,7 @@ class OU(SDE):
             def sde(self, x, t):
                 """
                 Parameters to determine the marginal distribution of the reverse SDE,
-                
+
                 Args:
                     x: a JAX tensor of the state
                     t: a JAX float of the time step
@@ -159,14 +147,14 @@ class OU(SDE):
                 r"""Discretize the SDE in the form,
                 .. math::
                     x_{i+1} = x_{i} + f_i(x_i) + G_i z_i
- 
+
                 Useful for reverse diffusion sampling.
                 Defaults to Euler-Maryama discretization.
 
                 Args:
                     x: a JAX tensor
                     t: a JAX float representing the time step
- 
+
                 Returns:
                 f, G
                 """

@@ -13,7 +13,7 @@ from sgm.plot import (
 from sgm.losses import get_loss_fn
 from sgm.samplers import EulerMaruyama
 from sgm.utils import (
-    NonLinear,
+    MLP,
     get_score_fn,
     update_step,
     optimizer,
@@ -86,9 +86,9 @@ def main():
 
     # Neural network training via score matching
     batch_size=16
-    score_model = NonLinear()
+    score_model = MLP()
     # Initialize parameters
-    params = score_model.init(step_rng, jnp.zeros((batch_size, N)), jnp.ones((batch_size, 1)))
+    params = score_model.init(step_rng, jnp.zeros((batch_size, N)), jnp.ones((batch_size,)))
     # Initialize optimizer
     opt_state = optimizer.init(params)
     # Get loss function
