@@ -17,50 +17,6 @@ def batch_mul(a, b):
     return vmap(lambda a, b: a * b)(a, b)
 
 
-class GMRF(nn.Module):
-    """
-    GMRF model for x
-
-    x needs to be like (N, H, W, C)
-    """
-    @nn.compact
-    def __call__(self, x, t):
-        batch_size = x.shape[0]
-        num_channels = x.shape[3]
-        N = x.shape[1]
-        in_size = 3
-        n_hidden = 256
-        h = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)])
-        h = nn.Dense(n_hidden)(h)
-        h = nn.relu(h)
-        h = nn.Dense(n_hidden)(h)
-        h = nn.relu(h)
-        h = nn.Dense(n_hidden)(h)
-        h = nn.relu(h)
-        conv_kernel_weights = nn.Dense(in_size**2)(h)  # (in_size)
-        conv_kernel_weights = conv_kernel_weights.reshape(in_size, in_size, 1, 1)
-        kernel = jnp.tile(conv_kernel_weights, (1, 1, num_channels, num_channels))
-
-        nh = conv_kernel_weights.shape[0]
-        nw = conv_kernel_weights.shape[1]
-        nci = conv_kernel_weights.shape[2]
-        nco = conv_kernel_weights.shape[3]
-
-        dimension_numbers = conv_dimension_numbers(
-            x.shape,
-            kernel.shape,
-            ('NHWC', 'HWIO', 'NHWC'))
-        h = conv_general_dilated(
-            x,  # (NHWC)
-            kernel,  # (HWIO),
-            window_strides=(1, 1),
-            padding='SAME',
-            dimension_numbers=dimension_numbers)
-
-    def evaluate(self, params, x_t, times):
-        return self.apply(params, x_t, times)  # score_t * std_t
-
-
 class MLP(nn.Module):
     """A simple model with multiple fully connected layers and some fourier features for the time variable."""
     @nn.compact
