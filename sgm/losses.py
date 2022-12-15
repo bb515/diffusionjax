@@ -1,7 +1,9 @@
 """All functions related to loss computation and optimization."""
 import jax.numpy as jnp
 import jax.random as random
-from sgm.utils import get_score_fn
+from sgm.utils import get_score_fn, batch_mul
+
+from jax.experimental.host_callback import id_print
 
 
 def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
@@ -16,12 +18,17 @@ def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
     Returns:
         A random (MC) approximation to the (likelihood weighted) score errors.
     """
-    mean, std = sde.marginal_prob(batch, ts)  # (n_batch, N)
+    mean, std = sde.marginal_prob(batch, ts)
     rng, step_rng = random.split(rng)
     noise = random.normal(step_rng, batch.shape)
-    x_t = mean + std * noise # (n_batch, N)
+    print(mean.shape)
+    print(std.shape)
+    print(noise.shape)
+    x_t = mean + batch_mul(std, noise)
+    print(x_t.shape)
     if not likelihood_weighting:
-        return noise + std * score_fn(x_t, ts)
+        # return noise + std * score_fn(x_t, ts)
+        return noise + batch_mul(score_fn(x_t, ts), std)
     else:
         return noise / std + score_fn(x_t, ts)
 
@@ -43,7 +50,7 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
     if pointwise_t:
         def loss_fn(t, params, model, rng, batch):
             n_batch = batch.shape[0]
-            ts = jnp.ones((n_batch, 1)) * t
+            ts = jnp.ones((n_batch,)) * t
             score_fn = get_score_fn(sde, model, params, score_scaling)
             e = errors(ts, sde, score_fn, rng, batch, likelihood_weighting)
             if likelihood_weighting:
@@ -54,12 +61,13 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
         def loss_fn(params, model, rng, batch):
             rng, step_rng = random.split(rng)
             n_batch = batch.shape[0]
-            ts = random.randint(step_rng, (n_batch, 1), 1, sde.n_steps) / (sde.n_steps - 1)
+            ts = random.randint(step_rng, (n_batch,), 1, sde.n_steps) / (sde.n_steps - 1)
             score_fn = get_score_fn(sde, model, params, score_scaling)
             e = errors(ts, sde, score_fn, rng, batch, likelihood_weighting)
             if likelihood_weighting:
                 g = sde.sde(jnp.zeros_like(batch), ts)[1]
                 e = e * g
+                # TODO reduce loss in a more general way
             return jnp.mean(jnp.sum(e**2, axis=1))
     return loss_fn
 

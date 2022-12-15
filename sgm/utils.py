@@ -1,26 +1,33 @@
 import jax.numpy as jnp
-from jax.lax import scan
+from jax.lax import scan, conv_general_dilated, conv_dimension_numbers
 from jax import vmap, jit, grad, value_and_grad
 import jax.random as random
 from functools import partial
 import optax
 import flax.linen as nn
+from math import prod
 
+from jax.experimental.host_callback import id_print
 
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
 
 
-class NonLinear(nn.Module):
-    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
+def batch_mul(a, b):
+    return vmap(lambda a, b: a * b)(a, b)
 
+
+class MLP(nn.Module):
+    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
     @nn.compact
     def __call__(self, x, t):
-        in_size = x.shape[1]
+        x_shape = x.shape
+        in_size = prod(x_shape[1:])
         n_hidden = 256
-        act = nn.relu
-        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=1)
-        x = jnp.concatenate([x, t], axis=1)
+        t = t.reshape((t.shape[0], -1))
+        x = x.reshape((x.shape[0], -1))  # flatten
+        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=-1)
+        x = jnp.concatenate([x, t], axis=-1)
         x = nn.Dense(n_hidden)(x)
         x = nn.relu(x)
         x = nn.Dense(n_hidden)(x)
@@ -28,6 +35,24 @@ class NonLinear(nn.Module):
         x = nn.Dense(n_hidden)(x)
         x = nn.relu(x)
         x = nn.Dense(in_size)(x)
+        return x.reshape(x_shape)
+
+    def evaluate(self, params, x_t, times):
+        return self.apply(params, x_t, times)  # score_t * std_t
+
+
+class CNN(nn.Module):
+    @nn.compact
+    def __call__(self, x, t):
+        x_shape = x.shape
+        ndim = x.ndim
+        n_hidden = 256
+        t = t.reshape((t.shape[0],) + (1,) * (ndim - 1))
+        t = jnp.tile(t, (1,) + x_shape[1:-1] + (1,))
+        # Add time as another channel
+        x = jnp.concatenate((x, t), axis=-1)
+        # Global convolution
+        x = nn.Conv(x_shape[-1], kernel_size=(5, 5))(x)
         return x
 
     def evaluate(self, params, x_t, times):
@@ -60,7 +85,7 @@ def retrain_nn(
             losses = losses.at[j].set(loss)
         mean_loss = jnp.mean(losses, axis=0)
         mean_losses = mean_losses.at[i].set(mean_loss)
-        if i % 1000 == 0:
+        if i % 10 == 0:
             if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
             if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
     return score_model, params, opt_state, mean_losses
@@ -68,7 +93,7 @@ def retrain_nn(
 
 def get_score_fn(sde, model, params, score_scaling):
     if score_scaling is True:
-        return lambda x, t: -model.evaluate(params, x, t) / sde.marginal_prob(x, t)[1]
+        return lambda x, t: -batch_mul(model.evaluate(params, x, t), 1. / sde.marginal_prob(x, t)[1])
     else:
         return lambda x, t: -model.evaluate(params, x, t)
 
