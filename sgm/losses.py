@@ -3,8 +3,6 @@ import jax.numpy as jnp
 import jax.random as random
 from sgm.utils import get_score_fn, batch_mul
 
-from jax.experimental.host_callback import id_print
-
 
 def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
     """
@@ -21,13 +19,8 @@ def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
     mean, std = sde.marginal_prob(batch, ts)
     rng, step_rng = random.split(rng)
     noise = random.normal(step_rng, batch.shape)
-    print(mean.shape)
-    print(std.shape)
-    print(noise.shape)
     x_t = mean + batch_mul(std, noise)
-    print(x_t.shape)
     if not likelihood_weighting:
-        # return noise + std * score_fn(x_t, ts)
         return noise + batch_mul(score_fn(x_t, ts), std)
     else:
         return noise / std + score_fn(x_t, ts)
@@ -56,7 +49,7 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
             if likelihood_weighting:
                 g = sde.sde(jnp.zeros_like(batch), ts)[1]
                 e = e * g
-            return jnp.mean(jnp.sum(e**2, axis=1))
+            return reduce_op(jnp.sum(e.reshape((e.shape[0], -1))**2, axis=-1))
     else:
         def loss_fn(params, model, rng, batch):
             rng, step_rng = random.split(rng)
@@ -67,7 +60,6 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
             if likelihood_weighting:
                 g = sde.sde(jnp.zeros_like(batch), ts)[1]
                 e = e * g
-                # TODO reduce loss in a more general way
-            return jnp.mean(jnp.sum(e**2, axis=1))
+            return reduce_op(jnp.sum(e.reshape((e.shape[0], -1))**2, axis=-1))
     return loss_fn
 

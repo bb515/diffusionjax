@@ -39,8 +39,6 @@ class EulerMaruyama():
             z = random.normal(rng, x.shape)
             x_mean = x + f
             x = x_mean + batch_mul(G, z)
-            # x_mean = x + f
-            # x = x_mean + G * z
             return x, x_mean
 
         return update

@@ -15,7 +15,6 @@ from sgm.samplers import EulerMaruyama
 from sgm.utils import (
     MLP,
     CNN,
-    GMRF,
     get_score_fn,
     update_step,
     optimizer,
