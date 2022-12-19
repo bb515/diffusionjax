@@ -26,9 +26,10 @@ setup(
     #license="MIT",
     packages=find_packages(exclude=['*.test']),
     install_requires=[
-        'numpy==1.23.4',
-        'scipy==1.9.2',
-        'matplotlib==3.6.1',
+        'numpy',
+        'scipy',
+        'matplotlib',
+        'seaborn',
         'optax==0.1.3',
         'jax==0.3.23',
         'jaxlib==0.3.22',
