@@ -47,6 +47,19 @@ def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
     plt.close()
 
 
+def precision(kernel, image_size, num_channels):
+    """Gets the precision of a GMRF
+    """
+    x = np.linspace(-10e0, 10e0, image_size)
+    y = np.linspace(-10e0, 10e0, image_size)
+    xx, yy = np.meshgrid(x, y)
+    xx = xx.reshape(image_size**2, 1)
+    yy = yy.reshape(image_size**2, 1)
+    z = np.hstack((xx, yy))
+    C_0 = jnp.asarray(B.dense(kernel(z))) + 1e-10 * jnp.eye(jnp.shape(z)[0])
+    return C_0, jnp.linalg.inv(C_0)
+
+
 def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
     """Samples from a GMRF
     """
@@ -91,6 +104,7 @@ def main():
             plot_samples(samples[i], image_size=image_size, num_channels=num_channels)
     # Reshape image data
     samples = samples.reshape(-1, image_size, image_size, num_channels)
+    C_0, Q = precision(kernel=Matern52(), image_size=image_size, num_channels=num_channels)
 
     # Get sde model
     sde = get_sde("OU")
@@ -129,9 +143,46 @@ def main():
         potentials = jnp.sum(losses.reshape((losses.shape[0], -1)), axis=-1)
         return logsumexp(potentials, axis=0, b=1/num_samples)
 
+    def _nabla_log_pt(x, t):
+        """
+        Args:
+            x: One location in $\mathbb{R}^2$
+            t: time
+        Returns:
+            The true log density.
+            .. math::
+                p_{t}(x)
+        """
+        x_shape = x.shape
+        x = x.flatten()
+        score = - Q @ x
+        return score.reshape(x_shape)
+
+    def nabla_log_pt(x, t):
+        """
+        Args:
+            x: One location in $\mathbb{R}^2$
+            t: time
+        Returns:
+            The true log density.
+            .. math::
+                p_{t}(x)
+        """
+        print("@ {}".format(t))
+        x_shape = x.shape
+        n_batch = x_shape[0]
+        v_t = sde.variance(t)
+        m_t = sde.mean_coeff(t)
+        #A = -jnp.linalg.inv(m_t**2 * C_0 + v_t)
+        x = x.flatten()
+        score = - jnp.linalg.solve(m_t**2 * C_0 + v_t, x)
+        #score = - A @ x
+        return score.reshape(x_shape)
+
     # Get a jax grad function, which can be batched with vmap
     nabla_log_hat_pt_tmp = jit(vmap(grad(log_hat_pt_tmp), in_axes=(0, 0), out_axes=(0)))
     nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
+    nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
 
     # Running the reverse SDE with the empirical drift
     plot_score(score=nabla_log_hat_pt_tmp, t=0.01, area_min=-3, area_max=3, fname="empirical score")
@@ -140,6 +191,7 @@ def main():
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
     plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
 
+    print("1")
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 100.0 * jnp.ones(jnp.shape(x))
     rng, step_rng = random.split(rng)
@@ -148,6 +200,25 @@ def main():
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
     plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
+    print("2")
+    # Running the reverse SDE with the empirical drift
+    sampler = EulerMaruyama(sde, nabla_log_pt).get_sampler()
+    q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+    print("3")
+    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples true score")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap true score")
+
+    print("4")
+    # What happens when I perturb the score with a constant?
+    perturbed_score = lambda x, t: nabla_log_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
+    rng, step_rng = random.split(rng)
+    sampler = EulerMaruyama(sde, perturbed_score).get_sampler()
+    q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+    print("5")
+    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples true bounded perturbation")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap true bounded perturbation")
+
+    assert 0
     # Neural network training via score matching
     batch_size = 32
     score_model = CNN()
