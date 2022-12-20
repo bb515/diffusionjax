@@ -14,7 +14,6 @@ class EulerMaruyama():
         Args:
             sde: A valid SDE class.
             score_fn: A valid score function.
-,
         """
         self.sde = sde
         # Compute the reverse sde
@@ -40,17 +39,16 @@ class EulerMaruyama():
             x_mean = x + f
             x = x_mean + batch_mul(G, z)
             return x, x_mean
-
         return update
 
     def get_sampler(self, stack_samples=False):
         ts = self.sde.train_ts
         update = self.get_update()
         if not stack_samples:
+
             def sampler(rng, n_samples, shape):
                 rng, step_rng = random.split(rng)
                 n_samples_shape = (n_samples,) + shape
-                print(n_samples_shape)
                 x = random.normal(step_rng, n_samples_shape)
                 def f(carry, t):
                     rng, x, x_mean = carry
@@ -61,6 +59,7 @@ class EulerMaruyama():
                 (_, x, _), _ = scan(f, (rng, x, x), ts)
                 return x
         else:
+
             def sampler(rng, n_samples, shape, stack_samples=False):
                 rng, step_rng = random.split(rng)
                 n_samples_shape = (n_samples) + shape
@@ -71,7 +70,6 @@ class EulerMaruyama():
                     rng, step_rng = random.split(rng)
                     x, x_mean = update(rng, x, t)
                     return (rng, x, x_mean), x
-                id_print(x.shape)
                 (_, _, _), xs = scan(f, (rng, x, x), ts)
                 return xs
         return sampler
