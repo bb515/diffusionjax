@@ -63,3 +63,8 @@ def get_loss_fn(sde, model, score_scaling=True, likelihood_weighting=True, reduc
             return reduce_op(jnp.sum(e.reshape((e.shape[0], -1))**2, axis=-1))
     return loss_fn
 
+
+def get_oracle_loss_fn(sde, model):
+    def loss_fn(params, model, rng, batch):
+        rng, step_rng = random.split(rng)
+        pass

@@ -18,7 +18,7 @@ from sgm.utils import (
     update_step,
     optimizer,
     retrain_nn)
-from sgm.sde import get_sde
+from sgm.sde import OU
 
 
 def sample_circle(num_samples):
@@ -50,11 +50,11 @@ def main():
     plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 
     # Get sde model
-    sde = get_sde("OU")
+    sde = OU()
 
     def log_hat_pt(x, t):
         """
-        Empirical distribution score for normal distribution on the hyperplane.
+        Empirical distribution score.
 
         Args:
             x: One location in $\mathbb{R}^2$

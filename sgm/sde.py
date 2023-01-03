@@ -160,10 +160,3 @@ class OU(SDE):
 
         return RSDE()
 
-
-def get_sde(sde_string):
-    if sde_string=="OU":
-        return OU()
-    else:
-        return NotImplementedError()
-
