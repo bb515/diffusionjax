@@ -1,6 +1,6 @@
 """Score based generative models introduction.
 
-1 dimensional image data.
+An example using 1 dimensional image data.
 """
 from jax import jit, vmap, grad
 import jax.random as random
@@ -13,21 +13,17 @@ from sgm.losses import get_loss_fn
 from sgm.samplers import EulerMaruyama
 from sgm.utils import (
     MLP,
-    MLP1D,
-    CNN1D,
+    CNN,
     get_score_fn,
     update_step,
     optimizer,
     retrain_nn)
 from sgm.sde import OU
-from mlkernels import EQ, Matern52
-from jax.scipy.linalg import solve_triangular
-from numpy.linalg import cholesky
+from mlkernels import Matern52
 import numpy as np
 import lab as B
 from functools import partial
 
-from jax.experimental.host_callback import id_print
 
 x_max = 5.0
 epsilon = 1e-4
@@ -67,7 +63,7 @@ def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
 
 
 def main():
-    num_epochs = 4000
+    num_epochs = 2000
     rng = random.PRNGKey(2023)
     rng, step_rng = random.split(rng, 2)
     num_samples = 576
@@ -100,7 +96,7 @@ def main():
 
     def log_hat_pt(x, t):
         """
-        Empirical distribution score for normal distribution on the hyperplane.
+        Empirical distribution score.
 
         Args:
             x: One location in $\mathbb{R}^2$
@@ -169,7 +165,7 @@ def main():
 
     # Neural network training via score matching
     batch_size = 16
-    score_model = MLP()
+    score_model = MLP()  # CNN() is the natural choice
     # Initialize parameters
     params = score_model.init(step_rng, jnp.zeros((batch_size, image_size, num_channels)), jnp.ones((batch_size,)))
     # Initialize optimizer
@@ -197,7 +193,6 @@ def main():
     q_samples = sampler(rng, n_samples=64, shape=(image_size, num_channels))
     plot_samples_1D(q_samples, image_size=image_size, fname="samples trained score")
     plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap trained score")
-    # TODO: why not smooth, why not correct height, lengthscale
 
     frames = 100
     fig, ax = plt.subplots()
