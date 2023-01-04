@@ -20,14 +20,15 @@ class SDE(abc.ABC):
 
     @abc.abstractmethod
     def sde(self, x, t):
-        r"""Parameters to determine the marginal distribution of the SDE,
-
-        .. math::
-            p_t(x)
+        r"""Return the drift and diffusion coefficients of the SDE.
 
         Args:
             x: a JAX tensor of the state
             t: JAX float of the time
+
+        Returns:
+            drift: drift function of the forward SDE
+            diffusion: dispersion function of the forward SDE
         """
 
     @abc.abstractmethod
@@ -73,17 +74,6 @@ class OU(SDE):
         self.beta_max = beta_max
 
     def sde(self, x, t):
-        """
-        Parameters to determine the marginal distribution of the SDE,
-
-        Args:
-            x: a JAX tensor of the state
-            t: a JAX float of the time step
-
-        Returns:
-            drift: drift function of the forward SDE
-            diffusion: dispersion function of the forward SDE
-        """
         beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
         drift = -0.5 * batch_mul(beta_t, x)
         diffusion = jnp.sqrt(beta_t)
@@ -123,17 +113,6 @@ class OU(SDE):
                 self.train_ts = train_ts
 
             def sde(self, x, t):
-                """
-                Parameters to determine the marginal distribution of the reverse SDE,
-
-                Args:
-                    x: a JAX tensor of the state
-                    t: a JAX float of the time step
-
-                Returns:
-                    drift: drift function of the forward SDE
-                    diffusion: dispersion function of the forward SDE
-                """
                 drift, diffusion = sde_fn(x, t)
                 score = score_fn(x, t)
                 drift = drift - diffusion**2 * score
