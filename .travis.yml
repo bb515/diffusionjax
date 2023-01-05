@@ -1,0 +1,29 @@
+dist: bionic
+
+language: python
+
+python:
+  - 3.9
+
+install:
+  - pip install -e .
+
+before_script:
+  - pip install pytest pytest-cov codecov
+  - clinfo
+  - python .travis/context_info.py
+
+script:
+  - pytest -v --cov-config=.coveragerc --cov=./sgm
+
+after_success:
+  - codecov
+
+jobs:
+  include:
+    - name: Lint
+      before_install:
+      install:
+      before_script: pip install flake8 flake8-docstrings
+      script: flake8
+      after_success:
