@@ -30,9 +30,11 @@ setup(
         'scipy',
         'matplotlib',
         'seaborn',
-        'optax==0.1.3',
-        'jax==0.3.23',
-        'jaxlib==0.3.22',
-        'flax==0.6.1'
+        'jaxlib>=0.4.1',
+        'jax>=0.4.1',
+        'optax',
+        'flax',
+        'backends>=1.4.32',
+        'mlkernels>=0.3.6',
         ]
     )
