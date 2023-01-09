@@ -59,11 +59,7 @@ class CNN(nn.Module):
 
 def retrain_nn(
         update_step, num_epochs, step_rng, samples, score_model, params,
-        opt_state, loss_fn, batch_size=5, decomposition=False):
-    if decomposition:
-        L = 2
-    else:
-        L = 1
+        opt_state, loss_fn, batch_size=5):
     train_size = samples.shape[0]
     batch_size = min(train_size, batch_size)
     steps_per_epoch = train_size // batch_size
@@ -77,9 +73,7 @@ def retrain_nn(
         for j, perm in enumerate(perms):
             batch = samples[perm, :]
             rng, step_rng = random.split(rng)
-            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss_fn, has_aux=decomposition)
-            if decomposition:
-                loss = loss[1]
+            loss, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss_fn)
             losses = losses.at[j].set(loss)
         mean_loss = jnp.mean(losses, axis=0)
         mean_losses = mean_losses.at[i].set(mean_loss)
