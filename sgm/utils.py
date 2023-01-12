@@ -63,13 +63,13 @@ def retrain_nn(
     train_size = samples.shape[0]
     batch_size = min(train_size, batch_size)
     steps_per_epoch = train_size // batch_size
-    mean_losses = jnp.zeros((num_epochs, L))
+    mean_losses = jnp.zeros((num_epochs, 1))
     for i in range(num_epochs):
         rng, step_rng = random.split(step_rng)
         perms = random.permutation(step_rng, train_size)
         perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
         perms = perms.reshape((steps_per_epoch, batch_size))
-        losses = jnp.zeros((jnp.shape(perms)[0], L))
+        losses = jnp.zeros((jnp.shape(perms)[0], 1))
         for j, perm in enumerate(perms):
             batch = samples[perm, :]
             rng, step_rng = random.split(rng)
@@ -78,8 +78,7 @@ def retrain_nn(
         mean_loss = jnp.mean(losses, axis=0)
         mean_losses = mean_losses.at[i].set(mean_loss)
         if i % 10 == 0:
-            if L==1: print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
-            if L==2: print("Tangent loss {:.2f}, perpendicular loss {:.2f}".format(mean_loss[0], mean_loss[1]))
+            print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
     return score_model, params, opt_state, mean_losses
 
 
