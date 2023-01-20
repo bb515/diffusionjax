@@ -79,7 +79,7 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 ```
-![Prediction](readme_heatmap_emprical_score.png)
+![Prediction](readme_heatmap_empirical_score.png)
 ```python
 >>> # What happens when I perturb the score with a constant?
 >>> perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
@@ -88,7 +88,7 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 ```
-![Prediction](readme_heatmap_bounded_peturbation.png)
+![Prediction](readme_heatmap_bounded_perturbation.png)
 ```python
 >>> # Neural network training via score matching
 >>> batch_size=16
