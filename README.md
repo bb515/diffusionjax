@@ -46,7 +46,7 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> N = samples.shape[1]
 >>> plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 ```
-![Prediction](readme_empirical_score.png)
+![Prediction](readme_samples.png)
 ```python
 # Get sde model
 >>> sde = OU()
@@ -73,13 +73,13 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> # Running the reverse SDE with the empirical drift
 >>> plot_score(score=nabla_log_hat_pt, t=0.01, area_min=-3, area_max=3, fname="empirical score")
 ```
-
+![Prediction](readme_empirical_score.png)
 ```python
 >>> sampler = EulerMaruyama(sde, nabla_log_hat_pt).get_sampler()
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 ```
-
+![Prediction](readme_heatmap_emprical_score.png)
 ```python
 >>> # What happens when I perturb the score with a constant?
 >>> perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
@@ -88,7 +88,7 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 ```
-
+![Prediction](readme_heatmap_bounded_peturbation.png)
 ```python
 >>> # Neural network training via score matching
 >>> batch_size=16
@@ -116,11 +116,12 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
 >>> plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
 ```
-
+![Prediction](readme_heatmap_trained_score.png)
 ```python
 >>> sampler = EulerMaruyama(sde, trained_score).get_sampler(stack_samples=False)
 >>> q_samples = sampler(rng, n_samples=1000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 ```
+![Prediction](readme_trained_score.png)
 
 
