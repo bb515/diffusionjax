@@ -8,7 +8,7 @@ The development of sgm has been supported by The Alan Turing Institute through t
 
 Contents:
 
-- [Does haves] (#does-haves)
+- [Does haves](#does-haves)
 - [Doesn't haves](#doesn't-haves)
 - [Installation](#installation)
 - [Examples](#examples)
@@ -16,7 +16,6 @@ Contents:
     - [Regression and hyperparameter optimization](#regression-and-hyperparameter-optimization)
     - [Ordinal regression and hyperparameter optimization](#ordinal-regression-and-hyperparameter-optimization)
 - probit uses [MLKernels](https://github.com/wesselb/mlkernels) for the GP prior, see the available [means](https://github.com/wesselb/mlkernels#available-means) and [kernels](https://github.com/wesselb/mlkernels#available-kernels) with [compositional design](https://github.com/wesselb/mlkernels#compositional-design).
-
 
 ## Does haves
 - Training scores on (possibly, image) data and sampling from the generative model.
@@ -123,5 +122,3 @@ The package requires Python 3.9+. `pip install sgm`, or for developers,
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 ```
 ![Prediction](readme_trained_score.png)
-
-
