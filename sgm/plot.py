@@ -33,7 +33,7 @@ def plot_heatmap(samples, area_min=-3, area_max=3, fname="plot_heatmap"):
     def produce_heatmap(samples, area_min, area_max):
         return jnp.sum(vmap(small_kernel, in_axes=(0, None, None))(samples, area_min, area_max), axis=0)
 
-    hm = produce_heatmap(samples, area_min, area_max) 
+    hm = produce_heatmap(samples, area_min, area_max)
     extent = [area_min, area_max, area_max, area_min]
     plt.imshow(hm, cmap=cm, interpolation='nearest', extent=extent)
     ax = plt.gca()
