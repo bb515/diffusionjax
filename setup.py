@@ -6,6 +6,7 @@ This setup is required or else
 will occur.
 """
 from setuptools import setup, find_packages
+import subprocess
 import pathlib
 
 
