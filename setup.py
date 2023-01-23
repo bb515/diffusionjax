@@ -20,6 +20,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="sgm",
+    python_requires=">=3.9",
     description="A simple and accessible diffusion models package in JAX.",
     long_description=README,
     long_description_content_type="text/markdown",
