@@ -7,28 +7,18 @@ sgm is a simple, accessible introduction to diffusion models, also known as scor
 
 Based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by Jakiw Pidstrigach, a tutorial on the theoretical and implementation aspects of SGMs.
 
-The development of sgm has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event “Accelerating generative models and nonconvex optimisation”, which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
+The development of sgm has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event "Accelerating generative models and nonconvex optimisation", which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
 
 Contents:
 
-- [Does haves](#does-haves)
-- [Doesn't haves](#doesn't-haves)
 - [Installation](#installation)
 - [Examples](#examples)
     - [Introduction to diffusion models](#introduction-to-diffusion-models)
     - [Regression and hyperparameter optimization](#regression-and-hyperparameter-optimization)
     - [Ordinal regression and hyperparameter optimization](#ordinal-regression-and-hyperparameter-optimization)
-- probit uses [MLKernels](https://github.com/wesselb/mlkernels) for the GP prior, see the available [means](https://github.com/wesselb/mlkernels#available-means) and [kernels](https://github.com/wesselb/mlkernels#available-kernels) with [compositional design](https://github.com/wesselb/mlkernels#compositional-design).
-
-## Does haves
-- Training scores on (possibly, image) data and sampling from the generative model.
-- Not many lines of code.
-- Easy to use, extendable. Get started with the example, provided.
-
-## Doesn't haves
-- Geometry other than Euclidean space, such as Riemannian manifolds.
-- Diffusion in a latent space.
-- Augmented with critically-damped Langevin diffusion.
+- [Does haves](#does-haves)
+- [Doesn't haves](#doesn't-haves)
+- [References](#references)
 
 ## Installation
 The package requires Python 3.9+. `pip install sgm` or for developers,
@@ -125,3 +115,20 @@ The package requires Python 3.9+. `pip install sgm` or for developers,
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 ```
 ![Prediction](readme_trained_score.png)
+
+## Does haves
+- Training scores on (possibly, image) data and sampling from the generative model.
+- Not many lines of code.
+- Easy to use, extendable. Get started with the example, provided.
+
+## Doesn't haves
+- Geometry other than Euclidean space, such as Riemannian manifolds.
+- Diffusion in a latent space.
+- Augmented with critically-damped Langevin diffusion.
+
+## References
+Algorithms in this package were ported from pre-existing code. In particular, the code was ported from the following papers and repositories:
+
+The [official implementation](https://github.com/yang-song/score_sde) for the paper [Score-Based Generative Modeling through Stochastic Differential Equations](https://openreview.net/forum?id=PxTIG12RRHS) by [Yang Song](https://yang-song.github.io), [Jascha Sohl-Dickstein](http://www.sohldickstein.com/), [Diederik P. Kingma](http://dpkingma.com/), [Abhishek Kumar](http://users.umiacs.umd.edu/~abhishek/), [Stefano Ermon](https://cs.stanford.edu/~ermon/), and [Ben Poole](https://cs.stanford.edu/~poole/)
+
+
