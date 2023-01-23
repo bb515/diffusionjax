@@ -14,8 +14,6 @@ Contents:
 - [Installation](#installation)
 - [Examples](#examples)
     - [Introduction to diffusion models](#introduction-to-diffusion-models)
-    - [Regression and hyperparameter optimization](#regression-and-hyperparameter-optimization)
-    - [Ordinal regression and hyperparameter optimization](#ordinal-regression-and-hyperparameter-optimization)
 - [Does haves](#does-haves)
 - [Doesn't haves](#doesn't-haves)
 - [References](#references)
