@@ -8,6 +8,9 @@ will occur.
 from setuptools import setup, find_packages
 import pathlib
 
+
+cf_remote_version = subprocess.run(['git', 'describe', '--tags'], stdout=subprocess.PIPE).stdout.decod("utf-8").strip()
+
 # The directory containing this file
 HERE = pathlib.Path(__file__).parent
 
@@ -17,14 +20,15 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="sgm",
-    version="0.1.0",
     description="A simple and accessible diffusion models package in JAX.",
     long_description=README,
     long_description_content_type="text/markdown",
-    #url="",
-    #author="Jakiw Pidstrigach and Benjamin Boys",
-    #license="MIT",
+    url="https://github.com/bb515/sgm",
+    author="Jakiw Pidstrigach and Benjamin Boys",
+    license="MIT",
+    license_file=LICENSE.rst,
     packages=find_packages(exclude=['*.test']),
+    include_package_data=True,
     install_requires=[
         'numpy',
         'scipy',
