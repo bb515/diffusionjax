@@ -1,8 +1,8 @@
 """
-Setup script for sgm.
+Setup script for diffusionjax.
 
 This setup is required or else
-    >> ModuleNotFoundError: No module named 'sgm'
+    >> ModuleNotFoundError: No module named 'diffusionjax'
 will occur.
 """
 from setuptools import setup, find_packages
@@ -20,7 +20,7 @@ README = (HERE / "README.md").read_text()
 LICENSE = (HERE / "LICENSE.rst").read_text()
 
 setup(
-    name="diffusion",
+    name="diffusionjax",
     python_requires=">=3.9",
     description="A simple and accessible diffusion models package in JAX.",
     long_description=README,
