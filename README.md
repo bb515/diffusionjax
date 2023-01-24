@@ -1,6 +1,6 @@
 diffusionjax
 ============
-[![CI](https://github.com/bb515/diffusionjax/actions/workflows/CI/badge.svg?branch=master)(https://github.com/bb515/diffusionjax/actions/workflows/CI.yml)
+[![CI](https://github.com/bb515/diffusionjax/actions/workflows/CI/badge.svg?branch=master)
 [![Coverage Status](https://coveralls.io/repos/github/bb515/diffusionjax/badge.svg?branch=master)](https://coveralls.io/github/bb515/diffusionjax?branch=master)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
