@@ -16,6 +16,8 @@ HERE = pathlib.Path(__file__).parent
 # The text of the README file
 README = (HERE / "README.md").read_text()
 
+# The text of the LICENSE file
+LICENSE = (HERE / "LICENSE.rst").read_text()
 
 setup(
     name="sgm",
