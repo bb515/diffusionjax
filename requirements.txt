@@ -3,7 +3,7 @@
 pytest
 pytest-cov
 coveralls
-jax
-jaxlib
+jax>=0.4.1
+jaxlib>=0.4.1
 setuptools_scm[toml]
 setuptools_scm_git_archive
