@@ -10,8 +10,6 @@ import subprocess
 import pathlib
 
 
-cf_remote_version = subprocess.run(['git', 'describe', '--tags'], stdout=subprocess.PIPE).stdout.decod("utf-8").strip()
-
 # The directory containing this file
 HERE = pathlib.Path(__file__).parent
 
