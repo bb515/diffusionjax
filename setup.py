@@ -25,7 +25,7 @@ setup(
     description="A simple and accessible diffusion models package in JAX.",
     long_description=README,
     long_description_content_type="text/markdown",
-    url="https://github.com/bb515/sgm",
+    url="https://github.com/bb515/diffusionjax",
     author="Jakiw Pidstrigach and Benjamin Boys",
     license="MIT",
     license_file=LICENSE,
