@@ -8,17 +8,17 @@ import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 import matplotlib.pyplot as plt
-from sgm.plot import (
+from diffusionjax.plot import (
     plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_animation)
-from sgm.losses import get_loss_fn
-from sgm.samplers import EulerMaruyama
-from sgm.utils import (
+from diffusionjax.losses import get_loss_fn
+from diffusionjax.samplers import EulerMaruyama
+from diffusionjax.utils import (
     MLP,
     get_score_fn,
     update_step,
     optimizer,
     retrain_nn)
-from sgm.sde import OU
+from diffusionjax.sde import OU
 
 
 def sample_circle(num_samples):

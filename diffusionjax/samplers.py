@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
 from jax import vmap
-from sgm.utils import batch_mul
+from diffusionjax.utils import batch_mul
 
 
 class EulerMaruyama():

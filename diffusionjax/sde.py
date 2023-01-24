@@ -3,7 +3,7 @@ import abc
 from functools import partial
 import jax.numpy as jnp
 from jax import jit
-from sgm.utils import batch_mul
+from diffusionjax.utils import batch_mul
 
 
 class SDE(abc.ABC):

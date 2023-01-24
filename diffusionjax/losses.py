@@ -1,7 +1,7 @@
 """All functions related to loss computation and optimization."""
 import jax.numpy as jnp
 import jax.random as random
-from sgm.utils import get_score_fn, batch_mul
+from diffusionjax.utils import get_score_fn, batch_mul
 
 
 def errors(ts, sde, score_fn, rng, batch, likelihood_weighting=True):
