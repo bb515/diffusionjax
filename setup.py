@@ -22,7 +22,7 @@ LICENSE = (HERE / "LICENSE.rst").read_text()
 setup(
     name="diffusionjax",
     python_requires=">=3.8",
-    description="A simple and accessible diffusion models package in JAX.",
+    description="diffusionjax is a simple and accessible diffusion models package in JAX",
     long_description=README,
     long_description_content_type="text/markdown",
     url="https://github.com/bb515/diffusionjax",
