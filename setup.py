@@ -20,7 +20,7 @@ README = (HERE / "README.md").read_text()
 LICENSE = (HERE / "LICENSE.rst").read_text()
 
 setup(
-    name="sgm",
+    name="diffusion",
     python_requires=">=3.9",
     description="A simple and accessible diffusion models package in JAX.",
     long_description=README,
