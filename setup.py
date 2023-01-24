@@ -26,7 +26,7 @@ setup(
     url="https://github.com/bb515/sgm",
     author="Jakiw Pidstrigach and Benjamin Boys",
     license="MIT",
-    license_file=LICENSE.rst,
+    license_file=LICENSE,
     packages=find_packages(exclude=['*.test']),
     include_package_data=True,
     install_requires=[
