@@ -4,7 +4,7 @@ diffusionjax
 [![Coverage Status](https://coveralls.io/repos/github/bb515/diffusionjax/badge.svg?branch=master)](https://coveralls.io/github/bb515/diffusionjax?branch=master)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A simple and accessible diffusion models package in JAX.
+diffusionjax is a simple and accessible diffusion models package in JAX.
 
 diffusionjax is a simple, accessible introduction to diffusion models, also known as score-based generative models (SGMs). It is implemented in Python via the autodiff framework, [JAX](https://github.com/google/jax). In particular, sgm uses the [Flax](https://github.com/google/flax) library for the neural network approximator of the score.
 
