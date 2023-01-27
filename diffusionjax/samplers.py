@@ -2,7 +2,6 @@
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
-from jax import vmap
 from diffusionjax.utils import batch_mul
 
 
@@ -62,33 +61,23 @@ class EulerMaruyama():
     def get_sampler(self, stack_samples=False):
         ts = self.sde.train_ts
         update = self.get_update()
-        if not stack_samples:
-
-            def sampler(rng, n_samples, shape):
+        def sampler(rng, n_samples, shape):
+            rng, step_rng = random.split(rng)
+            n_samples_shape = (n_samples,) + shape
+            x = random.normal(step_rng, n_samples_shape)
+            def f(carry, t):
+                rng, x, x_mean = carry
+                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
-                n_samples_shape = (n_samples,) + shape
-                x = random.normal(step_rng, n_samples_shape)
-                def f(carry, t):
-                    rng, x, x_mean = carry
-                    vec_t = jnp.ones((n_samples, 1)) * (1 - t)
-                    rng, step_rng = random.split(rng)
-                    x, x_mean = update(rng, x, vec_t)
+                x, x_mean = update(rng, x, vec_t)
+                if not stack_samples:
                     return (rng, x, x_mean), ()
+                else:
+                    return (rng, x, x_mean), x
+            if not stack_samples:
                 (_, x, _), _ = scan(f, (rng, x, x), ts)
                 return x
-        else:
-
-            def sampler(rng, n_samples, shape, stack_samples=False):
-                rng, step_rng = random.split(rng)
-                n_samples_shape = (n_samples) + shape
-                x = random.normal(step_rng, n_samples_shape)
-                def f(carry, t):
-                    rng, x, x_mean = carry
-                    vec_t = jnp.ones((n_samples, 1)) * (1 - t)
-                    rng, step_rng = random.split(rng)
-                    x, x_mean = update(rng, x, t)
-                    return (rng, x, x_mean), x
+            else:
                 (_, _, _), xs = scan(f, (rng, x, x), ts)
                 return xs
         return sampler
-
