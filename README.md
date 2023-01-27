@@ -20,6 +20,7 @@ Contents:
 - [Does haves](#does-haves)
 - [Doesn't haves](#doesn't-haves)
 - [References](#references)
+- [Acknowledgements](#acknowledgements)
 
 ## Installation
 The package requires Python 3.8+. `pip install sgm` or for developers,
@@ -132,4 +133,6 @@ Algorithms in this package were ported from pre-existing code. In particular, th
 
 The [official implementation](https://github.com/yang-song/score_sde) for the paper [Score-Based Generative Modeling through Stochastic Differential Equations](https://openreview.net/forum?id=PxTIG12RRHS) by [Yang Song](https://yang-song.github.io), [Jascha Sohl-Dickstein](http://www.sohldickstein.com/), [Diederik P. Kingma](http://dpkingma.com/), [Abhishek Kumar](http://users.umiacs.umd.edu/~abhishek/), [Stefano Ermon](https://cs.stanford.edu/~ermon/), and [Ben Poole](https://cs.stanford.edu/~poole/)
 
+## Acknowledgements
+Thank you to [nPlan](https://www.nplan.io/) who are supporting this project.
 
