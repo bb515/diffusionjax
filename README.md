@@ -21,8 +21,8 @@ Contents:
 - [Acknowledgements](#acknowledgements)
 
 ## Installation
-The package requires Python 3.8+. `pip install sgm` or for developers,
-- Clone the repository `git clone git@github.com:bb515/sgm.git`
+The package requires Python 3.8+. `pip install diffusionjax` or for developers,
+- Clone the repository `git clone git@github.com:bb515/diffusionjax.git`
 - Install using pip `pip install -e .` from the root directory of the repository (see the `setup.py` for the requirements that this command installs).
 
 ## Examples
