@@ -6,7 +6,7 @@ from diffusionjax.utils import batch_mul
 
 
 class EulerMaruyama():
-    """Euler Maruyama numerical solver of an SDE.Functions are designed for a mini-batch of inputs."""
+    """Euler Maruyama numerical solver of an SDE. Functions are designed for a mini-batch of inputs."""
 
     def __init__(self, sde, score_fn):
         """Constructs an Euler Maruyama sampler.
