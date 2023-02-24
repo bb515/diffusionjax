@@ -52,7 +52,7 @@ class EulerMaruyama():
                 rng, x, x_mean, i = carry
                 vec_t = jnp.ones((n_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
-                x, x_mean = update(rng, x, vec_t)
+                x, x_mean = update(step_rng, x, vec_t)
                 i += 1
                 return (rng, x, x_mean, i), ()
             (_, x, _), _ = scan(f, (rng, x, x, 0), ts)
@@ -69,7 +69,7 @@ class EulerMaruyama():
                 rng, x, x_mean = carry
                 vec_t = jnp.ones((n_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
-                x, x_mean = update(rng, x, vec_t)
+                x, x_mean = update(step_rng, x, vec_t)
                 if not stack_samples:
                     return (rng, x, x_mean), ()
                 else:
