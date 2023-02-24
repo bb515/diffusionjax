@@ -40,24 +40,6 @@ class EulerMaruyama():
             return x, x_mean
         return update
 
-    def get_sampler_enumerate(self):
-        ts = self.sde.train_ts
-        update = self.get_update()
-        def sampler(rng, n_samples, shape):
-            rng, step_rng = random.split(rng)
-            n_samples_shape = (n_samples,) + shape
-            print(n_samples_shape)
-            x = random.normal(step_rng, n_samples_shape)
-            def f(carry, t):
-                rng, x, x_mean, i = carry
-                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
-                rng, step_rng = random.split(rng)
-                x, x_mean = update(step_rng, x, vec_t)
-                i += 1
-                return (rng, x, x_mean, i), ()
-            (_, x, _), _ = scan(f, (rng, x, x, 0), ts)
-            return x
-
     def get_sampler(self, stack_samples=False):
         ts = self.sde.train_ts
         update = self.get_update()
