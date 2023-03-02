@@ -9,14 +9,15 @@ from jax.scipy.special import logsumexp
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.losses import get_loss_fn
-from diffusionjax.samplers import EulerMaruyama
+from diffusionjax.solvers import EulerMaruyama
+from diffusionjax.samplers import get_sampler
+from diffusionjax.models import CNN
 from diffusionjax.utils import (
-    CNN,
     get_score_fn,
     update_step,
     optimizer,
     retrain_nn)
-from diffusionjax.sde import OU
+from diffusionjax.sde import OU, AnnealedUDLangevin
 from mlkernels import Matern52
 import numpy as np
 import lab as B
@@ -118,7 +119,7 @@ def main():
     nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
     nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
     # Running the reverse SDE with the empirical score
-    sampler = EulerMaruyama(sde, nabla_log_hat_pt).get_sampler()
+    sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
     q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
     plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
@@ -126,7 +127,7 @@ def main():
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
     rng, step_rng = random.split(rng)
-    sampler = EulerMaruyama(sde, perturbed_score).get_sampler()
+    sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
     q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
     plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
@@ -155,8 +156,16 @@ def main():
         batch_size=batch_size)
     # Get trained score
     trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
-    sampler = EulerMaruyama(sde, trained_score).get_sampler(stack_samples=False)
-    q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+
+    # Get the outer loop of a numerical solver, also known as "predictor"
+    outer_solver = EulerMaruyama(sde.reverse(trained_score))
+
+    # Get the inner loop of a numerical solver, also known as "corrector"
+    inner_sde = AnnealedUDLangevin(trained_score, r=0.01, n_steps=2)
+    inner_solver = EulerMaruyama(inner_sde)
+
+    sampler = get_sampler(outer_solver, inner_solver, denoise=True)
+
     rng, step_rng = random.split(rng, 2)
     q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
