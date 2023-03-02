@@ -149,8 +149,7 @@ class AnnealedUDLangevin(UDLangevin):
         drift, diffusion = self.sde(x, t)
         d = x.shape[1]
         grad_norm = jnp.linalg.norm(
-            drift.reshape((drift.shape[0], -1)), axis=-1).mean()  # TODO should take mean?
-        # grad_norm = jax.lax.pmean(grad_norm, axis_name='batch'). # TODO can batch across XLA devices
+            drift.reshape((drift.shape[0], -1)), axis=-1).mean()
         epsilon = 2 * alpha * d * (self.r / grad_norm )**2
         f = batch_mul(drift, epsilon)
         G = batch_mul(diffusion, jnp.sqrt(epsilon))
@@ -204,7 +203,6 @@ class OU(SDE):
         Args:
             score: A time-dependent score-based model that takes x and t and returns the score.
         """
-        # TODO: Is there a better way of inheriting these variables from self.__class__?
         ts = self.ts
         sde = self.sde
         discretize = self.discretize
