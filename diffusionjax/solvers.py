@@ -1,4 +1,4 @@
-"""Sampler classes."""
+"""Solver classes."""
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
