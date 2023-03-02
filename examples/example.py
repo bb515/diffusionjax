@@ -1,4 +1,4 @@
-"""Score based generative models introduction.
+"""Diffusion models introduction.
 
 Based off the Jupyter notebook: https://jakiw.com/sgm_intro
 A tutorial on the theoretical and implementation aspects of score-based generative models, also called diffusion models.

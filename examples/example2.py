@@ -1,4 +1,4 @@
-"""Score based generative models introduction.
+"""Diffusion models introduction.
 
 An example using 2 dimensional image data.
 """
