@@ -67,7 +67,7 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 ```
 ![Prediction](readme_empirical_score.png)
 ```python
->>> sampler = EulerMaruyama(sde, nabla_log_hat_pt).get_sampler()
+>>> sampler = get_sampler(EulerMaruyama(sde, nabla_log_hat_pt))
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 ```
@@ -76,7 +76,7 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>> # What happens when I perturb the score with a constant?
 >>> perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
 >>> rng, step_rng = random.split(rng)
->>> sampler = EulerMaruyama(sde, perturbed_score).get_sampler()
+>>> sampler = get_sampler(EulerMaruyama(sde, perturbed_score))
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 ```
@@ -110,14 +110,25 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 ```
 ![Prediction](readme_heatmap_trained_score.png)
 ```python
->>> sampler = EulerMaruyama(sde, trained_score).get_sampler(stack_samples=False)
+>>> solver = EulerMaruyama(sde, trained_score)
+>>> sampler = get_sampler(solver, stack_samples=False)
 >>> q_samples = sampler(rng, n_samples=1000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 ```
 ![Prediction](readme_trained_score.png)
+```python
+>>> inpainter = get_inpainter(solver, stack_samples=False)
+>>> data = jnp.array([-0.5, 0.0])
+>>> mask = jnp.array([1, 0])
+>>> data = jnp.tile(data, (64, 1))
+>>> mask = jnp.tile(mask, (64, 1))
+>>> q_samples = inpainter(rng, data, mask)
+>>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap conditional")
+```
+![Prediction](readme_heatmap_conditional.png)
 
 ## Does haves
-- Training scores on (possibly, image) data and sampling from the generative model.
+- Training scores on (possibly, image) data and sampling from the generative model. Also inverse problems, such as inpainting.
 - Not many lines of code.
 - Easy to use, extendable. Get started with the example, provided.
 

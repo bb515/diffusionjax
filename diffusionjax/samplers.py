@@ -1,65 +1,163 @@
-"""Sampler classes."""
+"""Samplers."""
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
-from diffusionjax.utils import batch_mul
 
 
-class EulerMaruyama():
-    """Euler Maruyama numerical solver of an SDE. Functions are designed for a mini-batch of inputs."""
+def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=False):
+    """Get a sampler from (possibly interleaved) numerical solver(s).
 
-    def __init__(self, sde, score_fn):
-        """Constructs an Euler Maruyama sampler.
-        Args:
-            sde: A valid SDE class.
-            score_fn: A valid score function.
+    Args:
+        outer_solver: A valid numerical solver class that will act on an outer loop.
+        inner_solver: "" "" that will act on an inner loop.
+        denoise: Boolean variable that if `True` applies one-step denoising to final samples.
+        stack_samples: Boolean variable that if `True` return all of the sample path or
+            just returns the last sample.
+    Returns:
+        A sampler.
+    """
+
+    def sampler(rng, n_samples, shape, x_0=None):
         """
-        self.sde = sde
-        # Compute the reverse sde
-        self.rsde = sde.reverse(score_fn)
-        self.score_fn = score_fn
 
-    def get_update(self):
-        discretize = self.rsde.discretize
+        Args:
+            rng:
+            n_samples:
+            shape:
+            x_0: Initial condition. If `None`, then samples an initial condition from the
+                sde's initial condition prior.
+        Returns:
+            Samples.
+        """
+        outer_update = outer_solver.get_update()
+        outer_ts = outer_solver.ts
 
-        def update(rng, x, t):
-            """
-            Args:
-                rng: A JAX random state.
-                x: A JAX array representing the current state.
-                t: A JAX array representing the current step.
-            
-            Returns:
-                x: A JAX array of the next state:
-                x_mean: A JAX array. The next state without random noise. Useful for denoising.
-            """
-            f, G = discretize(x, t)
-            z = random.normal(rng, x.shape)
-            x_mean = x + f
-            x = x_mean + batch_mul(G, z)
-            return x, x_mean
-        return update
+        if inner_solver:
+            inner_update = inner_solver.get_update()
+            inner_ts = inner_solver.ts
+            def inner_step(carry, t):
+                rng, x, x_mean, vec_t = carry
+                rng, step_rng = random.split(rng)
+                x, x_mean = inner_update(step_rng, x, vec_t)
+                return (rng, x, x_mean, vec_t), ()
 
-    def get_sampler(self, stack_samples=False):
-        ts = self.sde.train_ts
-        update = self.get_update()
-        def sampler(rng, n_samples, shape):
-            rng, step_rng = random.split(rng)
-            n_samples_shape = (n_samples,) + shape
-            x = random.normal(step_rng, n_samples_shape)
-            def f(carry, t):
+            def outer_step(carry, t):
                 rng, x, x_mean = carry
                 vec_t = jnp.ones((n_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
-                x, x_mean = update(step_rng, x, vec_t)
+                x, x_mean = outer_update(step_rng, x, vec_t)
+                (rng, x, x_mean, vec_t), _ = scan(inner_step, (step_rng, x, x_mean, vec_t), inner_ts)
                 if not stack_samples:
                     return (rng, x, x_mean), ()
                 else:
-                    return (rng, x, x_mean), x
-            if not stack_samples:
-                (_, x, _), _ = scan(f, (rng, x, x), ts)
-                return x
+                    if denoise:
+                        return (rng, x, x_mean), x_mean
+                    else:
+                        return (rng, x, x_mean), x
+        else:
+            def outer_step(carry, t):
+                rng, x, x_mean = carry
+                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                rng, step_rng = random.split(rng)
+                x, x_mean = outer_update(step_rng, x, vec_t)
+                if not stack_samples:
+                    return (rng, x, x_mean), ()
+                else:
+                    if denoise:
+                        return (rng, x, x_mean), x_mean
+                    else:
+                        return (rng, x, x_mean), x
+
+        rng, step_rng = random.split(rng)
+        n_samples_shape = (n_samples,) + shape
+        if x_0 is None:
+            x = random.normal(step_rng, n_samples_shape)
+        else:
+            assert(x_0.shape==n_samples_shape)
+            x = x_0
+        if not stack_samples:
+            (_, x, x_mean), _ = scan(outer_step, (rng, x, x), outer_ts)
+            if denoise:
+                return x_mean
             else:
-                (_, _, _), xs = scan(f, (rng, x, x), ts)
-                return xs
-        return sampler
+                return x
+        else:
+            (_, _, _), xs = scan(outer_step, (rng, x, x), outer_ts)
+            return xs
+    return sampler
+
+
+def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
+    """Get a sampler, with augmented state-space (position and velocity), from (possibly interleaved) numerical solver(s).
+
+    Args:
+        outer_solver: A valid numerical solver class that will act on an outer loop.
+        inner_solver: "" "" that will act on an inner loop.
+        stack_samples:
+    Returns:
+        A sampler.
+    """
+
+    outer_ts = outer_solver.ts
+    outer_update = outer.get_update()
+
+    def sampler(rng, n_samples, shape, x_0=None, xd_0=None):
+        """
+
+        Args:
+            rng:
+            n_samples:
+            shape:
+            x_0:
+            xd_0:
+        Returns:
+            Samples.
+        """
+        if inner_solver:
+            inner_update = inner_solver.get_update()
+            inner_ts = inner_solver.ts
+            def inner_step(carry, t):
+                rng, x, xd, vec_t = carry
+                rng, step_rng = random.split(rng)
+                x, xd, xd_mean = inner_update(step_rng, x, xd, vec_t)
+                return (rng, x, xd, vec_t), ()
+
+            def outer_step(carry, t):
+                rng, x, xd, xd_mean = carry
+                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                rng, step_rng = random.split(rng)
+                x, xd = outer_update(step_rng, x, xd, vec_t)
+                (rng, x, xd, xd_mean), _ = scan(
+                    inner_step, (step_rng, x, xd, vec_t), inner_ts)
+                if not stack_samples:
+                    return (rng, x, xd), ()
+                else:
+                    return (rng, x, xd), x
+        else:
+            def outer_step(carry, t):
+                rng, x, xd, xd_mean = carry
+                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                rng, step_rng = random.split(rng)
+                x, xd = outer_update(step_rng, x, xd, vec_t)
+                if not stack_samples:
+                    return (rng, x, xd), ()
+                else:
+                    return (rng, x, xd), x
+
+        rng, step_rng = random.split(rng)
+        n_samples_shape = (n_samples,) + shape
+        if x_0 is None:
+            x = random.normal(step_rng, n_samples_shape)
+            xd = random.normal(step_rng, n_samples_shape)
+        else:
+            assert(x_0.shape==n_samples_shape)
+            assert(xd_0.shape==n_samples_shape)
+            x = x_0
+            xd = xd_0
+        if not stack_samples:
+            (_, x, xd, _), _ = scan(outer_step, (rng, x, xd, xd), outer_ts)
+            return x, xd
+        else:
+            (_, _, _, _), xs = scan(outer_step, (rng, x, xd, xd), outer_ts)
+            return xs
+    return sampler

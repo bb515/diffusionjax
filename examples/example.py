@@ -11,9 +11,11 @@ import matplotlib.pyplot as plt
 from diffusionjax.plot import (
     plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_animation)
 from diffusionjax.losses import get_loss_fn
-from diffusionjax.samplers import EulerMaruyama
+from diffusionjax.solvers import EulerMaruyama
+from diffusionjax.samplers import get_sampler
+from diffusionjax.inverse_problems import get_inpainter
+from diffusionjax.models import MLP
 from diffusionjax.utils import (
-    MLP,
     get_score_fn,
     update_step,
     optimizer,
@@ -73,14 +75,18 @@ def main():
 
     # Running the reverse SDE with the empirical drift
     plot_score(score=nabla_log_hat_pt, t=0.01, area_min=-3, area_max=3, fname="empirical score")
-    sampler = EulerMaruyama(sde, nabla_log_hat_pt).get_sampler()
+    reverse_sde = sde.reverse(nabla_log_hat_pt)
+    solver = EulerMaruyama(reverse_sde)
+    sampler = get_sampler(solver)
     q_samples = sampler(rng, n_samples=5000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
     rng, step_rng = random.split(rng)
-    sampler = EulerMaruyama(sde, perturbed_score).get_sampler()
+    reverse_sde = sde.reverse(perturbed_score)
+    solver = EulerMaruyama(reverse_sde)
+    sampler = get_sampler(solver)
     q_samples = sampler(rng, n_samples=5000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
@@ -106,12 +112,24 @@ def main():
         opt_state=opt_state,
         loss_fn=loss,
         batch_size=batch_size)
+
     # Get trained score
     trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
     plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
-    sampler = EulerMaruyama(sde, trained_score).get_sampler(stack_samples=False)
+    reverse_sde = sde.reverse(trained_score)
+    outer_solver = EulerMaruyama(reverse_sde)
+    sampler = get_sampler(outer_solver)
     q_samples = sampler(rng, n_samples=1000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
+
+    # Condition on one of the coordinates
+    data = jnp.array([-0.5, 0.0])
+    mask = jnp.array([1, 0])
+    data = jnp.tile(data, (64, 1))
+    mask = jnp.tile(mask, (64, 1))
+    inpainter = get_inpainter(solver, stack_samples=False)
+    q_samples = inpainter(rng, data, mask)
+    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap conditional")
 
     frames = 100
     fig, ax = plt.subplots()
