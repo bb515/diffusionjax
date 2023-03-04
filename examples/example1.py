@@ -1,4 +1,4 @@
-"""Score based generative models introduction.
+"""Diffusion models introduction.
 
 An example using 1 dimensional image data.
 """
@@ -176,7 +176,7 @@ def main():
     # Initialize optimizer
     opt_state = optimizer.init(params)
 
-    if 1:  # Load pre-trained model parameters
+    if 0:  # Load pre-trained model parameters
         f = open('/tmp/output', 'rb')
         output = f.read()
         params = serialization.from_bytes(params, output)
@@ -208,12 +208,12 @@ def main():
     solver = EulerMaruyama(sde.reverse(trained_score))
     sampler = get_sampler(solver, denoise=True)
     rng, step_rng = random.split(rng, 2)
-    q_samples = sampler(rng, n_samples=64, shape=(image_size, num_channels))
-
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples trained score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap trained score")
+    q_samples = sampler(rng, n_samples=512, shape=(image_size, num_channels))
     # C_emp = jnp.corrcoef(q_samples[:, :, 0].T)
     # delta = jnp.linalg.norm(C - C_emp) / image_size
+
+    plot_samples_1D(q_samples[:64], image_size=image_size, fname="samples trained score")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap trained score")
 
     # Condition on one of the coordinates
     data = jnp.zeros((image_size, num_channels))
