@@ -8,12 +8,12 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
-from diffusionjax.losses import get_loss_fn
+from diffusionjax.losses import get_loss
 from diffusionjax.solvers import EulerMaruyama
 from diffusionjax.samplers import get_sampler
 from diffusionjax.models import CNN
 from diffusionjax.utils import (
-    get_score_fn,
+    get_score,
     update_step,
     optimizer,
     retrain_nn)
@@ -140,7 +140,7 @@ def main():
     # Initialize optimizer
     opt_state = optimizer.init(params)
     # Get loss function
-    loss = get_loss_fn(
+    loss = get_loss(
         sde, score_model, score_scaling=True, likelihood_weighting=False,
         reduce_mean=True, pointwise_t=False)
     # Train with score matching
@@ -152,10 +152,10 @@ def main():
         score_model=score_model,
         params=params,
         opt_state=opt_state,
-        loss_fn=loss,
+        loss=loss,
         batch_size=batch_size)
     # Get trained score
-    trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
+    trained_score = get_score(sde, score_model, params, score_scaling=True)
 
     # Get the outer loop of a numerical solver, also known as "predictor"
     outer_solver = EulerMaruyama(sde.reverse(trained_score))
