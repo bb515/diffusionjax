@@ -4,7 +4,10 @@ from math import prod
 
 
 class MLP(nn.Module):
-    """A simple model with multiple fully connected layers and some fourier features for the time variable."""
+    """
+    A simple model with multiple fully connected layers and some fourier features
+    for the time variable. Functions are designed for a mini-batch of inputs.
+    """
     @nn.compact
     def __call__(self, x, t):
         x_shape = x.shape
@@ -28,6 +31,10 @@ class MLP(nn.Module):
 
 
 class CNN(nn.Module):
+    """
+    A simple model with a single convolutional layer with time as another channel.
+    Functions are designed for a mini-batch of inputs.
+    """
     @nn.compact
     def __call__(self, x, t):
         x_shape = x.shape

@@ -117,8 +117,8 @@ def main():
     trained_score = get_score(sde, score_model, params, score_scaling=True)
     plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
     reverse_sde = sde.reverse(trained_score)
-    outer_solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(outer_solver)
+    solver = EulerMaruyama(reverse_sde)
+    sampler = get_sampler(solver)
     q_samples = sampler(rng, n_samples=1000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 
