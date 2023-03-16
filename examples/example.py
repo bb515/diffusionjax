@@ -32,7 +32,6 @@ def sample_circle(num_samples):
     Returns:
         An (num_samples, 2) array of samples.
 
-    N_samples: Number of samples
     Returns a (N_samples, 2) array of samples
     """
     alphas = jnp.linspace(0, 2 * jnp.pi * (1 - 1/num_samples), num_samples)
