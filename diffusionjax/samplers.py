@@ -9,7 +9,7 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
 
     Args:
         outer_solver: A valid numerical solver class that will act on an outer loop.
-        inner_solver: "" "" that will act on an inner loop.
+        inner_solver: '' that will act on an inner loop.
         denoise: Boolean variable that if `True` applies one-step denoising to final samples.
         stack_samples: Boolean variable that if `True` return all of the sample path or
             just returns the last sample.
@@ -21,11 +21,12 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         """
 
         Args:
-            rng:
-            n_samples:
-            shape:
+            rng: A JAX random state.
+            n_samples: Number of samples to return.
+            shape: Shape of array, x.
             x_0: Initial condition. If `None`, then samples an initial condition from the
-                sde's initial condition prior.
+                sde's initial condition prior. Note that this initial condition represents
+                `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
         Returns:
             Samples.
         """
@@ -93,7 +94,8 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
     Args:
         outer_solver: A valid numerical solver class that will act on an outer loop.
         inner_solver: "" "" that will act on an inner loop.
-        stack_samples:
+        stack_samples: Boolean variable that if `True` return all of the sample path or
+            just returns the last sample.
     Returns:
         A sampler.
     """
@@ -105,11 +107,15 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
         """
 
         Args:
-            rng:
-            n_samples:
-            shape:
-            x_0:
-            xd_0:
+            rng: A JAX random state.
+            n_samples: Number of samples to return.
+            shape: Shape of array, x.
+            x_0: Initial condition position. If `None`, then samples an initial condition from the
+                sde's initial condition prior. Note that this initial condition represents
+                `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
+            x_d0: Initial condition velocity. If `None`, then samples an initial condition from the
+                sde's initial condition prior. Note that this initial condition represents
+                `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
         Returns:
             Samples.
         """

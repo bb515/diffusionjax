@@ -10,13 +10,13 @@ from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import (
     plot_score, plot_heatmap, plot_animation)
-from diffusionjax.losses import get_loss_fn
+from diffusionjax.losses import get_loss
 from diffusionjax.solvers import EulerMaruyama
 from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
 from diffusionjax.samplers import get_sampler
 from diffusionjax.models import MLP
 from diffusionjax.utils import (
-    get_score_fn,
+    get_score,
     update_step,
     optimizer,
     retrain_nn)
@@ -182,7 +182,7 @@ def main():
         params = serialization.from_bytes(params, output)
     else:
         # Get loss function
-        loss = get_loss_fn(
+        loss = get_loss(
             sde, score_model, score_scaling=True, likelihood_weighting=False,
             reduce_mean=True, pointwise_t=False)
 
@@ -195,7 +195,7 @@ def main():
             score_model=score_model,
             params=params,
             opt_state=opt_state,
-            loss_fn=loss,
+            loss=loss,
             batch_size=batch_size)
 
         # Save params
@@ -204,7 +204,7 @@ def main():
         f.write(output)
 
     # Get trained score
-    trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
+    trained_score = get_score(sde, score_model, params, score_scaling=True)
     solver = EulerMaruyama(sde.reverse(trained_score))
     sampler = get_sampler(solver, denoise=True)
     rng, step_rng = random.split(rng, 2)

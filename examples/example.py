@@ -10,13 +10,13 @@ from jax.scipy.special import logsumexp
 import matplotlib.pyplot as plt
 from diffusionjax.plot import (
     plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_animation)
-from diffusionjax.losses import get_loss_fn
+from diffusionjax.losses import get_loss
 from diffusionjax.solvers import EulerMaruyama
 from diffusionjax.samplers import get_sampler
 from diffusionjax.inverse_problems import get_inpainter
 from diffusionjax.models import MLP
 from diffusionjax.utils import (
-    get_score_fn,
+    get_score,
     update_step,
     optimizer,
     retrain_nn)
@@ -32,7 +32,6 @@ def sample_circle(num_samples):
     Returns:
         An (num_samples, 2) array of samples.
 
-    N_samples: Number of samples
     Returns a (N_samples, 2) array of samples
     """
     alphas = jnp.linspace(0, 2 * jnp.pi * (1 - 1/num_samples), num_samples)
@@ -98,7 +97,7 @@ def main():
     # Initialize optimizer
     opt_state = optimizer.init(params)
     # Get loss function
-    loss = get_loss_fn(
+    loss = get_loss(
         sde, score_model, score_scaling=True, likelihood_weighting=False,
         reduce_mean=True, pointwise_t=False)
     # Train with score matching
@@ -110,15 +109,15 @@ def main():
         score_model=score_model,
         params=params,
         opt_state=opt_state,
-        loss_fn=loss,
+        loss=loss,
         batch_size=batch_size)
 
     # Get trained score
-    trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
+    trained_score = get_score(sde, score_model, params, score_scaling=True)
     plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
     reverse_sde = sde.reverse(trained_score)
-    outer_solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(outer_solver)
+    solver = EulerMaruyama(reverse_sde)
+    sampler = get_sampler(solver)
     q_samples = sampler(rng, n_samples=1000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 

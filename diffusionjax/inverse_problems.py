@@ -1,4 +1,4 @@
-"""Controllable generation."""
+"""Inverse problems."""
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
@@ -17,6 +17,7 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
     Args:
         inverse_scaler: The inverse data normalizer.
         denoise: Boolean variable that if `True` applies one-step denoising to final samples.
+        stack_samples: Boolean variable that if `True` returns all samples on path(s).
     Returns:
         A pmapped inpainting function.
     """
