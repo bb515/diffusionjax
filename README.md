@@ -90,7 +90,7 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>> # Initialize optimizer
 >>> opt_state = optimizer.init(params)
 >>> # Get loss function
->>> loss = get_loss_fn(
+>>> loss = get_loss(
 >>>     sde, score_model, score_scaling=True, likelihood_weighting=False,
 >>>     reduce_mean=True, pointwise_t=False)
 >>> # Train with score matching
@@ -102,10 +102,10 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>>     score_model=score_model,
 >>>     params=params,
 >>>     opt_state=opt_state,
->>>     loss_fn=loss,
+>>>     loss=loss,
 >>>     batch_size=batch_size)
 >>> # Get trained score
->>> trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
+>>> trained_score = get_score(sde, score_model, params, score_scaling=True)
 >>> plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
 ```
 ![Prediction](readme_heatmap_trained_score.png)
