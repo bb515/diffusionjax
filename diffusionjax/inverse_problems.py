@@ -21,27 +21,37 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
     Returns:
         A pmapped inpainting function.
     """
-    def get_update():
-        sampler_update = solver.get_update()
-        sde = solver.sde
+    def update(rng, data, mask, x, vec_t, coeff):
+        data_mean, std = solver.sde.marginal_prob(data, vec_t)
+        z = random.normal(rng, x.shape)
+        z_data = data_mean + batch_mul(std, z)
+        x = merge_data_with_mask(x, z_data, mask, coeff)
 
-        def update(rng, data, mask, x, vec_t, coeff):
-            x_space = x
-            data_mean, std = sde.marginal_prob(data, vec_t)
-            z = random.normal(rng, x.shape)
-            z_space = z
-            z_data = data_mean + batch_mul(std, z_space)
-            x_space = merge_data_with_mask(x_space, z_data, mask, coeff)
-            x = x_space
+        rng, step_rng = random.split(rng)
+        x, x_mean = solver.update(step_rng, x, vec_t)
+        return x, x_mean
 
-            rng, step_rng = random.split(rng)
-            x, x_mean = sampler_update(step_rng, x, vec_t)
-            return x, x_mean
+    # def get_update():
+    #     sampler_update = solver.get_update()
+    #     sde = solver.sde
 
-        return update
+    #     def update(rng, data, mask, x, vec_t, coeff):
+    #         x_space = x
+    #         data_mean, std = sde.marginal_prob(data, vec_t)
+    #         z = random.normal(rng, x.shape)
+    #         z_space = z
+    #         z_data = data_mean + batch_mul(std, z_space)
+    #         x_space = merge_data_with_mask(x_space, z_data, mask, coeff)
+    #         x = x_space
 
-    update = get_update()
-    ts = solver.sde.ts
+    #         rng, step_rng = random.split(rng)
+    #         x, x_mean = sampler_update(step_rng, x, vec_t)
+    #         return x, x_mean
+
+    #     return update
+
+    # update = get_update()
+    ts = solver.ts
 
     def projection_sampler(rng, data, mask, coeff):
         """Sampler for image inpainting.
@@ -89,23 +99,32 @@ def get_inpainter(solver, inverse_scaler=None,
     Returns:
         A pmapped inpainting function.
     """
-    def get_update():
-        sampler_update = solver.get_update()
-        sde = solver.sde
+    def update(rng, data, mask, x, vec_t):
+        x, x_mean = solver.update(rng, x, vec_t)
+        masked_data_mean, std = solver.sde.marginal_prob(data, vec_t)
+        rng, step_rng = random.split(rng)
+        masked_data = masked_data_mean + batch_mul(random.normal(rng, x.shape), std)
+        x = x * (1. - mask) + masked_data * mask
+        x_mean = x * (1. - mask) + masked_data_mean * mask
+        return x, x_mean
 
-        def update(rng, data, mask, x, vec_t):
-            x, x_mean = sampler_update(rng, x, vec_t)
-            masked_data_mean, std = sde.marginal_prob(data, vec_t)
-            rng, step_rng = random.split(rng)
-            masked_data = masked_data_mean + batch_mul(random.normal(rng, x.shape), std)
-            x = x * (1. - mask) + masked_data * mask
-            x_mean = x * (1. - mask) + masked_data_mean * mask
-            return x, x_mean
+    # def get_update():
+    #     sampler_update = solver.get_update()
+    #     sde = solver.sde
 
-        return update
+    #     def update(rng, data, mask, x, vec_t):
+    #         x, x_mean = sampler_update(rng, x, vec_t)
+    #         masked_data_mean, std = sde.marginal_prob(data, vec_t)
+    #         rng, step_rng = random.split(rng)
+    #         masked_data = masked_data_mean + batch_mul(random.normal(rng, x.shape), std)
+    #         x = x * (1. - mask) + masked_data * mask
+    #         x_mean = x * (1. - mask) + masked_data_mean * mask
+    #         return x, x_mean
 
-    update = get_update()
-    ts = solver.sde.ts
+    #     return update
+
+    # update = get_update()
+    ts = solver.ts
 
     def inpainter(rng, data, mask):
         """Sampler for image inpainting.

@@ -31,8 +31,6 @@ def sample_circle(num_samples):
 
     Returns:
         An (num_samples, 2) array of samples.
-
-    Returns a (N_samples, 2) array of samples
     """
     alphas = jnp.linspace(0, 2 * jnp.pi * (1 - 1/num_samples), num_samples)
     xs = jnp.cos(alphas)
@@ -51,7 +49,7 @@ def main():
     plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 
     # Get sde model
-    sde = OU()
+    sde = OU(beta_min=0.01, beta_max=3.0)
 
     def log_hat_pt(x, t):
         """
@@ -77,7 +75,7 @@ def main():
     reverse_sde = sde.reverse(nabla_log_hat_pt)
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler(solver)
-    q_samples = sampler(rng, n_samples=5000, shape=(N,))
+    q_samples = sampler(rng, num_samples=5000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
@@ -86,19 +84,21 @@ def main():
     reverse_sde = sde.reverse(perturbed_score)
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler(solver)
-    q_samples = sampler(rng, n_samples=5000, shape=(N,))
+    q_samples = sampler(rng, num_samples=5000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
     # Neural network training via score matching
     batch_size=16
     score_model = MLP()
+    score_scaling = True
     # Initialize parameters
     params = score_model.init(step_rng, jnp.zeros((batch_size, N)), jnp.ones((batch_size,)))
     # Initialize optimizer
     opt_state = optimizer.init(params)
     # Get loss function
+    solver = EulerMaruyama(sde)
     loss = get_loss(
-        sde, score_model, score_scaling=True, likelihood_weighting=False,
+        sde, solver, score_model, score_scaling=score_scaling, likelihood_weighting=False,
         reduce_mean=True, pointwise_t=False)
     # Train with score matching
     score_model, params, opt_state, mean_losses = retrain_nn(
@@ -113,12 +113,12 @@ def main():
         batch_size=batch_size)
 
     # Get trained score
-    trained_score = get_score(sde, score_model, params, score_scaling=True)
+    trained_score = get_score(sde, score_model, params, score_scaling=score_scaling)
     plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
     reverse_sde = sde.reverse(trained_score)
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler(solver)
-    q_samples = sampler(rng, n_samples=1000, shape=(N,))
+    q_samples = sampler(rng, num_samples=1000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 
     # Condition on one of the coordinates
@@ -128,7 +128,7 @@ def main():
     mask = jnp.tile(mask, (64, 1))
     inpainter = get_inpainter(solver, stack_samples=False)
     q_samples = inpainter(rng, data, mask)
-    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap conditional")
+    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap inpainted")
 
     frames = 100
     fig, ax = plt.subplots()
