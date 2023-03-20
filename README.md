@@ -67,7 +67,7 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 ```
 ![Prediction](readme_empirical_score.png)
 ```python
->>> sampler = get_sampler(EulerMaruyama(sde, nabla_log_hat_pt))
+>>> sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 ```
@@ -76,7 +76,7 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>> # What happens when I perturb the score with a constant?
 >>> perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
 >>> rng, step_rng = random.split(rng)
->>> sampler = get_sampler(EulerMaruyama(sde, perturbed_score))
+>>> sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
 >>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 ```
@@ -90,9 +90,8 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>> # Initialize optimizer
 >>> opt_state = optimizer.init(params)
 >>> # Get loss function
->>> loss = get_loss_fn(
->>>     sde, score_model, score_scaling=True, likelihood_weighting=False,
->>>     reduce_mean=True, pointwise_t=False)
+>>> loss = get_loss(
+>>>     sde, solver, score_model, score_scaling=True, likelihood_weighting=False)
 >>> # Train with score matching
 >>> score_model, params, opt_state, mean_losses = retrain_nn(
 >>>     update_step=update_step,
@@ -102,15 +101,15 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>>     score_model=score_model,
 >>>     params=params,
 >>>     opt_state=opt_state,
->>>     loss_fn=loss,
+>>>     loss=loss,
 >>>     batch_size=batch_size)
 >>> # Get trained score
->>> trained_score = get_score_fn(sde, score_model, params, score_scaling=True)
+>>> trained_score = get_score(sde, score_model, params, score_scaling=True)
 >>> plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
 ```
 ![Prediction](readme_heatmap_trained_score.png)
 ```python
->>> solver = EulerMaruyama(sde, trained_score)
+>>> solver = EulerMaruyama(sde.reverse(trained_score))
 >>> sampler = get_sampler(solver, stack_samples=False)
 >>> q_samples = sampler(rng, n_samples=1000, shape=(N,))
 >>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
@@ -123,9 +122,9 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>> data = jnp.tile(data, (64, 1))
 >>> mask = jnp.tile(mask, (64, 1))
 >>> q_samples = inpainter(rng, data, mask)
->>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap conditional")
+>>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap inpainted")
 ```
-![Prediction](readme_heatmap_conditional.png)
+![Prediction](readme_heatmap_inpainted.png)
 
 ## Does haves
 - Training scores on (possibly, image) data and sampling from the generative model. Also inverse problems, such as inpainting.
