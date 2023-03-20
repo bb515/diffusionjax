@@ -90,6 +90,7 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 >>> # Initialize optimizer
 >>> opt_state = optimizer.init(params)
 >>> # Get loss function
+>>> solver = EulerMaruyama(sde)
 >>> loss = get_loss(
 >>>     sde, solver, score_model, score_scaling=True, likelihood_weighting=False)
 >>> # Train with score matching
