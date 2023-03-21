@@ -9,7 +9,7 @@ from jax.scipy.special import logsumexp
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.losses import get_loss
-from diffusionjax.solvers import EulerMaruyama
+from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.samplers import get_sampler
 from diffusionjax.models import CNN
 from diffusionjax.utils import (
@@ -17,7 +17,7 @@ from diffusionjax.utils import (
     update_step,
     optimizer,
     retrain_nn)
-from diffusionjax.sde import OU, AnnealedUDLangevin
+from diffusionjax.sde import OU, UDLangevin
 from mlkernels import Matern52
 import numpy as np
 import lab as B
@@ -64,21 +64,22 @@ def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
 
 
 def main():
-    num_epochs = 200
+    num_epochs = 128
     rng = random.PRNGKey(2023)
     rng, step_rng = random.split(rng, 2)
     num_samples = 144
     num_channels = 1
     image_size = 32  # image size
+    num_steps = 1000
 
     samples, C = sample_image_rgb(rng, num_samples=num_samples, image_size=image_size, kernel=Matern52(), num_channels=num_channels)  # (num_samples, image_size**2, num_channels)
-    plot_samples(samples, image_size=image_size, num_channels=num_channels)
+    plot_samples(samples[:64], image_size=image_size, num_channels=num_channels)
     # Reshape image data
     samples = samples.reshape(-1, image_size, image_size, num_channels)
-    plot_samples_1D(samples, image_size, "samples 1D")
+    plot_samples_1D(samples[:64], image_size, "samples 1D")
 
     # Get sde model
-    sde = OU()
+    sde = OU(beta_min=0.1, beta_max=10.0)
 
     def log_hat_pt(x, t):
         """
@@ -115,22 +116,23 @@ def main():
         score = - jnp.linalg.solve(m_t**2 * C + v_t * jnp.eye(x_shape[0] * x_shape[1]), x)
         return score.reshape(x_shape)
 
-    # Get a jax grad function, which can be batched with vmap
-    nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
-    nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
-    # Running the reverse SDE with the empirical score
-    sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
-    q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
-    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
-    plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
-    # What happens when I perturb the score with a constant?
-    perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
-    rng, step_rng = random.split(rng)
-    sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
-    q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
-    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
+    if 0:  # this may take a while
+        # Get a jax grad function, which can be batched with vmap
+        nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
+        nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
+        # Running the reverse SDE with the empirical score
+        sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps))
+        q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+        plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
+        plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
+        plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
+        # What happens when I perturb the score with a constant?
+        perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
+        rng, step_rng = random.split(rng)
+        sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps))
+        q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+        plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
+        plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
     # Neural network training via score matching
     batch_size = 16
@@ -140,8 +142,9 @@ def main():
     # Initialize optimizer
     opt_state = optimizer.init(params)
     # Get loss function
+    solver = EulerMaruyama(sde, num_steps=num_steps)
     loss = get_loss(
-        sde, score_model, score_scaling=True, likelihood_weighting=False,
+        sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
         reduce_mean=True, pointwise_t=False)
     # Train with score matching
     score_model, params, opt_state, mean_losses = retrain_nn(
@@ -158,16 +161,16 @@ def main():
     trained_score = get_score(sde, score_model, params, score_scaling=True)
 
     # Get the outer loop of a numerical solver, also known as "predictor"
-    outer_solver = EulerMaruyama(sde.reverse(trained_score))
+    outer_solver = EulerMaruyama(sde.reverse(trained_score), num_steps=num_steps)
 
     # Get the inner loop of a numerical solver, also known as "corrector"
-    inner_sde = AnnealedUDLangevin(trained_score, r=0.01, n_steps=2)
-    inner_solver = EulerMaruyama(inner_sde)
+    inner_solver = Annealed(sde.corrector(UDLangevin, trained_score), num_steps=2, snr=0.01)
 
     sampler = get_sampler(outer_solver, inner_solver, denoise=True)
+    # sampler = get_sampler(outer_solver, denoise=True)
 
     rng, step_rng = random.split(rng, 2)
-    q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+    q_samples = sampler(rng, num_samples=64, shape=(image_size, image_size, num_channels))
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
     plot_samples_1D(q_samples, image_size, fname="samples 1D trained score")
     plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap trained score")

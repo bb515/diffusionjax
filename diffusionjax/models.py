@@ -39,8 +39,17 @@ class CNN(nn.Module):
     def __call__(self, x, t):
         x_shape = x.shape
         ndim = x.ndim
-        t = t.reshape((t.shape[0],) + (1,) * (ndim - 1))
-        t = jnp.tile(t, (1,) + x_shape[1:-1] + (1,))
+
+        n_hidden = x_shape[1]
+        n_time_channels = 1
+
+        t = t.reshape((t.shape[0], -1))
+        t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=-1)
+        t = nn.Dense(n_hidden**2 * n_time_channels)(t)
+        t = nn.relu(t)
+        t = nn.Dense(n_hidden**2 * n_time_channels)(t)
+        t = nn.relu(t)
+        t = t.reshape(t.shape[0], n_hidden, n_hidden, n_time_channels)
         # Add time as another channel
         x = jnp.concatenate((x, t), axis=-1)
         # Global convolution

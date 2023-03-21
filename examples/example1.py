@@ -20,7 +20,7 @@ from diffusionjax.utils import (
     update_step,
     optimizer,
     retrain_nn)
-from diffusionjax.sde import OU, AnnealedUDLangevin
+from diffusionjax.sde import OU
 from mlkernels import Matern52
 import numpy as np
 import lab as B
@@ -79,7 +79,7 @@ def main():
     plot_samples_1D(samples[:64], image_size, "samples")
 
     # Get sde model
-    sde = OU()
+    sde = OU(beta_min=0.1, beta_max=3.0)
 
     def log_hat_pt_tmp(x, t):
         """
@@ -140,7 +140,7 @@ def main():
         # Running the reverse SDE with the empirical score
         plot_score(score=nabla_log_hat_pt_tmp, t=0.01, area_min=-3, area_max=3, fname="empirical score")
         sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
-        q_samples = sampler(rng, n_samples=64, shape=(image_size, num_channels))
+        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
         plot_samples_1D(q_samples, image_size=image_size, fname="samples empirical score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap empirical score")
 
@@ -148,7 +148,7 @@ def main():
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
         sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
-        q_samples = sampler(rng, n_samples=64, shape=(image_size, num_channels))
+        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
         plot_samples_1D(q_samples, image_size=image_size, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
@@ -156,7 +156,7 @@ def main():
 
         # Running the reverse SDE with the true score
         sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_pt)))
-        q_samples = sampler(rng, n_samples=64, shape=(image_size, num_channels))
+        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
         plot_samples_1D(q_samples, image_size=image_size, fname="samples true score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true score")
 
@@ -164,15 +164,17 @@ def main():
         perturbed_score = lambda x, t: nabla_log_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
         sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
-        q_samples = sampler(rng, n_samples=64, shape=(image_size, num_channels))
+        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
         plot_samples_1D(q_samples, image_size=image_size, fname="samples true bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true bounded perturbation")
 
     # Neural network training via score matching
     batch_size = 64
     score_model = MLP()
+
     # Initialize parameters
     params = score_model.init(step_rng, jnp.zeros((batch_size, image_size, num_channels)), jnp.ones((batch_size,)))
+
     # Initialize optimizer
     opt_state = optimizer.init(params)
 
@@ -181,9 +183,10 @@ def main():
         output = f.read()
         params = serialization.from_bytes(params, output)
     else:
+        solver = EulerMaruyama(sde)
         # Get loss function
         loss = get_loss(
-            sde, score_model, score_scaling=True, likelihood_weighting=False,
+            sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
             reduce_mean=True, pointwise_t=False)
 
         # Train with score matching
@@ -208,28 +211,12 @@ def main():
     solver = EulerMaruyama(sde.reverse(trained_score))
     sampler = get_sampler(solver, denoise=True)
     rng, step_rng = random.split(rng, 2)
-    q_samples = sampler(rng, n_samples=512, shape=(image_size, num_channels))
+    q_samples = sampler(rng, num_samples=512, shape=(image_size, num_channels))
     # C_emp = jnp.corrcoef(q_samples[:, :, 0].T)
     # delta = jnp.linalg.norm(C - C_emp) / image_size
 
     plot_samples_1D(q_samples[:64], image_size=image_size, fname="samples trained score")
     plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap trained score")
-
-    # Condition on one of the coordinates
-    data = jnp.zeros((image_size, num_channels))
-    data = data.at[[0, -1], 0].set([-1.0, 1.0])
-    mask = jnp.zeros((image_size, num_channels), dtype=int)
-    mask = mask.at[[0, -1], 0].set([1, 1])
-    data = jnp.tile(data, (5, 1, 1))
-    mask = jnp.tile(mask, (5, 1, 1))
-
-    inpainter = get_inpainter(solver, stack_samples=False)
-    q_samples = inpainter(rng, data, mask)
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples inpainted")
-
-    projection_sampler = get_projection_sampler(solver, stack_samples=False)
-    q_samples = projection_sampler(rng, data, mask, coeff=1e-2)
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples projected")
 
     if 0:
         frames = 100
@@ -240,6 +227,24 @@ def main():
                 ax, q_samples[0], trained_score, t=1 - (i / frames), area_min=-5, area_max=5, fname="trained score")
         # Plot animation of the trained score over time
         plot_animation(fig, ax, animate, frames, "trained_score")
+
+    # Condition on one of the coordinates
+    data = jnp.zeros((image_size, num_channels))
+    data = data.at[[0, -1], 0].set([-1.0, 1.0])
+    mask = jnp.zeros((image_size, num_channels), dtype=int)
+    mask = mask.at[[0, -1], 0].set([1, 1])
+    data = jnp.tile(data, (5, 1, 1))
+    mask = jnp.tile(mask, (5, 1, 1))
+
+    # Get inpainter
+    inpainter = get_inpainter(solver, stack_samples=False)
+    q_samples = inpainter(rng, data, mask)
+    plot_samples_1D(q_samples, image_size=image_size, fname="samples inpainted")
+
+    # Get projection sampler
+    projection_sampler = get_projection_sampler(solver, stack_samples=False)
+    q_samples = projection_sampler(rng, data, mask, coeff=1e-2)
+    plot_samples_1D(q_samples, image_size=image_size, fname="samples projected")
 
 
 if __name__ == "__main__":

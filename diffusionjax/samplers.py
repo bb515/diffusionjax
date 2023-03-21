@@ -2,6 +2,15 @@
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
+import functools
+
+
+def shared_update(rng, x, t, solver, probability_flow=None):
+    """A wrapper that configures and returns the update function of the solvers.
+
+    :probablity_flow: Placeholder for probability flow ODE (TODO).
+    """
+    return solver.update(rng, x, t)
 
 
 def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=False):
@@ -17,12 +26,12 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         A sampler.
     """
 
-    def sampler(rng, n_samples, shape, x_0=None):
+    def sampler(rng, num_samples, shape, x_0=None):
         """
 
         Args:
             rng: A JAX random state.
-            n_samples: Number of samples to return.
+            num_samples: Number of samples to return.
             shape: Shape of array, x.
             x_0: Initial condition. If `None`, then samples an initial condition from the
                 sde's initial condition prior. Note that this initial condition represents
@@ -30,12 +39,15 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         Returns:
             Samples.
         """
-        outer_update = outer_solver.get_update()
+        outer_update = functools.partial(shared_update,
+                                         solver=outer_solver)
         outer_ts = outer_solver.ts
 
         if inner_solver:
-            inner_update = inner_solver.get_update()
+            inner_update = functools.partial(shared_update,
+                                            solver=inner_solver)
             inner_ts = inner_solver.ts
+
             def inner_step(carry, t):
                 rng, x, x_mean, vec_t = carry
                 rng, step_rng = random.split(rng)
@@ -44,7 +56,7 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
 
             def outer_step(carry, t):
                 rng, x, x_mean = carry
-                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
                 x, x_mean = outer_update(step_rng, x, vec_t)
                 (rng, x, x_mean, vec_t), _ = scan(inner_step, (step_rng, x, x_mean, vec_t), inner_ts)
@@ -58,7 +70,7 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         else:
             def outer_step(carry, t):
                 rng, x, x_mean = carry
-                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
                 x, x_mean = outer_update(step_rng, x, vec_t)
                 if not stack_samples:
@@ -70,11 +82,11 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
                         return (rng, x, x_mean), x
 
         rng, step_rng = random.split(rng)
-        n_samples_shape = (n_samples,) + shape
+        num_samples_shape = (num_samples,) + shape
         if x_0 is None:
-            x = random.normal(step_rng, n_samples_shape)
+            x = random.normal(step_rng, num_samples_shape)
         else:
-            assert(x_0.shape==n_samples_shape)
+            assert(x_0.shape==num_samples_shape)
             x = x_0
         if not stack_samples:
             (_, x, x_mean), _ = scan(outer_step, (rng, x, x), outer_ts)
@@ -99,16 +111,16 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
     Returns:
         A sampler.
     """
-
+    outer_update = functools.partial(shared_update,
+                                    solver=outer_solver)
     outer_ts = outer_solver.ts
-    outer_update = outer.get_update()
 
-    def sampler(rng, n_samples, shape, x_0=None, xd_0=None):
+    def sampler(rng, num_samples, shape, x_0=None, xd_0=None):
         """
 
         Args:
             rng: A JAX random state.
-            n_samples: Number of samples to return.
+            num_samples: Number of samples to return.
             shape: Shape of array, x.
             x_0: Initial condition position. If `None`, then samples an initial condition from the
                 sde's initial condition prior. Note that this initial condition represents
@@ -120,8 +132,10 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
             Samples.
         """
         if inner_solver:
-            inner_update = inner_solver.get_update()
+            inner_update = functools.partial(shared_update,
+                                            solver=inner_solver)
             inner_ts = inner_solver.ts
+
             def inner_step(carry, t):
                 rng, x, xd, vec_t = carry
                 rng, step_rng = random.split(rng)
@@ -130,7 +144,7 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
 
             def outer_step(carry, t):
                 rng, x, xd, xd_mean = carry
-                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
                 x, xd = outer_update(step_rng, x, xd, vec_t)
                 (rng, x, xd, xd_mean), _ = scan(
@@ -142,7 +156,7 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
         else:
             def outer_step(carry, t):
                 rng, x, xd, xd_mean = carry
-                vec_t = jnp.ones((n_samples, 1)) * (1 - t)
+                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
                 rng, step_rng = random.split(rng)
                 x, xd = outer_update(step_rng, x, xd, vec_t)
                 if not stack_samples:
@@ -151,13 +165,13 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
                     return (rng, x, xd), x
 
         rng, step_rng = random.split(rng)
-        n_samples_shape = (n_samples,) + shape
+        num_samples_shape = (num_samples,) + shape
         if x_0 is None:
-            x = random.normal(step_rng, n_samples_shape)
-            xd = random.normal(step_rng, n_samples_shape)
+            x = random.normal(step_rng, num_samples_shape)
+            xd = random.normal(step_rng, num_samples_shape)
         else:
-            assert(x_0.shape==n_samples_shape)
-            assert(xd_0.shape==n_samples_shape)
+            assert(x_0.shape==num_samples_shape)
+            assert(xd_0.shape==num_samples_shape)
             x = x_0
             xd = xd_0
         if not stack_samples:
