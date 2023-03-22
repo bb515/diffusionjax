@@ -179,7 +179,7 @@ def main():
     opt_state = optimizer.init(params)
 
     if 0:  # Load pre-trained model parameters
-        f = open('/tmp/output', 'rb')
+        f = open('/tmp/output1', 'rb')
         output = f.read()
         params = serialization.from_bytes(params, output)
     else:
@@ -203,7 +203,7 @@ def main():
 
         # Save params
         output = serialization.to_bytes(params)
-        f = open('/tmp/output', 'wb')
+        f = open('/tmp/output1', 'wb')
         f.write(output)
 
     # Get trained score

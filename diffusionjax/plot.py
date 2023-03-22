@@ -75,6 +75,7 @@ def plot_animation(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300
 
 
 def plot_score(score, t, area_min=-1, area_max=1, fname="plot_score"):
+    fig, ax = plt.subplots(1, 1)
     # this helper function is here so that we can jit it.
     # We can not jit the whole function since plt.quiver cannot
     # be jitted
@@ -87,8 +88,11 @@ def plot_score(score, t, area_min=-1, area_max=1, fname="plot_score"):
         scores = score(grid, t)
         return grid, scores
     grid, scores = helper(score, t, area_min, area_max)
-    plt.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 1])
-    plt.savefig(fname)
+    ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 1])
+    ax.set_xlabel(r"$x_0$")
+    ax.set_ylabel(r"$x_1$")
+    plt.gca().set_aspect('equal', adjustable='box')
+    fig.savefig(fname)
     plt.close()
 
 
@@ -106,4 +110,5 @@ def plot_score_ax(ax, score, t, area_min=-1, area_max=1, fname="plot_score"):
         return grid, scores
     grid, scores = helper(score, t, area_min, area_max)
     ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 3])
-
+    ax.set_xlabel(r"$x_0$")
+    ax.set_ylabel(r"$x_1$")
