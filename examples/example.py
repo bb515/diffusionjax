@@ -149,7 +149,6 @@ def main():
         ax.clear()
         plot_score_ax(
             ax, trained_score, t=1 - (i / frames), area_min=-1, area_max=1)
-        plt.savefig("frame-{}.png".format(i))
 
     # Plot animation of the trained score over time
     plot_animation(fig, ax, animate, frames, "trained_score")
