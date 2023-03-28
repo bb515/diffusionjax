@@ -10,7 +10,8 @@ from jax.scipy.special import logsumexp
 from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import (
-    plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_animation)
+    plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_heatmap_ax,
+    plot_animation)
 from diffusionjax.losses import get_loss
 from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.samplers import get_sampler
@@ -75,7 +76,7 @@ def main():
     plot_score(score=nabla_log_hat_pt, t=0.01, area_min=-3, area_max=3, fname="empirical score")
     reverse_sde = sde.reverse(nabla_log_hat_pt)
     solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(solver)
+    sampler = get_sampler(solver, stack_samples=False)
     q_samples = sampler(rng, num_samples=5000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
 
@@ -128,7 +129,7 @@ def main():
     plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
     reverse_sde = sde.reverse(trained_score)
     solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(solver)
+    sampler = get_sampler(solver, stack_samples=False)
     q_samples = sampler(rng, num_samples=1000, shape=(N,))
     plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
 
@@ -147,7 +148,8 @@ def main():
     def animate(i, ax):
         ax.clear()
         plot_score_ax(
-            ax, trained_score, t=1 - (i / frames), area_min=-3, area_max=3, fname="trained score")
+            ax, trained_score, t=1 - (i / frames), area_min=-1, area_max=1)
+        plt.savefig("frame-{}.png".format(i))
 
     # Plot animation of the trained score over time
     plot_animation(fig, ax, animate, frames, "trained_score")
