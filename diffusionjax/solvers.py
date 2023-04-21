@@ -13,6 +13,8 @@ class Solver(abc.ABC):
         """Construct an SDE.
         Args:
             num_steps: number of discretization time steps.
+            dt: time step duration, float or `None`.
+                Optional, if provided then final time, t1 = dt * num_steps.
         """
         self.num_steps = num_steps
         if dt is None:
@@ -42,9 +44,10 @@ class EulerMaruyama(Solver):
     """Euler Maruyama numerical solver of an SDE. Functions are designed for a mini-batch of inputs."""
 
     def __init__(self, sde, num_steps=1000):
-        """Constructs an Euler Maruyama sampler.
+        """Constructs an Euler-Maruyama Solver.
         Args:
             sde: A valid SDE class.
+            num_steps: number of discretization time steps.
         """
         super().__init__(num_steps)
         self.sde = sde

@@ -140,3 +140,38 @@ def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3):
     ax.invert_yaxis()
     ax.set_xlabel(r"$x_0$")
     ax.set_ylabel(r"$x_1$")
+
+
+def plot_temperature_schedule(sde, solver):
+    """Plots the temperature schedule of the SDE marginals.
+
+    Args:
+        sde: a valid SDE class.
+    """
+    m2 = sde.mean_coeff(solver.ts)
+    v = sde.variance(solver.ts)
+    plt.plot(solver.ts, m2, label="m2")
+    plt.plot(solver.ts, v, label="v")
+    plt.legend()
+    plt.savefig("plot_temperature_schedule.png")
+    plt.close()
+
+
+def plot_scatter(samples, fname="samples"):
+    fig, ax = plt.subplots(1, 1)
+    fig.patch.set_facecolor('white')
+    fig.patch.set_alpha(1.0)
+    ax.scatter(
+        samples[:, 0], samples[:, 1],
+        alpha=0.1, label=r"$x$")
+    ax.legend()
+    ax.set_xlabel(r"$x_{}$".format(0))
+    ax.set_ylabel(r"$x_{}$".format(1))
+    ax.set_xlim(-3, 3)
+    ax.set_ylim(-3, 3)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.draw()
+    fig.savefig(
+        fname,
+        facecolor=fig.get_facecolor(), edgecolor='none')
+    plt.close()
