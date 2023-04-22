@@ -21,7 +21,7 @@ Contents:
 - [Acknowledgements](#acknowledgements)
 
 ## Installation
-The package requires Python 3.8+. `pip install diffusionjax` or for developers,
+The package requires Python 3.8+. First, it is recommended to [create a new python virtual environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands). Then, `pip install diffusionjax` or for developers,
 - Clone the repository `git clone git@github.com:bb515/diffusionjax.git`
 - Install using pip `pip install -e .` from the root directory of the repository (see the `setup.py` for the requirements that this command installs).
 
@@ -40,8 +40,8 @@ The package requires Python 3.8+. `pip install diffusionjax` or for developers,
 ```
 ![Prediction](readme_samples.png)
 ```python
-# Get sde model
->>> sde = OU()
+>>> # Get variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU) sde model
+>>> sde = VP()
 >>>
 >>> def log_hat_pt(x, t):
 >>>     """

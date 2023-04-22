@@ -84,7 +84,7 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         rng, step_rng = random.split(rng)
         num_samples_shape = (num_samples,) + shape
         if x_0 is None:
-            x = random.normal(step_rng, num_samples_shape)
+            x = outer_solver.sde.prior(step_rng, num_samples_shape)
         else:
             assert(x_0.shape==num_samples_shape)
             x = x_0
@@ -167,8 +167,7 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
         rng, step_rng = random.split(rng)
         num_samples_shape = (num_samples,) + shape
         if x_0 is None:
-            x = random.normal(step_rng, num_samples_shape)
-            xd = random.normal(step_rng, num_samples_shape)
+            x, xd = outer_solver.sde.prior(step_rng, num_samples_shape)
         else:
             assert(x_0.shape==num_samples_shape)
             assert(xd_0.shape==num_samples_shape)

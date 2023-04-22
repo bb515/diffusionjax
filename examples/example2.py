@@ -6,6 +6,7 @@ from jax import jit, vmap, grad
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
+from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.losses import get_loss
@@ -17,7 +18,7 @@ from diffusionjax.utils import (
     update_step,
     optimizer,
     retrain_nn)
-from diffusionjax.sde import OU, UDLangevin
+from diffusionjax.sde import VP, UDLangevin
 from mlkernels import Matern52
 import numpy as np
 import lab as B
@@ -78,8 +79,8 @@ def main():
     samples = samples.reshape(-1, image_size, image_size, num_channels)
     plot_samples_1D(samples[:64], image_size, "samples 1D")
 
-    # Get sde model
-    sde = OU(beta_min=0.1, beta_max=10.0)
+    # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
+    sde = VP(beta_min=0.1, beta_max=10.0)
 
     def log_hat_pt(x, t):
         """
@@ -141,22 +142,33 @@ def main():
     params = score_model.init(step_rng, jnp.zeros((batch_size, image_size, image_size, num_channels)), jnp.ones((batch_size,)))
     # Initialize optimizer
     opt_state = optimizer.init(params)
-    # Get loss function
-    solver = EulerMaruyama(sde, num_steps=num_steps)
-    loss = get_loss(
-        sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
-        reduce_mean=True, pointwise_t=False)
-    # Train with score matching
-    score_model, params, opt_state, mean_losses = retrain_nn(
-        update_step=update_step,
-        num_epochs=num_epochs,
-        step_rng=step_rng,
-        samples=samples,
-        score_model=score_model,
-        params=params,
-        opt_state=opt_state,
-        loss=loss,
-        batch_size=batch_size)
+    if 0:  # Load pre-trained model parameters
+        f = open('/tmp/output2', 'rb')
+        output = f.read()
+        params = serialization.from_bytes(params, output)
+    else:
+        # Get loss function
+        solver = EulerMaruyama(sde, num_steps=num_steps)
+        loss = get_loss(
+            sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
+            reduce_mean=True, pointwise_t=False)
+        # Train with score matching
+        score_model, params, opt_state, mean_losses = retrain_nn(
+            update_step=update_step,
+            num_epochs=num_epochs,
+            step_rng=step_rng,
+            samples=samples,
+            score_model=score_model,
+            params=params,
+            opt_state=opt_state,
+            loss=loss,
+            batch_size=batch_size)
+
+        # Save params
+        output = serialization.to_bytes(params)
+        f = open('/tmp/output2', 'wb')
+        f.write(output)
+
     # Get trained score
     trained_score = get_score(sde, score_model, params, score_scaling=True)
 
@@ -178,4 +190,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
