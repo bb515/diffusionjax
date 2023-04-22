@@ -40,8 +40,8 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 ```
 ![Prediction](readme_samples.png)
 ```python
->>> # Get sde model
->>> sde = OU()
+>>> # Get variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU) sde model
+>>> sde = VP()
 >>>
 >>> def log_hat_pt(x, t):
 >>>     """

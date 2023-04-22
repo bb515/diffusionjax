@@ -22,7 +22,7 @@ from diffusionjax.utils import (
     update_step,
     optimizer,
     retrain_nn)
-from diffusionjax.sde import OU, UDLangevin
+from diffusionjax.sde import VP, VE, UDLangevin
 
 
 def sample_circle(num_samples):
@@ -50,8 +50,10 @@ def main():
     N = samples.shape[1]
     plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 
-    # Get sde model
-    sde = OU(beta_min=0.01, beta_max=3.0)
+    # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
+    sde = VP(beta_min=0.01, beta_max=3.0)
+    # Alternative sde model, variance exploding (VE) a.k.a. time-dependent diffusion process
+    # sde = VE(sigma_min=0.01, sigma_max=3.0)
 
     def log_hat_pt(x, t):
         """

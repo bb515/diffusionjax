@@ -1,8 +1,9 @@
 """SDE class."""
 import abc
 from functools import partial
-import jax.numpy as jnp
 import jax
+import jax.numpy as jnp
+from jax import random
 from diffusionjax.utils import batch_mul
 
 
@@ -25,6 +26,25 @@ class SDE(abc.ABC):
             drift: drift function of the forward SDE
             diffusion: dispersion function of the forward SDE
         """
+
+    class RSDE:
+        """Reverse SDE class."""
+        def __init__(self, score, forward_sde):
+            self.score = score
+            self.forward_sde = forward_sde
+
+        def sde(self, x, t):
+            drift, diffusion = self.forward_sde(x, t)
+            drift = -drift + batch_mul(diffusion**2, self.score(x, t))
+            return drift, diffusion
+
+    def corrector(self, Corrector, score):
+
+        class CSDE(Corrector, self.__class__):
+            def __init__(self):
+                super().__init__(score)
+
+        return CSDE()
 
 
 class ODLangevin(SDE):
@@ -53,8 +73,64 @@ class UDLangevin(SDE):
         return drift, diffusion
 
 
-class OU(SDE):
-    """Time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
+class VE(SDE):
+    """Variance exploding (VE) SDE, also known as diffusion process
+    with a time dependent diffusion coefficient.
+    """
+    def __init__(self, sigma_min=0.1, sigma_max=20.0):
+        super().__init__()
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+
+    def sde(self, x, t):
+        sigma = self.sigma_min * (self.sigma_max / self.sigma_min)**t
+        drift = jnp.zeros_like(x)
+        diffusion = sigma * jnp.sqrt(2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min)))
+        return drift, diffusion
+
+    def log_mean_coeff(self, t):
+        return jnp.zeros_like(t)
+
+    def mean_coeff(self, t):
+        return 1.0
+
+    def variance(self, t):
+        std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
+        return std**2
+
+    def marginal_prob(self, x, t):
+        r"""Parameters to determine the marginal distribution of the SDE,
+
+        .. math::
+            p_t(x)
+
+        Args:
+            x: a JAX tensor of the state
+            t: JAX float of the time
+        """
+        std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
+        mean = x
+        return mean, std
+
+    def prior(self, rng, shape):
+        return random.normal(rng, shape) * self.sigma_max
+
+    def reverse(self, score):
+        fwd_sde = self.sde
+        sigma_min = self.sigma_min
+        sigma_max = self.sigma_max
+
+        class RVE(self.RSDE, self.__class__):
+            def __init__(self):
+                super().__init__(score, fwd_sde)
+                self.sigma_min = sigma_min
+                self.sigma_max = sigma_max
+        return RVE()
+
+
+class VP(SDE):
+    """Variance preserving (VP) SDE, also known
+    as time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
     def __init__(self, beta_min=0.1, beta_max=20.0):
         super().__init__()
         self.beta_min = beta_min
@@ -93,33 +169,17 @@ class OU(SDE):
         std = jnp.sqrt(self.variance(t))
         return mean, std
 
-    def reverse(self, score):
-        """Create the reverse-time SDE/ODE
+    def prior(self, rng, shape):
+        return random.normal(rng, shape)
 
-        Args:
-            score: A time-dependent score-based model that takes x and t and returns the score.
-        """
-        sde = self.sde
+    def reverse(self, score):
+        fwd_sde = self.sde
         beta_min = self.beta_min
         beta_max = self.beta_max
 
-        class RSDE(self.__class__):
-
+        class ROU(self.RSDE, self.__class__):
             def __init__(self):
+                super().__init__(score, fwd_sde)
                 self.beta_min = beta_min
                 self.beta_max = beta_max
-
-            def sde(self, x, t):
-                drift, diffusion = sde(x, t)
-                drift = -drift + batch_mul(diffusion**2, score(x, t))
-                return drift, diffusion
-
-        return RSDE()
-
-    def corrector(self, Corrector, score):
-
-        class CSDE(Corrector, self.__class__):
-            def __init__(self, score):
-                super().__init__(score)
-
-        return CSDE(score)
+        return ROU()

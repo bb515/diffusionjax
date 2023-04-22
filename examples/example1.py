@@ -20,7 +20,7 @@ from diffusionjax.utils import (
     update_step,
     optimizer,
     retrain_nn)
-from diffusionjax.sde import OU
+from diffusionjax.sde import VE
 from mlkernels import Matern52
 import numpy as np
 import lab as B
@@ -79,7 +79,7 @@ def main():
     plot_samples_1D(samples[:64], image_size, "samples")
 
     # Get sde model
-    sde = OU(beta_min=0.1, beta_max=3.0)
+    sde = VE(sigma_min=0.01, sigma_max=3.0)
 
     def log_hat_pt_tmp(x, t):
         """
