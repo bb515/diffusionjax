@@ -1,6 +1,9 @@
 """Diffusion models introduction.
 
 An example using 1 dimensional image data.
+
+Dependencies: This example requires mlkernels package,
+https://github.com/wesselb/mlkernels#installation
 """
 from jax import jit, vmap, grad
 import jax.random as random

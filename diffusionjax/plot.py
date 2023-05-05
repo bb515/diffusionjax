@@ -148,13 +148,15 @@ def plot_temperature_schedule(sde, solver):
     Args:
         sde: a valid SDE class.
     """
-    m2 = sde.mean_coeff(solver.ts)
+    m2 = sde.mean_coeff(solver.ts)**2
     v = sde.variance(solver.ts)
     plt.plot(solver.ts, m2, label="m2")
     plt.plot(solver.ts, v, label="v")
     plt.legend()
     plt.savefig("plot_temperature_schedule.png")
     plt.close()
+
+
 
 
 def plot_scatter(samples, fname="samples"):

@@ -24,6 +24,7 @@ class Solver(abc.ABC):
             self.dt = dt
             t1 = dt * num_steps
             self.ts = jnp.linspace(0, t1, num_steps + 1)[:-1].reshape(-1, 1)
+        print("num_steps={}, dt={}".format(self.num_steps, self.dt))
 
     @abc.abstractmethod
     def update(self, rng, x, t):

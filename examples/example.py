@@ -41,6 +41,22 @@ def sample_circle(num_samples):
     return samples
 
 
+def plot_beta_schedule(sde, solver):
+    """Plots the temperature schedule of the SDE marginals.
+
+    Args:
+        sde: a valid SDE class.
+    """
+    beta_t = sde.beta_min + solver.ts * (sde.beta_max - sde.beta_min)
+    diffusion = jnp.sqrt(beta_t)
+
+    plt.plot(solver.ts, beta_t, label="beta_t")
+    plt.plot(solver.ts, diffusion, label="diffusion_t")
+    plt.legend()
+    plt.savefig("plot_beta_schedule.png")
+    plt.close()
+
+
 def main():
     num_epochs = 4000
     rng = random.PRNGKey(2023)
