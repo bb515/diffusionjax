@@ -40,7 +40,5 @@ setup(
         'jax>=0.4.1',
         'optax',
         'flax',
-        'backends>=1.4.32',
-        'mlkernels>=0.3.6',
         ]
     )

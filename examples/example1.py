@@ -1,6 +1,9 @@
 """Diffusion models introduction.
 
 An example using 1 dimensional image data.
+
+Dependencies: This example requires mlkernels package,
+https://github.com/wesselb/mlkernels#installation
 """
 from jax import jit, vmap, grad
 import jax.random as random
@@ -37,9 +40,9 @@ def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels=1):
     x = np.linspace(-x_max, x_max, image_size)
     x = x.reshape(image_size, 1)
     C = B.dense(kernel(x)) + epsilon * B.eye(image_size)
-    x = random.multivariate_normal(rng, mean=jnp.zeros(x.shape[0]), cov=C, shape=(num_samples, num_channels))
-    x = x.transpose((0, 2, 1))
-    return x, C
+    u = random.multivariate_normal(rng, mean=jnp.zeros(x.shape[0]), cov=C, shape=(num_samples, num_channels))
+    u = u.transpose((0, 2, 1))
+    return u, C
 
 
 def plot_score_ax_sample(ax, sample, score, t, area_min=-1, area_max=1, fname="plot_score"):
@@ -86,7 +89,7 @@ def main():
         Empirical distribution score.
 
         Args:
-            x: One location in $\mathbb{R}^2$
+            x: One location in $\mathbb{R}^{image_size}$
             t: time
         Returns:
             The empirical log density, as described in the Jupyter notebook
@@ -102,7 +105,7 @@ def main():
         Empirical distribution score.
 
         Args:
-            x: One location in $\mathbb{R}^2$
+            x: One location in $\mathbb{R}^{image_size}$
             t: time
         Returns:
             The empirical log density, as described in the Jupyter notebook
@@ -118,7 +121,7 @@ def main():
     def nabla_log_pt(x, t):
         """
         Args:
-            x: One location in $\mathbb{R}^2$
+            x: One location in $\mathbb{R}^{image_size}$
             t: time
         Returns:
             The true log density.
@@ -139,32 +142,34 @@ def main():
 
         # Running the reverse SDE with the empirical score
         plot_score(score=nabla_log_hat_pt_tmp, t=0.01, area_min=-3, area_max=3, fname="empirical score")
-        sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
-        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
+        sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
+        q_samples = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples empirical score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap empirical score")
 
         # What happens when I perturb the score with a constant?
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
-        sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
-        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
+        sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
+        q_samples = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
         nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
 
         # Running the reverse SDE with the true score
-        sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_pt)))
-        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
+        sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_pt)))
+        q_samples = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples true score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true score")
 
         # What happens when I perturb the score with a constant?
         perturbed_score = lambda x, t: nabla_log_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
-        rng, step_rng = random.split(rng)
-        sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
-        q_samples = sampler(rng, num_samples=64, shape=(image_size, num_channels))
+        sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
+        rng, *sample_rng = random.split(rng, 2)
+        sample_rng = jnp.asarray(sample_rng)
+        q_samples = sampler(sample_rng)
+        q_samples = q_samples.reshape(64, image_size, num_channels)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples true bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true bounded perturbation")
 
@@ -209,9 +214,13 @@ def main():
     # Get trained score
     trained_score = get_score(sde, score_model, params, score_scaling=True)
     solver = EulerMaruyama(sde.reverse(trained_score))
-    sampler = get_sampler(solver, denoise=True)
-    rng, step_rng = random.split(rng, 2)
-    q_samples = sampler(rng, num_samples=512, shape=(image_size, num_channels))
+    sampler = get_sampler((512, image_size, num_channels), solver, denoise=True)
+
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = sampler(sample_rng)
+    q_samples = q_samples.reshape(512, image_size, num_channels)
+
     # C_emp = jnp.corrcoef(q_samples[:, :, 0].T)
     # delta = jnp.linalg.norm(C - C_emp) / image_size
 
@@ -238,12 +247,18 @@ def main():
 
     # Get inpainter
     inpainter = get_inpainter(solver, stack_samples=False)
-    q_samples = inpainter(rng, data, mask)
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = inpainter(sample_rng, data, mask)
+    q_samples = q_samples.reshape(5, image_size, num_channels)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples inpainted")
 
     # Get projection sampler
     projection_sampler = get_projection_sampler(solver, stack_samples=False)
-    q_samples = projection_sampler(rng, data, mask, coeff=1e-2)
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = projection_sampler(sample_rng, data, mask, 1e-2)
+    q_samples = q_samples.reshape(5, image_size, num_channels)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples projected")
 
 

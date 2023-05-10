@@ -3,6 +3,7 @@
 Based off the Jupyter notebook: https://jakiw.com/sgm_intro
 A tutorial on the theoretical and implementation aspects of score-based generative models, also called diffusion models.
 """
+import jax
 from jax import jit, vmap, grad
 import jax.random as random
 import jax.numpy as jnp
@@ -41,10 +42,25 @@ def sample_circle(num_samples):
     return samples
 
 
+def plot_beta_schedule(sde, solver):
+    """Plots the temperature schedule of the SDE marginals.
+
+    Args:
+        sde: a valid SDE class.
+    """
+    beta_t = sde.beta_min + solver.ts * (sde.beta_max - sde.beta_min)
+    diffusion = jnp.sqrt(beta_t)
+
+    plt.plot(solver.ts, beta_t, label="beta_t")
+    plt.plot(solver.ts, diffusion, label="diffusion_t")
+    plt.legend()
+    plt.savefig("plot_beta_schedule.png")
+    plt.close()
+
+
 def main():
     num_epochs = 4000
     rng = random.PRNGKey(2023)
-    rng, step_rng = random.split(rng, 2)
     num_samples = 8
     samples = sample_circle(num_samples)
     N = samples.shape[1]
@@ -78,25 +94,30 @@ def main():
     plot_score(score=nabla_log_hat_pt, t=0.01, area_min=-3, area_max=3, fname="empirical score")
     reverse_sde = sde.reverse(nabla_log_hat_pt)
     solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(solver, stack_samples=False)
-    q_samples = sampler(rng, num_samples=5000, shape=(N,))
-    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
+    sampler = get_sampler((5760, N), solver, stack_samples=False)
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = sampler(sample_rng)
+    q_samples = q_samples.reshape(5760, N)
+    plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
-    rng, step_rng = random.split(rng)
     reverse_sde = sde.reverse(perturbed_score)
     solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(solver)
-    q_samples = sampler(rng, num_samples=5000, shape=(N,))
-    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
+    sampler = get_sampler((5760, N), solver)
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = sampler(sample_rng)
+    q_samples = q_samples.reshape(5760, N)
+    plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
     # Neural network training via score matching
-    batch_size=16
+    batch_size=64
     score_model = MLP()
     score_scaling = True
     # Initialize parameters
-    params = score_model.init(step_rng, jnp.zeros((batch_size, N)), jnp.ones((batch_size,)))
+    params = score_model.init(rng, jnp.zeros((batch_size, N)), jnp.ones((batch_size,)))
     # Initialize optimizer
     opt_state = optimizer.init(params)
     if 0:  # Load pre-trained model parameters
@@ -113,7 +134,7 @@ def main():
         score_model, params, opt_state, mean_losses = retrain_nn(
             update_step=update_step,
             num_epochs=num_epochs,
-            step_rng=step_rng,
+            step_rng=rng,
             samples=samples,
             score_model=score_model,
             params=params,
@@ -131,9 +152,12 @@ def main():
     plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
     reverse_sde = sde.reverse(trained_score)
     solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler(solver, stack_samples=False)
-    q_samples = sampler(rng, num_samples=1000, shape=(N,))
-    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
+    sampler = get_sampler((720, N), solver, stack_samples=False)
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = sampler(sample_rng)
+    q_samples = q_samples.reshape(720, N)
+    plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap trained score")
 
     # Condition on one of the coordinates
     data = jnp.array([-0.5, 0.0])
@@ -141,8 +165,11 @@ def main():
     data = jnp.tile(data, (64, 1))
     mask = jnp.tile(mask, (64, 1))
     inpainter = get_inpainter(solver, stack_samples=False)
-    q_samples = inpainter(rng, data, mask)
-    plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap inpainted")
+    rng, *sample_rng = random.split(rng, 2)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = inpainter(sample_rng, data, mask)
+    q_samples = q_samples.reshape(64, N)
+    plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
 
     frames = 100
     fig, ax = plt.subplots(1, 1)

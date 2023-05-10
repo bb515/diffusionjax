@@ -1,4 +1,5 @@
 """Solver classes."""
+import jax
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
@@ -19,11 +20,13 @@ class Solver(abc.ABC):
         self.num_steps = num_steps
         if dt is None:
             self.dt = 1. / self.num_steps
-            self.ts = jnp.linspace(0, 1, num_steps + 1)[:-1].reshape(-1, 1)
+            # Defined in forward time, t \in [\epsilon, 1.0], 0 < \epsilon << 1
+            self.ts = jnp.linspace(0, 1, num_steps + 1)[1:].reshape(-1, 1)
         else:
             self.dt = dt
             t1 = dt * num_steps
-            self.ts = jnp.linspace(0, t1, num_steps + 1)[:-1].reshape(-1, 1)
+            # Defined in forward time, t \in [\epsilon, t1], 0 < \epsilon << t1
+            self.ts = jnp.linspace(0, t1, num_steps + 1)[1:].reshape(-1, 1)
 
     @abc.abstractmethod
     def update(self, rng, x, t):
@@ -73,10 +76,11 @@ class EulerMaruyama(Solver):
 
 
 class Annealed(Solver):
-    """Annealed numerical solver of an SDE. Functions are designed for a mini-batch of inputs."""
+    """Annealed Langevin numerical solver of an SDE.
+    Functions are designed for a mini-batch of inputs."""
 
     def __init__(self, sde, num_steps=2, snr=1e-2):
-        """Constructs an Euler Maruyama sampler.
+        """Constructs an Annealed Langevin Solver.
         Args:
             sde: A valid SDE class.
         """
@@ -95,20 +99,17 @@ class Annealed(Solver):
             x: A JAX array of the next state:
             x_mean: A JAX array. The next state without random noise. Useful for denoising.
         """
-        grad, diffusion = self.sde.sde(x, t)
+        grad = self.sde.score(x, t)
         grad_norm = jnp.linalg.norm(
             grad.reshape((grad.shape[0], -1)), axis=-1).mean()
-        # TODO: implement parallel mean across batches
-        # grad_norm = jax.lax.pmean(grad_norm, axis_name='batch')
+        grad_norm = jax.lax.pmean(grad_norm, axis_name='batch')
         noise = random.normal(rng, x.shape)
         noise_norm = jnp.linalg.norm(
             noise.reshape((noise.shape[0], -1)), axis=-1).mean()
-        # noise_norm = jax.lax.pmean(noise_norm, axis_name='batch')
-        # TODO: alpha need not be a mini-batch
+        noise_norm = jax.lax.pmean(noise_norm, axis_name='batch')
+        # Note: alpha need not be a mini-batch
         alpha = jnp.exp(2 * self.sde.log_mean_coeff(t))
         dt = (self.snr * noise_norm / grad_norm)**2 * 2 * alpha
-        f = batch_mul(grad, dt)
-        G = batch_mul(diffusion, jnp.sqrt(dt))
-        x_mean = x + f
-        x = x_mean + batch_mul(G, noise)
+        x_mean = x + batch_mul(grad, dt)
+        x = x_mean + batch_mul(2 * dt, noise)
         return x, x_mean
