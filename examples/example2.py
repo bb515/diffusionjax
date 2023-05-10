@@ -5,6 +5,7 @@ An example using 2 dimensional image data.
 Dependencies: This example requires mlkernels package,
 https://github.com/wesselb/mlkernels#installation
 """
+import jax
 from jax import jit, vmap, grad
 import jax.random as random
 import jax.numpy as jnp
@@ -13,7 +14,8 @@ from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.losses import get_loss
-from diffusionjax.solvers import EulerMaruyama, Annealed
+from diffusionjax.solvers import EulerMaruyama
+from diffusionjax.solvers import Annealed
 from diffusionjax.samplers import get_sampler
 from diffusionjax.models import CNN
 from diffusionjax.utils import (
@@ -55,9 +57,9 @@ def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
     yy = yy.reshape(image_size**2, 1)
     z = np.hstack((xx, yy))
     C = B.dense(kernel(z))  + epsilon * B.eye(image_size**2)
-    x = random.multivariate_normal(rng, mean=jnp.zeros(xx.shape[0]), cov=C, shape=(num_samples, num_channels))
-    x = x.transpose((0, 2, 1))
-    return x, C
+    u = random.multivariate_normal(rng, mean=jnp.zeros(xx.shape[0]), cov=C, shape=(num_samples, num_channels))
+    u = u.transpose((0, 2, 1))
+    return u, C
 
 
 def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
@@ -90,7 +92,7 @@ def main():
         Empirical distribution score.
 
         Args:
-            x: One location in $\mathbb{R}^2$
+            x: One location in $\mathbb{R}^{image_size}$
             t: time
         Returns:
             The empirical log density, as described in the Jupyter notebook
@@ -106,7 +108,7 @@ def main():
     def nabla_log_pt(x, t):
         """
         Args:
-            x: One location in $\mathbb{R}^2$
+            x: One location in $\mathbb{R}^{image_size}$
             t: time
         Returns:
             The true log density.
@@ -117,24 +119,24 @@ def main():
         v_t = sde.variance(t)
         m_t = sde.mean_coeff(t)
         x = x.flatten()
-        score = - jnp.linalg.solve(m_t**2 * C + v_t * jnp.eye(x_shape[0] * x_shape[1]), x)
+        score = -jnp.linalg.solve(m_t**2 * C + v_t * jnp.eye(x_shape[0] * x_shape[1]), x)
         return score.reshape(x_shape)
 
     if 0:  # this may take a while
         # Get a jax grad function, which can be batched with vmap
         nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
-        nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
+        # nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
         # Running the reverse SDE with the empirical score
-        sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps))
-        q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+        sampler = get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps))
+        q_samples = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
         plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
         # What happens when I perturb the score with a constant?
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
-        sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps))
-        q_samples = sampler(rng, n_samples=64, shape=(image_size, image_size, num_channels))
+        sampler = get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps))
+        q_samples = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
@@ -181,11 +183,14 @@ def main():
     # Get the inner loop of a numerical solver, also known as "corrector"
     inner_solver = Annealed(sde.corrector(UDLangevin, trained_score), num_steps=2, snr=0.01)
 
-    sampler = get_sampler(outer_solver, inner_solver, denoise=True)
-    # sampler = get_sampler(outer_solver, denoise=True)
+    num_devices =  jax.local_device_count()
+    sampler = get_sampler((64//num_devices, image_size, image_size, num_channels), outer_solver, inner_solver, denoise=True)
+    # sampler = get_sampler((64//num_devices, image_size, image_size, num_channels), outer_solver, denoise=True)
 
-    rng, step_rng = random.split(rng, 2)
-    q_samples = sampler(rng, num_samples=64, shape=(image_size, image_size, num_channels))
+    rng, *sample_rng = random.split(rng, num_devices + 1)
+    sample_rng = jnp.asarray(sample_rng)
+    q_samples = sampler(sample_rng)
+    q_samples = q_samples.reshape(64, image_size, image_size, num_channels)
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
     plot_samples_1D(q_samples, image_size, fname="samples 1D trained score")
     plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap trained score")

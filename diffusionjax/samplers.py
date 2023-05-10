@@ -1,4 +1,5 @@
 """Samplers."""
+import jax
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
@@ -13,10 +14,13 @@ def shared_update(rng, x, t, solver, probability_flow=None):
     return solver.update(rng, x, t)
 
 
-def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=False):
+def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samples=False):
     """Get a sampler from (possibly interleaved) numerical solver(s).
 
     Args:
+        shape: Shape of array, x. (num_samples,) + obj_shape, where x_shape is the shape
+            of the object being sampled from, for example, an image may have
+            obj_shape==(H, W, C), and so shape==(N, H, W, C) where N is the number of samples.
         outer_solver: A valid numerical solver class that will act on an outer loop.
         inner_solver: '' that will act on an inner loop.
         denoise: Boolean variable that if `True` applies one-step denoising to final samples.
@@ -26,13 +30,11 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         A sampler.
     """
 
-    def sampler(rng, num_samples, shape, x_0=None):
+    def sampler(rng, x_0=None):
         """
 
         Args:
             rng: A JAX random state.
-            num_samples: Number of samples to return.
-            shape: Shape of array, x.
             x_0: Initial condition. If `None`, then samples an initial condition from the
                 sde's initial condition prior. Note that this initial condition represents
                 `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
@@ -56,7 +58,7 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
 
             def outer_step(carry, t):
                 rng, x, x_mean = carry
-                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
+                vec_t = jnp.full(shape[0], t)
                 rng, step_rng = random.split(rng)
                 x, x_mean = outer_update(step_rng, x, vec_t)
                 (rng, x, x_mean, vec_t), _ = scan(inner_step, (step_rng, x, x_mean, vec_t), inner_ts)
@@ -70,7 +72,7 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
         else:
             def outer_step(carry, t):
                 rng, x, x_mean = carry
-                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
+                vec_t = jnp.full(shape[0], t)
                 rng, step_rng = random.split(rng)
                 x, x_mean = outer_update(step_rng, x, vec_t)
                 if not stack_samples:
@@ -82,28 +84,30 @@ def get_sampler(outer_solver, inner_solver=None, denoise=True, stack_samples=Fal
                         return (rng, x, x_mean), x
 
         rng, step_rng = random.split(rng)
-        num_samples_shape = (num_samples,) + shape
         if x_0 is None:
-            x = outer_solver.sde.prior(step_rng, num_samples_shape)
+            x = outer_solver.sde.prior(step_rng, shape)
         else:
-            assert(x_0.shape==num_samples_shape)
+            assert(x_0.shape==shape)
             x = x_0
         if not stack_samples:
-            (_, x, x_mean), _ = scan(outer_step, (rng, x, x), outer_ts)
+            (_, x, x_mean), _ = scan(outer_step, (rng, x, x), outer_ts, reverse=True)
             if denoise:
                 return x_mean
             else:
                 return x
         else:
-            (_, _, _), xs = scan(outer_step, (rng, x, x), outer_ts)
+            (_, _, _), xs = scan(outer_step, (rng, x, x), outer_ts, reverse=True)
             return xs
-    return sampler
+    return jax.pmap(sampler, in_axes=(0), axis_name='batch')
 
 
-def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
+def get_augmented_sampler(shape, outer_solver, inner_solver=None, stack_samples=False):
     """Get a sampler, with augmented state-space (position and velocity), from (possibly interleaved) numerical solver(s).
 
     Args:
+        shape: Shape of array, x. (num_samples,) + obj_shape, where x_shape is the shape
+            of the object being sampled from, for example, an image may have
+            obj_shape = (H, W, C), and so shape = (N, H, W, C) where N is the number of samples.
         outer_solver: A valid numerical solver class that will act on an outer loop.
         inner_solver: "" "" that will act on an inner loop.
         stack_samples: Boolean variable that if `True` return all of the sample path or
@@ -115,13 +119,11 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
                                     solver=outer_solver)
     outer_ts = outer_solver.ts
 
-    def sampler(rng, num_samples, shape, x_0=None, xd_0=None):
+    def sampler(rng, x_0=None, xd_0=None):
         """
 
         Args:
             rng: A JAX random state.
-            num_samples: Number of samples to return.
-            shape: Shape of array, x.
             x_0: Initial condition position. If `None`, then samples an initial condition from the
                 sde's initial condition prior. Note that this initial condition represents
                 `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
@@ -144,7 +146,7 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
 
             def outer_step(carry, t):
                 rng, x, xd, xd_mean = carry
-                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
+                vec_t = jnp.full(shape[0], t)
                 rng, step_rng = random.split(rng)
                 x, xd = outer_update(step_rng, x, xd, vec_t)
                 (rng, x, xd, xd_mean), _ = scan(
@@ -156,7 +158,7 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
         else:
             def outer_step(carry, t):
                 rng, x, xd, xd_mean = carry
-                vec_t = jnp.ones((num_samples, 1)) * (1 - t)
+                vec_t = jnp.full(shape[0], t)
                 rng, step_rng = random.split(rng)
                 x, xd = outer_update(step_rng, x, xd, vec_t)
                 if not stack_samples:
@@ -165,12 +167,11 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
                     return (rng, x, xd), x
 
         rng, step_rng = random.split(rng)
-        num_samples_shape = (num_samples,) + shape
         if x_0 is None:
-            x, xd = outer_solver.sde.prior(step_rng, num_samples_shape)
+            x, xd = outer_solver.sde.prior(step_rng, shape)
         else:
-            assert(x_0.shape==num_samples_shape)
-            assert(xd_0.shape==num_samples_shape)
+            assert(x_0.shape==shape)
+            assert(xd_0.shape==shape)
             x = x_0
             xd = xd_0
         if not stack_samples:
@@ -179,4 +180,4 @@ def get_augmented_sampler(outer_solver, inner_solver=None, stack_samples=False):
         else:
             (_, _, _, _), xs = scan(outer_step, (rng, x, xd, xd), outer_ts)
             return xs
-    return sampler
+    return jax.pmap(sampler, in_axes=(0), axis_name='batch')

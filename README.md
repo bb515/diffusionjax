@@ -31,12 +31,11 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 - Run the example by typing `python examples/example.py` on the command line from the root directory of the repository.
 ```python
 >>> num_epochs = 4000
->>> rng = random.PRNGKey(2023)
->>> rng, step_rng = random.split(rng, 2)
 >>> num_samples = 8
 >>> samples = sample_circle(num_samples)
 >>> N = samples.shape[1]
 >>> plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
+>>> rng = random.PRNGKey(2023)
 ```
 ![Prediction](readme_samples.png)
 ```python
@@ -67,18 +66,21 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 ```
 ![Prediction](readme_empirical_score.png)
 ```python
->>> sampler = get_sampler(EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
->>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
->>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap empirical score")
+>>> sampler = get_sampler((5760, N), EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
+>>> rng, *sample_rng = random.split(rng, 2)
+>>> q_samples = sampler(jnp.array(sample_rng))
+>>> q_samples = q_samples.reshape(5760, N)
+>>> plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap empirical score")
 ```
 ![Prediction](readme_heatmap_empirical_score.png)
 ```python
 >>> # What happens when I perturb the score with a constant?
 >>> perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
->>> rng, step_rng = random.split(rng)
->>> sampler = get_sampler(EulerMaruyama(sde.reverse(perturbed_score)))
->>> q_samples = sampler(rng, n_samples=5000, shape=(N,))
->>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
+>>> sampler = get_sampler((5760, N), EulerMaruyama(sde.reverse(perturbed_score)))
+>>> rng, *sample_rng = random.split(rng, 2)
+>>> q_samples = sampler(jnp.array(sample_rng))
+>>> q_samples = q_samples.reshape(5760, N)
+>>> plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 ```
 ![Prediction](readme_heatmap_bounded_perturbation.png)
 ```python
@@ -111,9 +113,11 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 ![Prediction](readme_trained_score.png)
 ```python
 >>> solver = EulerMaruyama(sde.reverse(trained_score))
->>> sampler = get_sampler(solver, stack_samples=False)
->>> q_samples = sampler(rng, n_samples=1000, shape=(N,))
->>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap trained score")
+>>> sampler = get_sampler((720, N), solver, stack_samples=False)
+>>> rng, *sample_rng = random.split(rng, 2)
+>>> q_samples = sampler(jnp.array(sample_rng))
+>>> q_samples = q_samples.reshape(720, N)
+>>> plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap trained score")
 ```
 ![Prediction](readme_heatmap_trained_score.png)
 ```python
@@ -122,8 +126,10 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 >>> mask = jnp.array([1, 0])
 >>> data = jnp.tile(data, (64, 1))
 >>> mask = jnp.tile(mask, (64, 1))
->>> q_samples = inpainter(rng, data, mask)
->>> plot_heatmap(samples=q_samples[:, [0, 1]], area_min=-3, area_max=3, fname="heatmap inpainted")
+>>> rng, *sample_rng = random.split(rng, 2)
+>>> q_samples = inpainter(jnp.array(sample_rng), data, mask)
+>>> q_samples = q_samples.reshape(64, N)
+>>> plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
 ```
 ![Prediction](readme_heatmap_inpainted.png)
 

@@ -157,8 +157,6 @@ def plot_temperature_schedule(sde, solver):
     plt.close()
 
 
-
-
 def plot_scatter(samples, fname="samples"):
     fig, ax = plt.subplots(1, 1)
     fig.patch.set_facecolor('white')

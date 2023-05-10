@@ -1,4 +1,5 @@
 """Inverse problems."""
+import jax
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
@@ -19,7 +20,7 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
         denoise: Boolean variable that if `True` applies one-step denoising to final samples.
         stack_samples: Boolean variable that if `True` returns all samples on path(s).
     Returns:
-        A pmapped inpainting function.
+        A pmapped projection sampler function.
     """
     def update(rng, data, mask, x, vec_t, coeff):
         data_mean, std = solver.sde.marginal_prob(data, vec_t)
@@ -52,7 +53,7 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
 
         def f(carry, t):
             rng, x, x_mean = carry
-            vec_t = jnp.ones((shape[0], 1)) * (1. - t)
+            vec_t = jnp.full(shape[0], t)
             rng, step_rng = random.split(rng)
             x, x_mean = update(step_rng, data, mask, x, vec_t, coeff)
             if not stack_samples:
@@ -60,13 +61,13 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
             else:
                 return (rng, x, x_mean), x
         if not stack_samples:
-            (_, x, _), _ = scan(f, (rng, x, x), ts)
+            (_, x, _), _ = scan(f, (rng, x, x), ts, reverse=True)
             return x
         else:
-            (_, _, _), xs = scan(f, (rng, x, x), ts)
+            (_, _, _), xs = scan(f, (rng, x, x), ts, reverse=True)
             return xs
 
-    return projection_sampler  # TODO: pmap axis_name="batch"
+    return jax.pmap(projection_sampler, in_axes=(0, None, None, None), axis_name='batch')
 
 
 def get_inpainter(solver, inverse_scaler=None,
@@ -109,7 +110,7 @@ def get_inpainter(solver, inverse_scaler=None,
 
         def f(carry, t):
             rng, x, x_mean = carry
-            vec_t = jnp.ones((shape[0], 1)) * (1. - t)
+            vec_t = jnp.full(shape[0], t)
             rng, step_rng = random.split(rng)
             x, x_mean = update(rng, data, mask, x, vec_t)
             if not stack_samples:
@@ -117,9 +118,9 @@ def get_inpainter(solver, inverse_scaler=None,
             else:
                 return (rng, x, x_mean), x
         if not stack_samples:
-            (_, x, _), _ = scan(f, (rng, x, x), ts)
+            (_, x, _), _ = scan(f, (rng, x, x), ts, reverse=True)
             return x
         else:
-            (_, _, _), xs = scan(f, (rng, x, x), ts)
+            (_, _, _), xs = scan(f, (rng, x, x), ts, reverse=True)
             return xs
-    return inpainter  # TODO: pmap axis_name="batch"
+    return jax.pmap(inpainter, in_axes=(0, None, None), axis_name='batch')
