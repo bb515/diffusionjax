@@ -127,7 +127,7 @@ def main():
         nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
         # nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
         # Running the reverse SDE with the empirical score
-        sampler = get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps))
+        sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps)), axis_name='batch')
         q_samples = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
         plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
@@ -135,7 +135,7 @@ def main():
         # What happens when I perturb the score with a constant?
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
-        sampler = get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps))
+        sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps)), axis_name='batch')
         q_samples = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
@@ -183,9 +183,14 @@ def main():
     # Get the inner loop of a numerical solver, also known as "corrector"
     inner_solver = Annealed(sde.corrector(UDLangevin, trained_score), num_steps=2, snr=0.01)
 
+    # pmap across devices. pmap assumes devices are identical model. If this is not the case,
+    # use the devices argument in pmap
     num_devices =  jax.local_device_count()
-    sampler = get_sampler((64//num_devices, image_size, image_size, num_channels), outer_solver, inner_solver, denoise=True)
-    # sampler = get_sampler((64//num_devices, image_size, image_size, num_channels), outer_solver, denoise=True)
+    sampler = jax.pmap(
+        get_sampler((64//num_devices, image_size, image_size, num_channels), outer_solver, inner_solver, denoise=True),
+        axis_name='batch',
+        # devices = jax.devices()[:],
+    )
 
     rng, *sample_rng = random.split(rng, num_devices + 1)
     sample_rng = jnp.asarray(sample_rng)

@@ -95,10 +95,8 @@ def main():
     reverse_sde = sde.reverse(nabla_log_hat_pt)
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler((5760, N), solver, stack_samples=False)
-    rng, *sample_rng = random.split(rng, 2)
-    sample_rng = jnp.asarray(sample_rng)
+    rng, sample_rng = random.split(rng, 2)
     q_samples = sampler(sample_rng)
-    q_samples = q_samples.reshape(5760, N)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
@@ -106,10 +104,8 @@ def main():
     reverse_sde = sde.reverse(perturbed_score)
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler((5760, N), solver)
-    rng, *sample_rng = random.split(rng, 2)
-    sample_rng = jnp.asarray(sample_rng)
+    rng, sample_rng = random.split(rng, 2)
     q_samples = sampler(sample_rng)
-    q_samples = q_samples.reshape(5760, N)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
     # Neural network training via score matching
@@ -153,10 +149,8 @@ def main():
     reverse_sde = sde.reverse(trained_score)
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler((720, N), solver, stack_samples=False)
-    rng, *sample_rng = random.split(rng, 2)
-    sample_rng = jnp.asarray(sample_rng)
+    rng, sample_rng = random.split(rng, 2)
     q_samples = sampler(sample_rng)
-    q_samples = q_samples.reshape(720, N)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap trained score")
 
     # Condition on one of the coordinates
@@ -165,10 +159,8 @@ def main():
     data = jnp.tile(data, (64, 1))
     mask = jnp.tile(mask, (64, 1))
     inpainter = get_inpainter(solver, stack_samples=False)
-    rng, *sample_rng = random.split(rng, 2)
-    sample_rng = jnp.asarray(sample_rng)
+    rng, sample_rng = random.split(rng, 2)
     q_samples = inpainter(sample_rng, data, mask)
-    q_samples = q_samples.reshape(64, N)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
 
     frames = 100
