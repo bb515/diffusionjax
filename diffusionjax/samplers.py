@@ -1,5 +1,4 @@
 """Samplers."""
-import jax
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
@@ -98,7 +97,8 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
         else:
             (_, _, _), xs = scan(outer_step, (rng, x, x), outer_ts, reverse=True)
             return xs
-    return jax.pmap(sampler, in_axes=(0), axis_name='batch')
+    # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
+    return sampler
 
 
 def get_augmented_sampler(shape, outer_solver, inner_solver=None, stack_samples=False):
@@ -180,4 +180,5 @@ def get_augmented_sampler(shape, outer_solver, inner_solver=None, stack_samples=
         else:
             (_, _, _, _), xs = scan(outer_step, (rng, x, xd, xd), outer_ts)
             return xs
-    return jax.pmap(sampler, in_axes=(0), axis_name='batch')
+    # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
+    return sampler

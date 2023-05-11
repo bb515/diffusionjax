@@ -1,5 +1,4 @@
 """Inverse problems."""
-import jax
 import jax.numpy as jnp
 from jax.lax import scan
 import jax.random as random
@@ -20,7 +19,7 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
         denoise: Boolean variable that if `True` applies one-step denoising to final samples.
         stack_samples: Boolean variable that if `True` returns all samples on path(s).
     Returns:
-        A pmapped projection sampler function.
+        A projection sampler function.
     """
     def update(rng, data, mask, x, vec_t, coeff):
         data_mean, std = solver.sde.marginal_prob(data, vec_t)
@@ -67,7 +66,8 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
             (_, _, _), xs = scan(f, (rng, x, x), ts, reverse=True)
             return xs
 
-    return jax.pmap(projection_sampler, in_axes=(0, None, None, None), axis_name='batch')
+    # return jax.pmap(projection_sampler, in_axes=(0, None, None, None), axis_name='batch')
+    return projection_sampler
 
 
 def get_inpainter(solver, inverse_scaler=None,
@@ -78,7 +78,7 @@ def get_inpainter(solver, inverse_scaler=None,
         inverse_scaler: The inverse data normalizer.
         denoise: Boolean variable that if `True` applies one-step denoising to final samples.
     Returns:
-        A pmapped inpainting function.
+        An inpainting function.
     """
     def update(rng, data, mask, x, vec_t):
         x, x_mean = solver.update(rng, x, vec_t)
@@ -123,4 +123,5 @@ def get_inpainter(solver, inverse_scaler=None,
         else:
             (_, _, _), xs = scan(f, (rng, x, x), ts, reverse=True)
             return xs
-    return jax.pmap(inpainter, in_axes=(0, None, None), axis_name='batch')
+    # return jax.pmap(inpainter, in_axes=(0, None, None), axis_name='batch')
+    return inpainter
