@@ -1,5 +1,6 @@
 """Inverse problems."""
 import jax.numpy as jnp
+from jax import vmap
 from jax.lax import scan
 import jax.random as random
 from diffusionjax.utils import batch_mul
@@ -21,6 +22,11 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
     Returns:
         A projection sampler function.
     """
+    if inverse_scaler is None:
+        def inverse_scaler(x):
+            return x
+    vmap_inverse_scaler = vmap(inverse_scaler)
+
     def update(rng, data, mask, x, vec_t, coeff):
         data_mean, std = solver.sde.marginal_prob(data, vec_t)
         z = random.normal(rng, x.shape)
@@ -32,6 +38,7 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
         return x, x_mean
 
     ts = solver.ts
+    num_function_evaluations = jnp.size(ts)
 
     def projection_sampler(rng, data, mask, coeff):
         """Sampler for image inpainting.
@@ -55,16 +62,14 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
             vec_t = jnp.full(shape[0], t)
             rng, step_rng = random.split(rng)
             x, x_mean = update(step_rng, data, mask, x, vec_t, coeff)
-            if not stack_samples:
-                return (rng, x, x_mean), ()
-            else:
-                return (rng, x, x_mean), x
+            return ((rng, x, x_mean), x) if stack_samples else ((rng, x, x_mean), ())
+
         if not stack_samples:
             (_, x, _), _ = scan(f, (rng, x, x), ts, reverse=True)
-            return x
+            return inverse_scaler(x), num_function_evaluations
         else:
             (_, _, _), xs = scan(f, (rng, x, x), ts, reverse=True)
-            return xs
+            return vmap_inverse_scaler(xs), num_function_evaluations
 
     # return jax.pmap(projection_sampler, in_axes=(0, None, None, None), axis_name='batch')
     return projection_sampler
@@ -80,6 +85,11 @@ def get_inpainter(solver, inverse_scaler=None,
     Returns:
         An inpainting function.
     """
+    if inverse_scaler is None:
+        def inverse_scaler(x):
+            return x
+    vmap_inverse_scaler = vmap(inverse_scaler)
+
     def update(rng, data, mask, x, vec_t):
         x, x_mean = solver.update(rng, x, vec_t)
         masked_data_mean, std = solver.sde.marginal_prob(data, vec_t)
@@ -90,6 +100,7 @@ def get_inpainter(solver, inverse_scaler=None,
         return x, x_mean
 
     ts = solver.ts
+    num_function_evaluations = jnp.size(ts)
 
     def inpainter(rng, data, mask):
         """Sampler for image inpainting.
@@ -113,15 +124,13 @@ def get_inpainter(solver, inverse_scaler=None,
             vec_t = jnp.full(shape[0], t)
             rng, step_rng = random.split(rng)
             x, x_mean = update(rng, data, mask, x, vec_t)
-            if not stack_samples:
-                return (rng, x, x_mean), ()
-            else:
-                return (rng, x, x_mean), x
+            return ((rng, x, x_mean), x) if stack_samples else ((rng, x, x_mean), ())
+
         if not stack_samples:
             (_, x, _), _ = scan(f, (rng, x, x), ts, reverse=True)
-            return x
+            return inverse_scaler(x), num_function_evaluations
         else:
             (_, _, _), xs = scan(f, (rng, x, x), ts, reverse=True)
-            return xs
+            return vmap_inverse_scaler(xs), num_function_evaluations
     # return jax.pmap(inpainter, in_axes=(0, None, None), axis_name='batch')
     return inpainter

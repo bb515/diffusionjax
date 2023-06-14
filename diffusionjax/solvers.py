@@ -10,23 +10,39 @@ import abc
 class Solver(abc.ABC):
     """Solver abstract class. Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, num_steps=1000, dt=None):
+    def __init__(self, num_steps=1000, dt=None, epsilon=None):
         """Construct an SDE.
         Args:
             num_steps: number of discretization time steps.
             dt: time step duration, float or `None`.
                 Optional, if provided then final time, t1 = dt * num_steps.
+            epsilon: A small float 0. < `epsilon` << 1. The SDE or ODE are integrated to `epsilon` to avoid numerical issues.
         """
         self.num_steps = num_steps
-        if dt is None:
-            self.dt = 1. / self.num_steps
-            # Defined in forward time, t \in [\epsilon, 1.0], 0 < \epsilon << 1
-            self.ts = jnp.linspace(0, 1, num_steps + 1)[1:].reshape(-1, 1)
-        else:
-            self.dt = dt
+        if dt is not None:
             t1 = dt * num_steps
-            # Defined in forward time, t \in [\epsilon, t1], 0 < \epsilon << t1
-            self.ts = jnp.linspace(0, t1, num_steps + 1)[1:].reshape(-1, 1)
+            if epsilon is not None:
+                # Defined in forward time, t \in [epsilon, t1], 0 < epsilon << t1
+                self.ts, step = jnp.linspace(epsilon, t1, num_steps, retstep=True)
+                assert step == (t1 - epsilon) / num_steps
+                self.dt = step
+            else:
+                # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
+                step = jnp.linspace(0, t1, num_steps + 1)
+                self.ts = ts[1:].reshape(-1, 1)
+                assert step == dt
+                self.dt = dt
+        else:
+            if epsilon is not None:
+                self.ts, step = jnp.linspace(epsilon, 1, num_steps, retstep=True)
+                assert step == (1. - epsilon) / num_steps
+                self.dt = step
+            else:
+                # Defined in forward time, t \in [dt, 1.0], 0 < dt << 1
+                ts, step = jnp.linspace(0, 1, num_steps + 1, retstep=True)
+                self.ts = ts[1:].reshape(-1, 1)
+                assert step == 1. / num_steps
+                self.dt = 1. / num_steps
 
     @abc.abstractmethod
     def update(self, rng, x, t):
@@ -44,7 +60,8 @@ class Solver(abc.ABC):
 
 
 class EulerMaruyama(Solver):
-    """Euler Maruyama numerical solver of an SDE. Functions are designed for a mini-batch of inputs."""
+    """Euler Maruyama numerical solver of an SDE.
+    Functions are designed for a mini-batch of inputs."""
 
     def __init__(self, sde, num_steps=1000):
         """Constructs an Euler-Maruyama Solver.

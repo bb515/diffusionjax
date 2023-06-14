@@ -162,6 +162,7 @@ class VP(SDE):
             t: JAX float of the time
         """
         m = self.mean_coeff(t)
+        # TODO: remove this try except clause
         try:
             mean = batch_mul(m, x)
         except:
