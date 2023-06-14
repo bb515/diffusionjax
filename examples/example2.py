@@ -128,7 +128,7 @@ def main():
         # nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
         # Running the reverse SDE with the empirical score
         sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps)), axis_name='batch')
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
         plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
@@ -136,7 +136,7 @@ def main():
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
         sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps)), axis_name='batch')
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
@@ -194,7 +194,7 @@ def main():
 
     rng, *sample_rng = random.split(rng, num_devices + 1)
     sample_rng = jnp.asarray(sample_rng)
-    q_samples = sampler(sample_rng)
+    q_samples, num_function_evaluations = sampler(sample_rng)
     q_samples = q_samples.reshape(64, image_size, image_size, num_channels)
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
     plot_samples_1D(q_samples, image_size, fname="samples 1D trained score")

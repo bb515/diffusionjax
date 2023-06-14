@@ -96,7 +96,7 @@ def main():
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler((5760, N), solver, stack_samples=False)
     rng, sample_rng = random.split(rng, 2)
-    q_samples = sampler(sample_rng)
+    q_samples, num_function_evaluations = sampler(sample_rng)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
@@ -105,7 +105,7 @@ def main():
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler((5760, N), solver)
     rng, sample_rng = random.split(rng, 2)
-    q_samples = sampler(sample_rng)
+    q_samples, num_function_evaluations = sampler(sample_rng)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
     # Neural network training via score matching
@@ -150,7 +150,7 @@ def main():
     solver = EulerMaruyama(reverse_sde)
     sampler = get_sampler((720, N), solver, stack_samples=False)
     rng, sample_rng = random.split(rng, 2)
-    q_samples = sampler(sample_rng)
+    q_samples, num_function_evaluations = sampler(sample_rng)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap trained score")
 
     # Condition on one of the coordinates

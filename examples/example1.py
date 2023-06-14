@@ -143,7 +143,7 @@ def main():
         # Running the reverse SDE with the empirical score
         plot_score(score=nabla_log_hat_pt_tmp, t=0.01, area_min=-3, area_max=3, fname="empirical score")
         sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples empirical score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap empirical score")
 
@@ -151,7 +151,7 @@ def main():
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
         sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
@@ -159,7 +159,7 @@ def main():
 
         # Running the reverse SDE with the true score
         sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_pt)))
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples true score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true score")
 
@@ -167,7 +167,7 @@ def main():
         perturbed_score = lambda x, t: nabla_log_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
         rng, sample_rng = random.split(rng, 2)
-        q_samples = sampler(sample_rng)
+        q_samples, num_function_evaluations = sampler(sample_rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples true bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true bounded perturbation")
 
@@ -215,7 +215,7 @@ def main():
     sampler = get_sampler((512, image_size, num_channels), solver, denoise=True)
 
     rng, sample_rng = random.split(rng, 2)
-    q_samples = sampler(sample_rng)
+    q_samples, num_function_evaluations = sampler(sample_rng)
 
     # C_emp = jnp.corrcoef(q_samples[:, :, 0].T)
     # delta = jnp.linalg.norm(C - C_emp) / image_size
@@ -244,13 +244,13 @@ def main():
     # Get inpainter
     inpainter = get_inpainter(solver, stack_samples=False)
     rng, sample_rng = random.split(rng, 2)
-    q_samples = inpainter(sample_rng, data, mask)
+    q_samples, num_function_evaluations = inpainter(sample_rng, data, mask)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples inpainted")
 
     # Get projection sampler
     projection_sampler = get_projection_sampler(solver, stack_samples=False)
     rng, sample_rng = random.split(rng, 2)
-    q_samples = projection_sampler(sample_rng, data, mask, 1e-2)
+    q_samples, num_function_evaluations = projection_sampler(sample_rng, data, mask, 1e-2)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples projected")
 
 
