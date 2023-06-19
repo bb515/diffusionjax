@@ -42,9 +42,9 @@ def retrain_nn(
 
 def get_score(sde, model, params, score_scaling):
     if score_scaling is True:
-        return lambda x, t: -batch_mul(model.evaluate(params, x, t), 1. / sde.marginal_prob(x, t)[1])
+        return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / sde.marginal_prob(x, t)[1])
     else:
-        return lambda x, t: -model.evaluate(params, x, t)
+        return lambda x, t: -model.apply(params, x, t)
 
 
 @partial(jit, static_argnums=[4, 5])
