@@ -42,7 +42,7 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
     """
     reduce_op = jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
     if pointwise_t:
-        def loss(t, params, model, rng, data):
+        def loss(t, params, rng, data):
             n_batch = data.shape[0]
             ts = jnp.ones((n_batch,)) * t
             score = get_score(sde, model, params, score_scaling)
@@ -54,7 +54,7 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
                 losses = losses * g2
             return jnp.mean(losses)
     else:
-        def loss(params, model, rng, data):
+        def loss(params, rng, data):
             rng, step_rng = random.split(rng)
             n_batch = data.shape[0]
             # which one is preferable?

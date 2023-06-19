@@ -20,7 +20,7 @@ class Solver(abc.ABC):
         """
         self.num_steps = num_steps
         if dt is not None:
-            t1 = dt * num_steps
+            self.t1 = dt * num_steps
             if epsilon is not None:
                 # Defined in forward time, t \in [epsilon, t1], 0 < epsilon << t1
                 self.ts, step = jnp.linspace(epsilon, t1, num_steps, retstep=True)
@@ -33,6 +33,7 @@ class Solver(abc.ABC):
                 assert step == dt
                 self.dt = dt
         else:
+            self.t1 = 1.0
             if epsilon is not None:
                 self.ts, step = jnp.linspace(epsilon, 1, num_steps, retstep=True)
                 assert step == (1. - epsilon) / num_steps

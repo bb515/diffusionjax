@@ -127,12 +127,11 @@ def main():
             sde, solver, score_model, score_scaling=score_scaling, likelihood_weighting=False,
             reduce_mean=True, pointwise_t=False)
         # Train with score matching
-        score_model, params, opt_state, mean_losses = retrain_nn(
+        params, opt_state, mean_losses = retrain_nn(
             update_step=update_step,
             num_epochs=num_epochs,
             step_rng=rng,
             samples=samples,
-            score_model=score_model,
             params=params,
             opt_state=opt_state,
             loss=loss,
@@ -160,7 +159,7 @@ def main():
     mask = jnp.tile(mask, (64, 1))
     inpainter = get_inpainter(solver, stack_samples=False)
     rng, sample_rng = random.split(rng, 2)
-    q_samples = inpainter(sample_rng, data, mask)
+    q_samples, num_function_evaluations = inpainter(sample_rng, data, mask)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
 
     frames = 100

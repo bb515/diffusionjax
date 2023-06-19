@@ -16,7 +16,7 @@ def batch_mul(a, b):
 
 
 def retrain_nn(
-        update_step, num_epochs, step_rng, samples, score_model, params,
+        update_step, num_epochs, step_rng, samples, params,
         opt_state, loss, batch_size=5):
     train_size = samples.shape[0]
     batch_size = min(train_size, batch_size)
@@ -31,13 +31,13 @@ def retrain_nn(
         for j, perm in enumerate(perms):
             batch = samples[perm, :]
             rng, step_rng = random.split(rng)
-            loss_eval, params, opt_state = update_step(params, step_rng, batch, opt_state, score_model, loss)
+            loss_eval, params, opt_state = update_step(params, step_rng, batch, opt_state, loss)
             losses = losses.at[j].set(loss_eval)
         mean_loss = jnp.mean(losses, axis=0)
         mean_losses = mean_losses.at[i].set(mean_loss)
         if i % 10 == 0:
             print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
-    return score_model, params, opt_state, mean_losses
+    return params, opt_state, mean_losses
 
 
 def get_score(sde, model, params, score_scaling):
@@ -47,8 +47,8 @@ def get_score(sde, model, params, score_scaling):
         return lambda x, t: -model.evaluate(params, x, t)
 
 
-@partial(jit, static_argnums=[4, 5, 6])
-def update_step(params, rng, batch, opt_state, model, loss, has_aux=False):
+@partial(jit, static_argnums=[4, 5])
+def update_step(params, rng, batch, opt_state, loss, has_aux=False):
     """
     Takes the gradient of the loss function and updates the model weights (params) using it.
     Args:
@@ -56,13 +56,14 @@ def update_step(params, rng, batch, opt_state, model, loss, has_aux=False):
         rng: random number generator from jax
         batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
         opt_state: the internal state of the optimizer
-        model: the score function
         loss: A loss function that can be used for score matching training.
-        has_aux:
+        has_aux: Optional, bool. Indicated whether `loss` returs a pair where the first
+            element is the output of the loss function to be differentiated and the second
+            element is auxilliary data. Default `False`.
     Returns:
         The value of the loss function (for metrics), the new params and the new optimizer states function (for metrics), the new params and the new optimizer state.
     """
-    val, grads = value_and_grad(loss, has_aux=has_aux)(params, model, rng, batch)
+    val, grads = value_and_grad(loss, has_aux=has_aux)(params, rng, batch)
     updates, opt_state = optimizer.update(grads, opt_state)
     params = optax.apply_updates(params, updates)
     return val, params, opt_state

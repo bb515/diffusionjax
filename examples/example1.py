@@ -193,12 +193,11 @@ def main():
             reduce_mean=True, pointwise_t=False)
 
         # Train with score matching
-        score_model, params, opt_state, mean_losses = retrain_nn(
+        params, opt_state, mean_losses = retrain_nn(
             update_step=update_step,
             num_epochs=num_epochs,
             step_rng=step_rng,
             samples=samples,
-            score_model=score_model,
             params=params,
             opt_state=opt_state,
             loss=loss,

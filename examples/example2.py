@@ -14,8 +14,7 @@ from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.losses import get_loss
-from diffusionjax.solvers import EulerMaruyama
-from diffusionjax.solvers import Annealed
+from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.samplers import get_sampler
 from diffusionjax.models import CNN
 from diffusionjax.utils import (
@@ -158,12 +157,11 @@ def main():
             sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
             reduce_mean=True, pointwise_t=False)
         # Train with score matching
-        score_model, params, opt_state, mean_losses = retrain_nn(
+        params, opt_state, mean_losses = retrain_nn(
             update_step=update_step,
             num_epochs=num_epochs,
             step_rng=step_rng,
             samples=samples,
-            score_model=score_model,
             params=params,
             opt_state=opt_state,
             loss=loss,
