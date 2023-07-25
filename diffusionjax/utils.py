@@ -1,14 +1,8 @@
 import jax.numpy as jnp
 from jax.lax import scan
-from jax import vmap, jit, grad, value_and_grad
+from jax import vmap
 import jax.random as random
 from functools import partial
-import optax
-from math import prod
-
-
-#Initialize the optimizer
-optimizer = optax.adam(1e-3)
 
 
 def batch_mul(a, b):
@@ -45,26 +39,3 @@ def get_score(sde, model, params, score_scaling):
         return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / sde.marginal_prob(x, t)[1])
     else:
         return lambda x, t: -model.apply(params, x, t)
-
-
-@partial(jit, static_argnums=[4, 5])
-def update_step(params, rng, batch, opt_state, loss, has_aux=False):
-    """
-    Takes the gradient of the loss function and updates the model weights (params) using it.
-    Args:
-        params: the current weights of the model
-        rng: random number generator from jax
-        batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-        opt_state: the internal state of the optimizer
-        loss: A loss function that can be used for score matching training.
-        has_aux: Optional, bool. Indicated whether `loss` returs a pair where the first
-            element is the output of the loss function to be differentiated and the second
-            element is auxilliary data. Default `False`.
-    Returns:
-        The value of the loss function (for metrics), the new params and the new optimizer states function (for metrics), the new params and the new optimizer state.
-    """
-    val, grads = value_and_grad(loss, has_aux=has_aux)(params, rng, batch)
-    updates, opt_state = optimizer.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
-    return val, params, opt_state
-
