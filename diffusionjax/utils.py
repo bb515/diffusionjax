@@ -1,12 +1,37 @@
 import jax.numpy as jnp
 from jax.lax import scan
-from jax import vmap
+from jax import vmap, jit, value_and_grad
 import jax.random as random
 from functools import partial
+import optax
 
 
 def batch_mul(a, b):
     return vmap(lambda a, b: a * b)(a, b)
+
+
+#Initialize the optimizer
+optimizer = optax.adam(1e-3)
+
+
+@partial(jit, static_argnums=[4])
+def update_step(params, rng, batch, opt_state, loss):
+    """
+    Takes the gradient of the loss function and updates the model weights (params) using it.
+    Args:
+        params: the current weights of the model
+        rng: random number generator from jax
+        batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+        opt_state: the internal state of the optimizer
+        loss: A loss function that can be used for score matching training.
+    Returns:
+        The value of the loss function (for metrics), the new params and the new optimizer states function (for metrics),
+        the new params and the new optimizer state.
+    """
+    val, grads = value_and_grad(loss)(params, rng, batch)
+    updates, opt_state = optimizer.update(grads, opt_state)
+    params = optax.apply_updates(params, updates)
+    return val, params, opt_state
 
 
 def retrain_nn(

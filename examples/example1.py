@@ -21,7 +21,7 @@ from diffusionjax.solvers import EulerMaruyama
 from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
 from diffusionjax.samplers import get_sampler
 from diffusionjax.models import MLP
-from diffusionjax.utils import get_score, retrain_nn
+from diffusionjax.utils import get_score, retrain_nn, optimizer, update_step
 from diffusionjax.sde import VE
 from mlkernels import Matern52
 import numpy as np
@@ -65,28 +65,6 @@ def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
     plt.close()
 
 
-#Initialize the optimizer
-optimizer = optax.adam(1e-3)
-
-
-@partial(jit, static_argnums=[4])
-def update_step(params, rng, batch, opt_state, loss):
-    """
-    Takes the gradient of the loss function and updates the model weights (params) using it.
-    Args:
-        params: the current weights of the model
-        rng: random number generator from jax
-        batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
-        opt_state: the internal state of the optimizer
-        loss: A loss function that can be used for score matching training.
-    Returns:
-        The value of the loss function (for metrics), the new params and the new optimizer states function (for metrics),
-        the new params and the new optimizer state.
-    """
-    val, grads = value_and_grad(loss)(params, rng, batch)
-    updates, opt_state = optimizer.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
-    return val, params, opt_state
 
 
 def main():

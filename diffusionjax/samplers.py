@@ -29,20 +29,17 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
     Returns:
         A sampler.
     """
-    if inverse_scaler is None:
-        def inverse_scaler(x):
-            return x
+    if inverse_scaler is None: inverse_scaler = lambda x: x
 
     def sampler(rng, x_0=None):
         """
-
         Args:
             rng: A JAX random state.
             x_0: Initial condition. If `None`, then samples an initial condition from the
                 sde's initial condition prior. Note that this initial condition represents
                 `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
         Returns:
-            Samples.
+            Samples and the number of score function (model) evaluations.
         """
         outer_update = functools.partial(shared_update,
                                          solver=outer_solver)
