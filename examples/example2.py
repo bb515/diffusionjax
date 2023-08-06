@@ -16,11 +16,11 @@ from functools import partial
 from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
-from diffusionjax.losses import get_loss
+from diffusionjax.utils import (
+    get_score, retrain_nn, optimizer, update_step, get_loss,
+    get_sampler)
 from diffusionjax.solvers import EulerMaruyama, Annealed
-from diffusionjax.samplers import get_sampler
 from diffusionjax.models import CNN
-from diffusionjax.utils import get_score, retrain_nn, optimizer, update_step
 from diffusionjax.sde import VP, UDLangevin
 from mlkernels import Matern52
 import numpy as np

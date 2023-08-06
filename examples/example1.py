@@ -16,12 +16,11 @@ from functools import partial
 import matplotlib.pyplot as plt
 from diffusionjax.plot import (
     plot_score, plot_heatmap, plot_animation)
-from diffusionjax.losses import get_loss
+from diffusionjax.utils import (
+    get_score, retrain_nn, optimizer, update_step, get_loss,
+    get_inpainter, get_projection_sampler, get_sampler)
 from diffusionjax.solvers import EulerMaruyama
-from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
-from diffusionjax.samplers import get_sampler
 from diffusionjax.models import MLP
-from diffusionjax.utils import get_score, retrain_nn, optimizer, update_step
 from diffusionjax.sde import VE
 from mlkernels import Matern52
 import numpy as np

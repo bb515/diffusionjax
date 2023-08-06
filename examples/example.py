@@ -13,14 +13,11 @@ from functools import partial
 from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import (
-    plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_heatmap_ax,
-    plot_animation)
-from diffusionjax.losses import get_loss
+    plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_heatmap_ax, plot_animation)
+from diffusionjax.utils import (
+    get_score, retrain_nn, optimizer, update_step, get_loss, get_sampler, get_inpainter)
 from diffusionjax.solvers import EulerMaruyama, Annealed
-from diffusionjax.samplers import get_sampler
-from diffusionjax.inverse_problems import get_inpainter
 from diffusionjax.models import MLP
-from diffusionjax.utils import get_score, retrain_nn, optimizer, update_step
 from diffusionjax.sde import VP, VE, UDLangevin
 
 
