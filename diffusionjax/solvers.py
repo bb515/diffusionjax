@@ -1,7 +1,6 @@
 """Solver classes."""
 import jax
 import jax.numpy as jnp
-from jax.lax import scan
 import jax.random as random
 from diffusionjax.utils import batch_mul
 import abc
@@ -10,23 +9,41 @@ import abc
 class Solver(abc.ABC):
     """Solver abstract class. Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, num_steps=1000, dt=None):
+    def __init__(self, num_steps=1000, dt=None, epsilon=None):
         """Construct an SDE.
         Args:
             num_steps: number of discretization time steps.
             dt: time step duration, float or `None`.
                 Optional, if provided then final time, t1 = dt * num_steps.
+            epsilon: A small float 0. < `epsilon` << 1. The SDE or ODE are integrated to `epsilon` to avoid numerical issues.
         """
         self.num_steps = num_steps
-        if dt is None:
-            self.dt = 1. / self.num_steps
-            # Defined in forward time, t \in [\epsilon, 1.0], 0 < \epsilon << 1
-            self.ts = jnp.linspace(0, 1, num_steps + 1)[1:].reshape(-1, 1)
+        if dt is not None:
+            self.t1 = dt * num_steps
+            if epsilon is not None:
+                # Defined in forward time, t \in [epsilon, t1], 0 < epsilon << t1
+                ts, step = jnp.linspace(epsilon, t1, num_steps, retstep=True)
+                self.ts = ts.reshape(-1, 1)
+                assert step == (t1 - epsilon) / num_steps
+                self.dt = step
+            else:
+                # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
+                step = jnp.linspace(0, t1, num_steps + 1)
+                self.ts = ts[1:].reshape(-1, 1)
+                assert step == dt
+                self.dt = step
         else:
-            self.dt = dt
-            t1 = dt * num_steps
-            # Defined in forward time, t \in [\epsilon, t1], 0 < \epsilon << t1
-            self.ts = jnp.linspace(0, t1, num_steps + 1)[1:].reshape(-1, 1)
+            self.t1 = 1.0
+            if epsilon is not None:
+                self.ts, step = jnp.linspace(epsilon, 1, num_steps, retstep=True)
+                assert step == (1. - epsilon) / num_steps
+                self.dt = step
+            else:
+                # Defined in forward time, t \in [dt, 1.0], 0 < dt << 1
+                ts, step = jnp.linspace(0, 1, num_steps + 1, retstep=True)
+                self.ts = ts[1:].reshape(-1, 1)
+                assert step == 1. / num_steps
+                self.dt = step
 
     @abc.abstractmethod
     def update(self, rng, x, t):
@@ -44,15 +61,16 @@ class Solver(abc.ABC):
 
 
 class EulerMaruyama(Solver):
-    """Euler Maruyama numerical solver of an SDE. Functions are designed for a mini-batch of inputs."""
+    """Euler Maruyama numerical solver of an SDE.
+    Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, sde, num_steps=1000):
+    def __init__(self, sde, num_steps=1000, dt=None, epsilon=None):
         """Constructs an Euler-Maruyama Solver.
         Args:
             sde: A valid SDE class.
             num_steps: number of discretization time steps.
         """
-        super().__init__(num_steps)
+        super().__init__(num_steps=num_steps, dt=dt, epsilon=epsilon)
         self.sde = sde
 
     def update(self, rng, x, t):
@@ -63,7 +81,7 @@ class EulerMaruyama(Solver):
             t: A JAX array representing the current step.
 
         Returns:
-            x: A JAX array of the next state:
+            x: A JAX array of the next state.
             x_mean: A JAX array. The next state without random noise. Useful for denoising.
         """
         drift, diffusion = self.sde.sde(x, t)
@@ -79,12 +97,12 @@ class Annealed(Solver):
     """Annealed Langevin numerical solver of an SDE.
     Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, sde, num_steps=2, snr=1e-2):
+    def __init__(self, sde, snr=1e-2, num_steps=2, dt=None, epsilon=None):
         """Constructs an Annealed Langevin Solver.
         Args:
             sde: A valid SDE class.
         """
-        super().__init__(num_steps)
+        super().__init__(num_steps, dt=dt, epsilon=epsilon)
         self.sde = sde
         self.snr = snr
 
@@ -96,7 +114,7 @@ class Annealed(Solver):
             t: A JAX array representing the current step.
 
         Returns:
-            x: A JAX array of the next state:
+            x: A JAX array of the next state.
             x_mean: A JAX array. The next state without random noise. Useful for denoising.
         """
         grad = self.sde.score(x, t)

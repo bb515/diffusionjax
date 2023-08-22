@@ -74,7 +74,7 @@ def plot_animation(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300
     ani.save('{}.mp4'.format(fname), writer=writer, dpi=dpi)
 
 
-def plot_score(score, t, area_min=-1, area_max=1, fname="plot_score"):
+def plot_score(score, scaler, t, area_min=-1, area_max=1, fname="plot_score"):
     fig, ax = plt.subplots(1, 1)
     # this helper function is here so that we can jit it.
     # We can not jit the whole function since plt.quiver cannot
@@ -85,7 +85,7 @@ def plot_score(score, t, area_min=-1, area_max=1, fname="plot_score"):
         x, y = jnp.meshgrid(x, x)
         grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
         t = jnp.ones((grid.shape[0],)) * t
-        scores = score(grid, t)
+        scores = score(scaler(grid), t)
         return grid, scores
     grid, scores = helper(score, t, area_min, area_max)
     ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 1])
@@ -96,7 +96,7 @@ def plot_score(score, t, area_min=-1, area_max=1, fname="plot_score"):
     plt.close()
 
 
-def plot_score_ax(ax, score, t, area_min=-1, area_max=1):
+def plot_score_ax(ax, score, scaler, t, area_min=-1, area_max=1):
     # This helper function is here so that we can jit it.
     # We can not jit the whole function since plt.quiver cannot be jitted
     @partial(jit, static_argnums=[0,])
@@ -105,7 +105,7 @@ def plot_score_ax(ax, score, t, area_min=-1, area_max=1):
         x, y = jnp.meshgrid(x, x)
         grid = jnp.stack([x.flatten(), y.flatten()], axis=1)
         t = jnp.ones((grid.shape[0],)) * t
-        scores = score(grid, t)
+        scores = score(scaler(grid), t)
         return grid, scores
     grid, scores = helper(score, t, area_min, area_max)
     ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 3])

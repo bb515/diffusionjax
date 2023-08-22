@@ -6,9 +6,10 @@ diffusionjax
 
 diffusionjax is a simple, accessible introduction to diffusion models, also known as score-based generative models (SGMs). It is implemented in Python via the autodiff framework, [JAX](https://github.com/google/jax). In particular, diffusionjax uses the [Flax](https://github.com/google/flax) library for the neural network approximator of the score.
 
-Based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by Jakiw Pidstrigach, a tutorial on the theoretical and implementation aspects of diffusion models.
-
 The development of diffusionjax has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event "Accelerating generative models and nonconvex optimisation", which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
+
+![nPlan](readme_nPlan.png)
+Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 
 Contents:
 
@@ -18,7 +19,6 @@ Contents:
 - [Does haves](#does-haves)
 - [Doesn't haves](#doesn't-haves)
 - [References](#references)
-- [Acknowledgements](#acknowledgements)
 
 ## Installation
 The package requires Python 3.8+. First, it is recommended to [create a new python virtual environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands). Then, `pip install diffusionjax` or for developers,
@@ -28,7 +28,19 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 ## Examples
 
 ### Introduction to diffusion models
-- Run the example by typing `python examples/example.py` on the command line from the root directory of the repository.
+Run the example by typing 
+```sh
+python examples/example.py:
+  --config: Training configuration.
+    (default: './configs/example.py')
+  --workdir: Working directory
+    (default: './examples/')
+```
+on the command line from the root directory of the repository.
+* `config` is the path to the config file. The default config files are provided in `configs/`. They are formatted according to [`ml_collections`](https://github.com/google/ml_collections).
+*  `workdir` is the path that stores all artifacts of one experiment, like checkpoints, samples, and evaluation results via wandb.
+
+The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by Jakiw Pidstrigach, a tutorial on the theoretical and implementation aspects of diffusion models.
 ```python
 >>> num_epochs = 4000
 >>> num_samples = 8
@@ -136,6 +148,7 @@ The package requires Python 3.8+. First, it is recommended to [create a new pyth
 ## Does haves
 - Training scores on (possibly, image) data and sampling from the generative model. Also inverse problems, such as inpainting.
 - Not many lines of code.
+- jit multiple training steps together to improve training speed at the cost of more memory usage. This can be set via `config.training.n_jitted_steps`.
 - Easy to use, extendable. Get started with the example, provided.
 
 ## Doesn't haves
@@ -148,6 +161,4 @@ Algorithms in this package were ported from pre-existing code. In particular, th
 
 The [official implementation](https://github.com/yang-song/score_sde) for the paper [Score-Based Generative Modeling through Stochastic Differential Equations](https://openreview.net/forum?id=PxTIG12RRHS) by [Yang Song](https://yang-song.github.io), [Jascha Sohl-Dickstein](http://www.sohldickstein.com/), [Diederik P. Kingma](http://dpkingma.com/), [Abhishek Kumar](http://users.umiacs.umd.edu/~abhishek/), [Stefano Ermon](https://cs.stanford.edu/~ermon/), and [Ben Poole](https://cs.stanford.edu/~poole/)
 
-## Acknowledgements
-Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 

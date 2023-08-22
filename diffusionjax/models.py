@@ -26,9 +26,6 @@ class MLP(nn.Module):
         x = nn.Dense(in_size)(x)
         return x.reshape(x_shape)
 
-    def evaluate(self, params, x_t, times):
-        return self.apply(params, x_t, times)  # score_t * std_t
-
 
 class CNN(nn.Module):
     """
@@ -56,5 +53,3 @@ class CNN(nn.Module):
         x = nn.Conv(x_shape[-1], kernel_size=(9,) * (ndim - 2))(x)
         return x
 
-    def evaluate(self, params, x_t, times):
-        return self.apply(params, x_t, times)  # score_t * std_t

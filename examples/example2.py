@@ -1,33 +1,31 @@
 """Diffusion models introduction.
 
 An example using 2 dimensional image data.
-
-Dependencies: This example requires mlkernels package,
-https://github.com/wesselb/mlkernels#installation
 """
 import jax
-from jax import jit, vmap, grad
+from jax import vmap, jit, grad
+from functools import partial
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
+import optax
+from functools import partial
 from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
-from diffusionjax.losses import get_loss
-from diffusionjax.solvers import EulerMaruyama
-from diffusionjax.solvers import Annealed
-from diffusionjax.samplers import get_sampler
-from diffusionjax.models import CNN
 from diffusionjax.utils import (
-    get_score,
-    update_step,
-    optimizer,
-    retrain_nn)
+    get_score, retrain_nn, optimizer, update_step, get_loss,
+    get_sampler)
+from diffusionjax.solvers import EulerMaruyama, Annealed
+from diffusionjax.models import CNN
 from diffusionjax.sde import VP, UDLangevin
-from mlkernels import Matern52
 import numpy as np
-import lab as B
+import os
 
+# Dependencies: This example requires mlkernels package,
+# https://github.com/wesselb/mlkernels#installation
+from mlkernels import Matern52
+import lab as B
 
 x_max = 5.0
 epsilon = 1e-4
@@ -128,7 +126,7 @@ def main():
         # nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
         # Running the reverse SDE with the empirical score
         sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps)), axis_name='batch')
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
         plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
@@ -136,7 +134,7 @@ def main():
         perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
         rng, step_rng = random.split(rng)
         sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps)), axis_name='batch')
-        q_samples = sampler(rng)
+        q_samples, num_function_evaluations = sampler(rng)
         plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
         plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
@@ -147,23 +145,19 @@ def main():
     params = score_model.init(step_rng, jnp.zeros((batch_size, image_size, image_size, num_channels)), jnp.ones((batch_size,)))
     # Initialize optimizer
     opt_state = optimizer.init(params)
-    if 0:  # Load pre-trained model parameters
-        f = open('/tmp/output2', 'rb')
-        output = f.read()
-        params = serialization.from_bytes(params, output)
-    else:
+
+    if not os.path.exists('/tmp/output2'):
         # Get loss function
         solver = EulerMaruyama(sde, num_steps=num_steps)
         loss = get_loss(
             sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
             reduce_mean=True, pointwise_t=False)
         # Train with score matching
-        score_model, params, opt_state, mean_losses = retrain_nn(
+        params, opt_state, mean_losses = retrain_nn(
             update_step=update_step,
             num_epochs=num_epochs,
             step_rng=step_rng,
             samples=samples,
-            score_model=score_model,
             params=params,
             opt_state=opt_state,
             loss=loss,
@@ -173,6 +167,10 @@ def main():
         output = serialization.to_bytes(params)
         f = open('/tmp/output2', 'wb')
         f.write(output)
+    else:  # Load pre-trained model parameters
+        f = open('/tmp/output2', 'rb')
+        output = f.read()
+        params = serialization.from_bytes(params, output)
 
     # Get trained score
     trained_score = get_score(sde, score_model, params, score_scaling=True)
@@ -194,7 +192,7 @@ def main():
 
     rng, *sample_rng = random.split(rng, num_devices + 1)
     sample_rng = jnp.asarray(sample_rng)
-    q_samples = sampler(sample_rng)
+    q_samples, num_function_evaluations = sampler(sample_rng)
     q_samples = q_samples.reshape(64, image_size, image_size, num_channels)
     plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
     plot_samples_1D(q_samples, image_size, fname="samples 1D trained score")
