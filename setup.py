@@ -40,10 +40,10 @@ setup(
         'jax>=0.4.1',
         'optax',
         'flax',
-        'torch'
+        'torch',
         'ml_collections',
         'tqdm',
-        'absl',
+        'absl-py',
         'wandb'
         ]
     )
