@@ -1,12 +1,9 @@
 """Diffusion models introduction.
 
 An example using 2 dimensional image data.
-
-Dependencies: This example requires mlkernels package,
-https://github.com/wesselb/mlkernels#installation
 """
 import jax
-from jax import vmap, jit, grad, value_and_grad
+from jax import vmap, jit, grad
 from functools import partial
 import jax.random as random
 import jax.numpy as jnp
@@ -22,10 +19,13 @@ from diffusionjax.utils import (
 from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.models import CNN
 from diffusionjax.sde import VP, UDLangevin
-from mlkernels import Matern52
 import numpy as np
-import lab as B
+import os
 
+# Dependencies: This example requires mlkernels package,
+# https://github.com/wesselb/mlkernels#installation
+from mlkernels import Matern52
+import lab as B
 
 x_max = 5.0
 epsilon = 1e-4
@@ -145,11 +145,8 @@ def main():
     params = score_model.init(step_rng, jnp.zeros((batch_size, image_size, image_size, num_channels)), jnp.ones((batch_size,)))
     # Initialize optimizer
     opt_state = optimizer.init(params)
-    if 0:  # Load pre-trained model parameters
-        f = open('/tmp/output2', 'rb')
-        output = f.read()
-        params = serialization.from_bytes(params, output)
-    else:
+
+    if not os.path.exists('/tmp/output2'):
         # Get loss function
         solver = EulerMaruyama(sde, num_steps=num_steps)
         loss = get_loss(
@@ -170,6 +167,10 @@ def main():
         output = serialization.to_bytes(params)
         f = open('/tmp/output2', 'wb')
         f.write(output)
+    else:  # Load pre-trained model parameters
+        f = open('/tmp/output2', 'rb')
+        output = f.read()
+        params = serialization.from_bytes(params, output)
 
     # Get trained score
     trained_score = get_score(sde, score_model, params, score_scaling=True)

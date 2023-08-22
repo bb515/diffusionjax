@@ -3,68 +3,109 @@
 Based off the Jupyter notebook: https://jakiw.com/sgm_intro
 A tutorial on the theoretical and implementation aspects of score-based generative models, also called diffusion models.
 """
+# Uncomment to enable double precision
+from jax.config import config as jax_config
+jax_config.update("jax_enable_x64", True)
+
 import jax
-from jax import vmap, jit, grad, value_and_grad
+from jax import jit, vmap, grad
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
-import optax
-from functools import partial
+
+from diffusionjax.run_lib import get_model, train, get_solver
+from diffusionjax.utils import get_score, get_sampler, get_inpainter
+from diffusionjax.plot import (plot_samples, plot_score,
+                               plot_heatmap, plot_scatter)
+import diffusionjax.sde as sde_lib
+
+from absl import app, flags
+from ml_collections.config_flags import config_flags
 from flax import serialization
+import time
+from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
-from diffusionjax.plot import (
-    plot_samples, plot_score, plot_score_ax, plot_heatmap, plot_heatmap_ax, plot_animation)
-from diffusionjax.utils import (
-    get_score, retrain_nn, optimizer, update_step, get_loss, get_sampler, get_inpainter)
-from diffusionjax.solvers import EulerMaruyama, Annealed
-from diffusionjax.models import MLP
-from diffusionjax.sde import VP, VE, UDLangevin
+import os
 
 
-def sample_circle(num_samples):
-    """Samples from the unit circle, angles split.
-
-    Args:
-        num_samples: The number of samples.
-
-    Returns:
-        An (num_samples, 2) array of samples.
-    """
-    alphas = jnp.linspace(0, 2 * jnp.pi * (1 - 1/num_samples), num_samples)
-    xs = jnp.cos(alphas)
-    ys = jnp.sin(alphas)
-    samples = jnp.stack([xs, ys], axis=1)
-    return samples
+FLAGS = flags.FLAGS
+config_flags.DEFINE_config_file(
+    "config", './configs/example.py', "Training configuration.",
+    lock_config=True)
+flags.DEFINE_string("workdir", './examples/', "Work directory.")
+flags.mark_flags_as_required(["workdir", "config"])
 
 
-def plot_beta_schedule(sde, solver):
-    """Plots the temperature schedule of the SDE marginals.
+class CircleDataset(Dataset):
+    """Dataset containing samples from the circle."""
+    def __init__(self, num_samples):
+        self.train_data = self.sample_circle(num_samples)
 
-    Args:
-        sde: a valid SDE class.
-    """
-    beta_t = sde.beta_min + solver.ts * (sde.beta_max - sde.beta_min)
-    diffusion = jnp.sqrt(beta_t)
+    def __len__(self):
+        return self.train_data.shape[0]
 
-    plt.plot(solver.ts, beta_t, label="beta_t")
-    plt.plot(solver.ts, diffusion, label="diffusion_t")
-    plt.legend()
-    plt.savefig("plot_beta_schedule.png")
-    plt.close()
+    def __getitem__(self, idx):
+        return self.train_data[idx]
+
+    def sample_circle(self, num_samples):
+        """Samples from the unit circle, angles split.
+
+        Args:
+            num_samples: The number of samples.
+
+        Returns:
+            An (num_samples, 2) array of samples.
+
+        num_samples: Number of samples
+        Returns a (num_samples, 2) array of samples
+        """
+        alphas = jnp.linspace(0, 2 * jnp.pi * (1 - 1/num_samples), num_samples)
+        xs = jnp.cos(alphas)
+        ys = jnp.sin(alphas)
+        samples = jnp.stack([xs, ys], axis=1)
+        return samples
+
+    def metric_names(self):
+        return ['mean']
+
+    def calculate_metrics_batch(self, batch):
+        return vmap(lambda x: jnp.mean(x, axis=0))(batch)[0, 0]
+
+    def get_data_scaler(self, config):
+        def data_scaler(x):
+            return x / jnp.sqrt(2)
+        return data_scaler
+
+    def get_data_inverse_scaler(self, config):
+        def data_scaler(x):
+            return x * jnp.sqrt(2)
+        return data_scaler
 
 
-def main():
-    num_epochs = 4000
-    rng = random.PRNGKey(2023)
+def main(argv):
+    workdir = FLAGS.workdir
+    config = FLAGS.config
+    jax.default_device = jax.devices()[0]
+    # Tip: use CUDA_VISIBLE_DEVICES to restrict the devices visible to jax
+    # ... they must be all the same model of device for pmap to work
+    num_devices =  int(jax.local_device_count()) if config.training.pmap else 1
+    rng = random.PRNGKey(config.seed)
+
+    # Setup SDE
+    if config.training.sde.lower()=='vpsde':
+        sde = sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    elif config.training.sde.lower()=='vesde':
+        sde = sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    else:
+        raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
+
+    # Build data iterators
     num_samples = 8
-    samples = sample_circle(num_samples)
-    N = samples.shape[1]
-    plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
-
-    # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
-    sde = VP(beta_min=0.01, beta_max=3.0)
-    # Alternative sde model, variance exploding (VE) a.k.a. time-dependent diffusion process
-    # sde = VE(sigma_min=0.01, sigma_max=3.0)
+    dataset = CircleDataset(num_samples=num_samples)
+    scaler = dataset.get_data_scaler(config)
+    inverse_scaler = dataset.get_data_inverse_scaler(config)
+    plot_samples(
+        samples=dataset.train_data, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 
     def log_hat_pt(x, t):
         """
@@ -78,7 +119,7 @@ def main():
             .. math::
                 \hat{p}_{t}(x)
         """
-        mean, std = sde.marginal_prob(samples, t)
+        mean, std = sde.marginal_prob(scaler(dataset.train_data), t)
         potentials = jnp.sum(-(x - mean)**2 / (2 * std**2), axis=1)
         return logsumexp(potentials, axis=0, b=1/num_samples)
 
@@ -86,65 +127,71 @@ def main():
     nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
 
     # Running the reverse SDE with the empirical drift
-    plot_score(score=nabla_log_hat_pt, t=0.01, area_min=-3, area_max=3, fname="empirical score")
-    reverse_sde = sde.reverse(nabla_log_hat_pt)
-    solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler((5760, N), solver, stack_samples=False)
+    plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_min=-3, area_max=3, fname="empirical score")
+    outer_solver, inner_solver = get_solver(config, sde, nabla_log_hat_pt)
+    sampler = get_sampler((5760, config.data.image_size),
+                          outer_solver, inner_solver,
+                          denoise=config.sampling.denoise,
+                          stack_samples=False,
+                          inverse_scaler=inverse_scaler)
     rng, sample_rng = random.split(rng, 2)
     q_samples, num_function_evaluations = sampler(sample_rng)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
-    reverse_sde = sde.reverse(perturbed_score)
-    solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler((5760, N), solver)
+    outer_solver, inner_solver = get_solver(config, sde, perturbed_score)
+    sampler = get_sampler((5760, config.data.image_size),
+                          outer_solver, inner_solver,
+                          denoise=config.sampling.denoise,
+                          inverse_scaler=inverse_scaler)
     rng, sample_rng = random.split(rng, 2)
     q_samples, num_function_evaluations = sampler(sample_rng)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap bounded perturbation")
 
-    # Neural network training via score matching
-    batch_size=64
-    score_model = MLP()
-    score_scaling = True
-    # Initialize parameters
-    params = score_model.init(rng, jnp.zeros((batch_size, N)), jnp.ones((batch_size,)))
-    # Initialize optimizer
-    opt_state = optimizer.init(params)
-    if 0:  # Load pre-trained model parameters
-        f = open('/tmp/output0', 'rb')
-        output = f.read()
-        params = serialization.from_bytes(params, output)
-    else:
-        # Get loss function
-        solver = EulerMaruyama(sde)
-        loss = get_loss(
-            sde, solver, score_model, score_scaling=score_scaling, likelihood_weighting=False,
-            reduce_mean=True, pointwise_t=False)
-        # Train with score matching
-        params, opt_state, mean_losses = retrain_nn(
-            update_step=update_step,
-            num_epochs=num_epochs,
-            step_rng=rng,
-            samples=samples,
-            params=params,
-            opt_state=opt_state,
-            loss=loss,
-            batch_size=batch_size)
+    if not os.path.exists('/tmp/output0'):
+        time_prev = time.time()
+        params, opt_state, mean_losses = train(
+            (config.training.batch_size//jax.local_device_count(), config.data.image_size),
+            config, workdir, dataset)
+        time_delta = time.time() - time_prev
+        print("train time: {}s".format(time_delta))
 
         # Save params
         output = serialization.to_bytes(params)
         f = open('/tmp/output0', 'wb')
         f.write(output)
+    else:  # Load pre-trained model parameters
+        params = get_model(config).init(
+            rng,
+            jnp.zeros(
+                (config.training.batch_size//jax.local_device_count(), config.data.image_size)
+            ),
+            jnp.ones((config.training.batch_size//jax.local_device_count(),)))
+        f = open('/tmp/output0', 'rb')
+        output = f.read()
+        params = serialization.from_bytes(params, output)
 
     # Get trained score
-    trained_score = get_score(sde, score_model, params, score_scaling=score_scaling)
-    plot_score(score=trained_score, t=0.01, area_min=-3, area_max=3, fname="trained score")
-    reverse_sde = sde.reverse(trained_score)
-    solver = EulerMaruyama(reverse_sde)
-    sampler = get_sampler((720, N), solver, stack_samples=False)
-    rng, sample_rng = random.split(rng, 2)
+    trained_score = get_score(sde, get_model(config), params, score_scaling=config.training.score_scaling)
+    plot_score(score=trained_score, scaler=scaler, t=0.01, area_min=-3, area_max=3, fname="trained score")
+    outer_solver, inner_solver = get_solver(config, sde, trained_score)
+    sampler = get_sampler(
+        (config.solver.num_outer_steps // num_devices, config.data.image_size),
+        outer_solver,
+        inner_solver,
+        denoise=config.sampling.denoise,
+        inverse_scaler=inverse_scaler)
+
+    if config.training.pmap:
+        sampler = jax.pmap(sampler, axis_name='batch')
+        rng, *sample_rng = random.split(rng, 1 + num_devices)
+        sample_rng = jnp.asarray(sample_rng)
+    else:
+        rng, sample_rng = random.split(rng, 2)
+
     q_samples, num_function_evaluations = sampler(sample_rng)
+    q_samples = q_samples.reshape(config.solver.num_outer_steps, config.data.image_size)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap trained score")
 
     # Condition on one of the coordinates
@@ -152,22 +199,15 @@ def main():
     mask = jnp.array([1, 0])
     data = jnp.tile(data, (64, 1))
     mask = jnp.tile(mask, (64, 1))
-    inpainter = get_inpainter(solver, stack_samples=False)
+    inpainter = get_inpainter(
+        outer_solver,
+        stack_samples=False,
+        denoise=config.sampling.denoise,
+        inverse_scaler=inverse_scaler)
     rng, sample_rng = random.split(rng, 2)
     q_samples, num_function_evaluations = inpainter(sample_rng, data, mask)
     plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
 
-    frames = 100
-    fig, ax = plt.subplots(1, 1)
-    plt.gca().set_aspect('equal', adjustable='box')
-    def animate(i, ax):
-        ax.clear()
-        plot_score_ax(
-            ax, trained_score, t=1 - (i / frames), area_min=-1, area_max=1)
-
-    # Plot animation of the trained score over time
-    plot_animation(fig, ax, animate, frames, "trained_score")
-    plt.close()
 
 if __name__ == "__main__":
-    main()
+    app.run(main)

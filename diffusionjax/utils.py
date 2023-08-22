@@ -79,6 +79,37 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
     return loss
 
 
+def get_step_fn(loss, optimizer, train, pmap):
+    """Create a one-step training/evaluation function.
+
+    Args:
+        loss: A loss function.
+        optimizer: An optimization function.
+        train: `True` for training and `False` for evaluation.
+        pmap: `True` for pmap across jax devices, `False` for single device.
+
+    Returns:
+        A one-step function for training or evaluation.
+    """
+    @jit
+    def step_fn(carry, batch):
+        (rng, params, opt_state) = carry
+        rng, step_rng = random.split(rng)
+        grad_fn = value_and_grad(loss)
+        if train:
+            loss_val, grads = grad_fn(params, step_rng, batch)
+            if pmap:
+                loss_val = jax.lax.pmean(loss_val, axis_name='batch')
+                grads = jax.lax.pmean(grads, axis_name='batch')
+            updates, opt_state = optimizer.update(grads, opt_state)
+            params = optax.apply_updates(params, updates)
+        else:
+            loss_val = loss(params, step_rng, batch)
+            if pmap: loss_val = jax.lax.pmean(loss_val, axis_name='batch')
+        return (rng, params, opt_state), loss_val
+    return step_fn
+
+
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
 
