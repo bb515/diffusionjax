@@ -9,6 +9,7 @@ diffusionjax is a simple, accessible introduction to diffusion models, also know
 The development of diffusionjax has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event "Accelerating generative models and nonconvex optimisation", which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
 
 ![nPlan](readme_nplan.png)
+
 Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 
 Contents:
