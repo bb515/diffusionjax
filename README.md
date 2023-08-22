@@ -8,7 +8,7 @@ diffusionjax is a simple, accessible introduction to diffusion models, also know
 
 The development of diffusionjax has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event "Accelerating generative models and nonconvex optimisation", which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
 
-![nPlan](readme_nPlan.svg)
+![nPlan](readme_nPlan.png)
 Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 
 Contents:
@@ -39,6 +39,7 @@ python examples/example.py:
 on the command line from the root directory of the repository.
 * `config` is the path to the config file. The default config files are provided in `configs/`. They are formatted according to [`ml_collections`](https://github.com/google/ml_collections).
 *  `workdir` is the path that stores all artifacts of one experiment, like checkpoints, samples, and evaluation results via wandb.
+
 The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by Jakiw Pidstrigach, a tutorial on the theoretical and implementation aspects of diffusion models.
 ```python
 >>> num_epochs = 4000
