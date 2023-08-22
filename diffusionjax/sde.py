@@ -92,7 +92,7 @@ class VE(SDE):
         return jnp.zeros_like(t)
 
     def mean_coeff(self, t):
-        return 1.0
+        return jnp.ones_like(t)
 
     def variance(self, t):
         std = self.sigma_min * (self.sigma_max / self.sigma_min)**t

@@ -64,13 +64,13 @@ class EulerMaruyama(Solver):
     """Euler Maruyama numerical solver of an SDE.
     Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, sde, num_steps=1000):
+    def __init__(self, sde, num_steps=1000, dt=None, epsilon=None):
         """Constructs an Euler-Maruyama Solver.
         Args:
             sde: A valid SDE class.
             num_steps: number of discretization time steps.
         """
-        super().__init__(num_steps)
+        super().__init__(num_steps=num_steps, dt=dt, epsilon=epsilon)
         self.sde = sde
 
     def update(self, rng, x, t):
@@ -97,12 +97,12 @@ class Annealed(Solver):
     """Annealed Langevin numerical solver of an SDE.
     Functions are designed for a mini-batch of inputs."""
 
-    def __init__(self, sde, num_steps=2, snr=1e-2):
+    def __init__(self, sde, snr=1e-2, num_steps=2, dt=None, epsilon=None):
         """Constructs an Annealed Langevin Solver.
         Args:
             sde: A valid SDE class.
         """
-        super().__init__(num_steps)
+        super().__init__(num_steps, dt=dt, epsilon=epsilon)
         self.sde = sde
         self.snr = snr
 

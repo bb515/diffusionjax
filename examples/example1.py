@@ -1,34 +1,31 @@
 """Diffusion models introduction.
 
 An example using 1 dimensional image data.
-
-Dependencies: This example requires mlkernels package,
-https://github.com/wesselb/mlkernels#installation
 """
-from jax import jit, vmap, grad
+import jax
+from jax import vmap, jit, grad, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from flax import serialization
+import optax
+from functools import partial
 import matplotlib.pyplot as plt
 from diffusionjax.plot import (
     plot_score, plot_heatmap, plot_animation)
-from diffusionjax.losses import get_loss
-from diffusionjax.solvers import EulerMaruyama
-from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
-from diffusionjax.samplers import get_sampler
-from diffusionjax.models import MLP
 from diffusionjax.utils import (
-    get_score,
-    update_step,
-    optimizer,
-    retrain_nn)
+    get_score, retrain_nn, optimizer, update_step, get_loss,
+    get_inpainter, get_projection_sampler, get_sampler)
+from diffusionjax.solvers import EulerMaruyama
+from diffusionjax.models import MLP
 from diffusionjax.sde import VE
-from mlkernels import Matern52
 import numpy as np
-import lab as B
-from functools import partial
+import os
 
+# Dependencies: This example requires mlkernels package,
+# https://github.com/wesselb/mlkernels#installation
+import lab as B
+from mlkernels import Matern52
 
 x_max = 5.0
 epsilon = 1e-4
@@ -141,7 +138,7 @@ def main():
         nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
 
         # Running the reverse SDE with the empirical score
-        plot_score(score=nabla_log_hat_pt_tmp, t=0.01, area_min=-3, area_max=3, fname="empirical score")
+        plot_score(score=nabla_log_hat_pt_tmp, scaler=lambda x:x, t=0.01, area_min=-3, area_max=3, fname="empirical score")
         sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
         q_samples, num_function_evaluations = sampler(rng)
         plot_samples_1D(q_samples, image_size=image_size, fname="samples empirical score")
@@ -181,11 +178,7 @@ def main():
     # Initialize optimizer
     opt_state = optimizer.init(params)
 
-    if 0:  # Load pre-trained model parameters
-        f = open('/tmp/output1', 'rb')
-        output = f.read()
-        params = serialization.from_bytes(params, output)
-    else:
+    if not os.path.exists('/tmp/output1'):
         solver = EulerMaruyama(sde)
         # Get loss function
         loss = get_loss(
@@ -207,6 +200,10 @@ def main():
         output = serialization.to_bytes(params)
         f = open('/tmp/output1', 'wb')
         f.write(output)
+    else:  # Load pre-trained model parameters
+        f = open('/tmp/output1', 'rb')
+        output = f.read()
+        params = serialization.from_bytes(params, output)
 
     # Get trained score
     trained_score = get_score(sde, score_model, params, score_scaling=True)
