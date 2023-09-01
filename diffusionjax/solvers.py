@@ -10,7 +10,7 @@ class Solver(abc.ABC):
     """Solver abstract class. Functions are designed for a mini-batch of inputs."""
 
     def __init__(self, num_steps=1000, dt=None, epsilon=None):
-        """Construct an SDE.
+        """Construct a Solver.
         Args:
             num_steps: number of discretization time steps.
             dt: time step duration, float or `None`.
@@ -47,7 +47,7 @@ class Solver(abc.ABC):
 
     @abc.abstractmethod
     def update(self, rng, x, t):
-        r"""Return the drift and diffusion coefficients of the SDE.
+        r"""Return the update of the state and any auxilliary values.
 
         Args:
             rng: A JAX random state.
@@ -72,6 +72,7 @@ class EulerMaruyama(Solver):
         """
         super().__init__(num_steps=num_steps, dt=dt, epsilon=epsilon)
         self.sde = sde
+        self.prior = sde.prior
 
     def update(self, rng, x, t):
         """
@@ -105,6 +106,7 @@ class Annealed(Solver):
         super().__init__(num_steps, dt=dt, epsilon=epsilon)
         self.sde = sde
         self.snr = snr
+        self.prior = sde.prior
 
     def update(self, rng, x, t):
         """

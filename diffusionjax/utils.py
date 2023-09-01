@@ -245,7 +245,7 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
 
         rng, step_rng = random.split(rng)
         if x_0 is None:
-            x = outer_solver.sde.prior(step_rng, shape)
+            x = outer_solver.prior(step_rng, shape)
         else:
             assert(x_0.shape==shape)
             x = x_0
