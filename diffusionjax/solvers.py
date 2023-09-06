@@ -22,13 +22,13 @@ class Solver(abc.ABC):
             self.t1 = dt * num_steps
             if epsilon is not None:
                 # Defined in forward time, t \in [epsilon, t1], 0 < epsilon << t1
-                ts, step = jnp.linspace(epsilon, t1, num_steps, retstep=True)
+                ts, step = jnp.linspace(epsilon, self.t1, num_steps, retstep=True)
                 self.ts = ts.reshape(-1, 1)
-                assert step == (t1 - epsilon) / num_steps
+                assert step == (self.t1 - epsilon) / num_steps
                 self.dt = step
             else:
                 # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
-                step = jnp.linspace(0, t1, num_steps + 1)
+                step = jnp.linspace(0, self.t1, num_steps + 1)
                 self.ts = ts[1:].reshape(-1, 1)
                 assert step == dt
                 self.dt = step
