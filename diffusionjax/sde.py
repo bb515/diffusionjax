@@ -178,9 +178,9 @@ class VP(SDE):
         beta_min = self.beta_min
         beta_max = self.beta_max
 
-        class ROU(self.RSDE, self.__class__):
+        class RVP(self.RSDE, self.__class__):
             def __init__(self):
                 super().__init__(score, fwd_sde)
                 self.beta_min = beta_min
                 self.beta_max = beta_max
-        return ROU()
+        return RVP()

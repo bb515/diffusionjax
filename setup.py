@@ -21,7 +21,7 @@ LICENSE = (HERE / "LICENSE.rst").read_text()
 
 setup(
     name="diffusionjax",
-    python_requires=">=3.8",
+    # python_requires=">=3.8",
     description="diffusionjax is a simple and accessible diffusion models package in JAX",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -36,11 +36,8 @@ setup(
         'scipy',
         'matplotlib',
         'seaborn',
-        'jaxlib>=0.4.1',
-        'jax>=0.4.1',
         'optax',
         'flax',
-        'torch',
         'ml_collections',
         'tqdm',
         'absl-py',
