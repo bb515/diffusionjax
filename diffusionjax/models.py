@@ -1,5 +1,6 @@
 import flax.linen as nn
 import numpy as np
+import jax.numpy as jnp
 
 
 class MLP(nn.Module):

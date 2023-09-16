@@ -162,11 +162,7 @@ class VP(SDE):
             t: JAX float of the time
         """
         m = self.mean_coeff(t)
-        # TODO: remove this try except clause
-        try:
-            mean = batch_mul(m, x)
-        except:
-            mean = m * x
+        mean = batch_mul(m, x)
         std = jnp.sqrt(self.variance(t))
         return mean, std
 

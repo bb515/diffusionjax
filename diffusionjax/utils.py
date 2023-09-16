@@ -161,7 +161,7 @@ def retrain_nn(
 
 def get_score(sde, model, params, score_scaling):
     if score_scaling is True:
-        return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / sde.marginal_prob(x, t)[1])
+        return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / jnp.sqrt(sde.variance(t)))
     else:
         return lambda x, t: -model.apply(params, x, t)
 
