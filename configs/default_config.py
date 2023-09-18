@@ -3,6 +3,7 @@ import ml_collections
 
 def get_default_configs():
     config = ml_collections.ConfigDict()
+
     # training
     config.training = training = ml_collections.ConfigDict()
     config.training.batch_size = 64
@@ -39,22 +40,25 @@ def get_default_configs():
     # model
     config.model = model = ml_collections.ConfigDict()
     model.name = 'mlp'
+
     # for vp
     model.beta_min = 0.1
     model.beta_max = 20.
+
     # for ve
     model.sigma_max = 378.
     model.sigma_min = 0.01
 
     # solver
     config.solver = solver = ml_collections.ConfigDict()
-    config.solver.num_outer_steps = 1000
-    config.solver.num_inner_steps = 1
-    config.solver.outer_solver = 'EulerMaruyama'
-    config.solver.inner_solver = None
-    config.solver.dt = None
-    config.solver.epsilon = None
-    config.solver.snr = None
+    solver.num_outer_steps = 1000
+    solver.num_inner_steps = 1
+    solver.outer_solver = 'EulerMaruyama'
+    solver.eta = None  # for DDIM
+    solver.inner_solver = None
+    solver.dt = None
+    solver.epsilon = None
+    solver.snr = None
 
     # optimization
     config.seed = 2023

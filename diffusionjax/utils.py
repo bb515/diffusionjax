@@ -166,6 +166,13 @@ def get_score(sde, model, params, score_scaling):
         return lambda x, t: -model.apply(params, x, t)
 
 
+def get_epsilon(sde, model, params, score_scaling):
+    if score_scaling is True:
+        return lambda x, t: model.apply(params, x, t)
+    else:
+        return lambda x, t: batch_mul(jnp.sqrt(sde.variance(t)), model.apply(params, x, t))
+
+
 def shared_update(rng, x, t, solver, probability_flow=None):
     """A wrapper that configures and returns the update function of the solvers.
 
