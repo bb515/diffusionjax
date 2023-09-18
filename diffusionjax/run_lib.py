@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from diffusionjax.utils import batch_mul, get_loss, get_score, get_sampler
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
-from diffusionjax.solvers import EulerMaruyama, Annealed
+from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
 from diffusionjax.utils import get_step_fn
 
 from torch.utils.data import DataLoader
@@ -112,6 +112,46 @@ def get_solver(config, sde, score):
     else:
         raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
     return outer_solver, inner_solver
+
+
+def get_ddim_chain(config, model):
+    """
+    Args:
+        model: DDIM parameterizes the `\epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
+    """
+    if config.solver.outer_solver.lower()=="ddimvp":
+        outer_solver = DDIMVP(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
+                            dt=config.solver.dt, epsilon=config.solver.epsilon,
+                            beta_min=config.model.beta_min,
+                            beta_max=config.model.beta_max)
+    elif config.solver.outer_solver.lower()=="ddimve":
+        outer_solver = DDIMVE(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
+                            dt=config.solver.dt, epsilon=config.solver.epsilon,
+                            sigma_min=config.model.sigma_min,
+                            sigma_max=config.model.sigma_max)
+    else:
+        raise NotImplementedError(f"DDIM Chain {config.solver.outer_solver} unknown.")
+    return outer_solver
+
+
+def get_markov_chain(config, score):
+    """
+    Args:
+        score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
+    """
+    if config.solver.outer_solver.lower()=="ddpm":
+        outer_solver = DDPM(score, num_steps=config.solver.num_outer_steps,
+                            dt=config.solver.dt, epsilon=config.solver.epsilon,
+                            beta_min=config.model.beta_min,
+                            beta_max=config.model.beta_max)
+    elif config.solver.outer_solver.lower()=="smld":
+        outer_solver = SMLD(score, num_steps=config.solver.num_outer_steps,
+                            dt=config.solver.dt, epsilon=config.solver.epsilon,
+                            sigma_min=config.model.sigma_min,
+                            sigma_max=config.model.sigma_max)
+    else:
+        raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
+    return outer_solver
 
 
 def numpy_collate(batch):

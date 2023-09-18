@@ -162,11 +162,7 @@ class VP(SDE):
             t: JAX float of the time
         """
         m = self.mean_coeff(t)
-        # TODO: remove this try except clause
-        try:
-            mean = batch_mul(m, x)
-        except:
-            mean = m * x
+        mean = batch_mul(m, x)
         std = jnp.sqrt(self.variance(t))
         return mean, std
 
@@ -178,9 +174,9 @@ class VP(SDE):
         beta_min = self.beta_min
         beta_max = self.beta_max
 
-        class ROU(self.RSDE, self.__class__):
+        class RVP(self.RSDE, self.__class__):
             def __init__(self):
                 super().__init__(score, fwd_sde)
                 self.beta_min = beta_min
                 self.beta_max = beta_max
-        return ROU()
+        return RVP()

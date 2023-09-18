@@ -77,9 +77,9 @@ class CircleDataset(Dataset):
         return data_scaler
 
     def get_data_inverse_scaler(self, config):
-        def data_scaler(x):
+        def data_inverse_scaler(x):
             return x * jnp.sqrt(2)
-        return data_scaler
+        return data_inverse_scaler
 
 
 def main(argv):
@@ -119,7 +119,9 @@ def main(argv):
             .. math::
                 \hat{p}_{t}(x)
         """
-        mean, std = sde.marginal_prob(scaler(dataset.train_data), t)
+        mean_coeff = sde.mean_coeff(t)
+        mean = mean_coeff * scaler(dataset.train_data)
+        std = jnp.sqrt(sde.variance(t))
         potentials = jnp.sum(-(x - mean)**2 / (2 * std**2), axis=1)
         return logsumexp(potentials, axis=0, b=1/num_samples)
 
@@ -198,6 +200,7 @@ def main(argv):
     data = jnp.array([-0.5, 0.0])
     mask = jnp.array([1, 0])
     data = jnp.tile(data, (64, 1))
+    data = scaler(data)
     mask = jnp.tile(mask, (64, 1))
     inpainter = get_inpainter(
         outer_solver,
