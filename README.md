@@ -22,7 +22,7 @@ Contents:
 
 ## Installation
 The package requires Python 3.8+. First, it is recommended to [create a new python virtual environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands). 
-DiffusionJAX depends on JAX. Because the JAX installation is different depending on your CUDA version, DiffusionJAX does not list JAX as a dependency in `setup.py`.
+diffusionjax depends on JAX. Because the JAX installation is different depending on your CUDA version, diffusionjax does not list JAX as a dependency in `setup.py`.
 First, [follow these instructions](https://github.com/google/jax#installation) to install JAX with the relevant accelerator support.
 Then, `pip install diffusionjax` or for developers,
 - Clone the repository `git clone git@github.com:bb515/diffusionjax.git`
