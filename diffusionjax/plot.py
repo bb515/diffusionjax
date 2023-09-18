@@ -13,7 +13,7 @@ MG_ALPHA = 0.2
 FG_ALPHA = 0.4
 
 
-def plot_heatmap(samples, area_min=-3, area_max=3, fname="plot_heatmap"):
+def plot_heatmap(samples, area_min=-3, area_max=3, lengthscale=350, fname="plot_heatmap"):
     """Plots a heatmap of all samples in the area [area_min, area_max] x [area_min, area_max].
     Args:
         samples: locations of all particles in R^2, array (J, 2)
@@ -24,7 +24,7 @@ def plot_heatmap(samples, area_min=-3, area_max=3, fname="plot_heatmap"):
         a = jnp.linspace(area_min, area_max, 512)
         x, y = jnp.meshgrid(a, a)
         dist = (x - z[0])**2 + (y - z[1])**2
-        hm = jnp.exp(-350 * dist)
+        hm = jnp.exp(-lengthscale * dist)
         return hm
 
     # We try to jit most of the code, but use the helper functions
@@ -113,7 +113,7 @@ def plot_score_ax(ax, score, scaler, t, area_min=-1, area_max=1):
     ax.set_ylabel(r"$x_1$")
 
 
-def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3):
+def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3, lengthscale=350):
     """Plots a heatmap of all samples in the area [area_min, area_max] x [area_min, area_max].
     Args:
         samples: locations of all particles in R^2, array (J, 2)
@@ -124,7 +124,7 @@ def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3):
         a = jnp.linspace(area_min, area_max, 512)
         x, y = jnp.meshgrid(a, a)
         dist = (x - z[0])**2 + (y - z[1])**2
-        hm = jnp.exp(-350 * dist)
+        hm = jnp.exp(-lengthscale * dist)
         return hm
 
     # We try to jit most of the code, but use the helper functions

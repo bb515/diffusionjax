@@ -161,9 +161,16 @@ def retrain_nn(
 
 def get_score(sde, model, params, score_scaling):
     if score_scaling is True:
-        return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / sde.marginal_prob(x, t)[1])
+        return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / jnp.sqrt(sde.variance(t)))
     else:
         return lambda x, t: -model.apply(params, x, t)
+
+
+def get_epsilon(sde, model, params, score_scaling):
+    if score_scaling is True:
+        return lambda x, t: model.apply(params, x, t)
+    else:
+        return lambda x, t: batch_mul(jnp.sqrt(sde.variance(t)), model.apply(params, x, t))
 
 
 def shared_update(rng, x, t, solver, probability_flow=None):
@@ -245,7 +252,7 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
 
         rng, step_rng = random.split(rng)
         if x_0 is None:
-            x = outer_solver.sde.prior(step_rng, shape)
+            x = outer_solver.prior(step_rng, shape)
         else:
             assert(x_0.shape==shape)
             x = x_0

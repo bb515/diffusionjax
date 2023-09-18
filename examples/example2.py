@@ -83,7 +83,7 @@ def main():
     plot_samples_1D(samples[:64], image_size, "samples 1D")
 
     # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
-    sde = VP(beta_min=0.1, beta_max=10.0)
+    sde = VP(beta_min=0.1, beta_max=25.0)
 
     def log_hat_pt(x, t):
         """
