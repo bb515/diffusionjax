@@ -250,7 +250,7 @@ class DDIMVP(Solver):
         self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
         self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-    def get_estimate_x_0(shape, observation_map):
+    def get_estimate_x_0(self, shape, observation_map):
         def estimate_x_0(x, t, timestep):
             m = self.sqrt_alphas_cumprod[timestep]
             sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
