@@ -125,6 +125,15 @@ class VE(SDE):
                 super().__init__(score, fwd_sde)
                 self.sigma_min = sigma_min
                 self.sigma_max = sigma_max
+
+            def get_estimate_x_0(self, observation_map):
+                def estimate_x_0(x, t):
+                    v_t = self.variance(t)
+                    s = self.score(x, t)
+                    x_0 = x + v_t * s
+                    return observation_map(x_0), (s, x_0)
+                return estimate_x_0
+
         return RVE()
 
 
@@ -179,4 +188,14 @@ class VP(SDE):
                 super().__init__(score, fwd_sde)
                 self.beta_min = beta_min
                 self.beta_max = beta_max
+
+            def get_estimate_x_0(self, observation_map):
+                def estimate_x_0(x, t):
+                    m_t = self.mean_coeff(t)
+                    v_t = self.variance(t)
+                    s = self.score(x, t)
+                    x_0 = (x + v_t * s) / m_t
+                    return observation_map(x_0), (s, x_0)
+                return estimate_x_0
+
         return RVP()

@@ -129,6 +129,20 @@ class DDPM(Solver):
         self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
         self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
+    def get_estimate_x_0(self, shape, observation_map):
+        def estimate_x_0(x, t, timestep):
+            m = self.sqrt_alphas_cumprod[timestep]
+            v = self.sqrt_1m_alphas_cumprod[timestep]**2
+            x = x.reshape(shape)
+            x = jnp.expand_dims(x, axis=0)
+            t = jnp.expand_dims(t, axis=0)
+            s = self.score(x, t)
+            s = s.flatten()
+            x = x.flatten()
+            x_0 = (x + v * s) / m
+            return observation_map(x_0), (s, x_0)
+        return estimate_x_0
+
     def prior(self, rng, shape):
         return random.normal(rng, shape)
 
@@ -173,6 +187,19 @@ class SMLD(Solver):
                         jnp.log(self.sigma_max),
                         self.num_steps))
         self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
+
+    def get_estimate_x_0(self, shape, observation_map):
+        def estimate_x_0(x, t, timestep):
+            v = self.discrete_sigmas[timestep]**2
+            x = x.reshape(shape)
+            x = jnp.expand_dims(x, axis=0)
+            t = jnp.expand_dims(t, axis=0)
+            s = self.score(x, t)
+            x = x.flatten()
+            s = s.flatten()
+            x_0 = x + v * s
+            return observation_map(x_0), (s, x_0)
+        return estimate_x_0
 
     def prior(self, rng, shape):
         return random.normal(rng, shape) * self.sigma_max
@@ -223,6 +250,20 @@ class DDIMVP(Solver):
         self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
         self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
+    def get_estimate_x_0(shape, observation_map):
+        def estimate_x_0(x, t, timestep):
+            m = self.sqrt_alphas_cumprod[timestep]
+            sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
+            x = x.reshape(shape)
+            x = jnp.expand_dims(x, axis=0)
+            t = jnp.expand_dims(t, axis=0)
+            epsilon = model(x, t)
+            epsilon = epsilon.flatten()
+            x = x.flatten()
+            x_0 = (x - sqrt_1m_alpha * epsilon) / m
+            return observation_map(x_0), (epsilon, x_0)
+        return estimate_x_0
+
     def prior(self, rng, shape):
         return random.normal(rng, shape)
 
@@ -272,6 +313,19 @@ class DDIMVE(Solver):
                         jnp.log(self.sigma_max),
                         self.num_steps))
         self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
+
+    def get_estimate_x_0(self, shape, observation_map):
+        def estimate_x_0(x, t, timestep):
+            std = self.discrete_sigmas[timestep]
+            x = x.reshape(shape)
+            x = jnp.expand_dims(x, axis=0)
+            t = jnp.expand_dims(t, axis=0)
+            epsilon = self.model(x, t)
+            epsilon = epsilon.flatten()
+            x = x.flatten()
+            x_0 = x - std * epsilon
+            return observation_map(x_0), (epsilon, x_0)
+        return estimate_x_0
 
     def prior(self, rng, shape):
         return random.normal(rng, shape) * self.sigma_max
