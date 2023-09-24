@@ -257,7 +257,7 @@ class DDIMVP(Solver):
             x = x.reshape(shape)
             x = jnp.expand_dims(x, axis=0)
             t = jnp.expand_dims(t, axis=0)
-            epsilon = model(x, t)
+            epsilon = self.model(x, t)
             epsilon = epsilon.flatten()
             x = x.flatten()
             x_0 = (x - sqrt_1m_alpha * epsilon) / m
