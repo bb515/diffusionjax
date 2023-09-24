@@ -35,7 +35,6 @@ setup(
         'numpy',
         'scipy',
         'matplotlib',
-        'seaborn',
         'optax',
         'flax',
         'ml_collections',

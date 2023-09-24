@@ -3,7 +3,7 @@
 An example using 1 dimensional image data.
 """
 import jax
-from jax import vmap, jit, grad, value_and_grad
+from jax import vmap, jit, grad
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp

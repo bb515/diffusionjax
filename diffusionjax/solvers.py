@@ -335,12 +335,17 @@ class DDIMVE(Solver):
         epsilon = self.model(x, t)
         sigma = self.discrete_sigmas[timestep]
         sigma_prev = self.discrete_sigmas_prev[timestep]
-
-        # Eq.(18) Appendix A.4 https://openreview.net/pdf/210093330709030207aa90dbfe2a1f525ac5fb7d.pdf
         coeff1 = self.eta * jnp.sqrt((sigma_prev**2 * (sigma**2 - sigma_prev**2)) / (sigma**2))
         coeff2 = jnp.sqrt(sigma_prev**2  - coeff1**2)
-        x_0 = x - batch_mul(sigma, epsilon)  # TODO: check
+
+        # Eq.(18) Appendix A.4 https://openreview.net/pdf/210093330709030207aa90dbfe2a1f525ac5fb7d.pdf
+        x_0 = x - batch_mul(sigma, epsilon)
         x_mean = x_0 + batch_mul(coeff2, epsilon)
+
+        # Eq.(19) Appendix A.4 https://openreview.net/pdf/210093330709030207aa90dbfe2a1f525ac5fb7d.pdf
+        # score = - batch_mul(1. / sigma, epsilon)
+        # x_mean = x + batch_mul(sigma * (sigma - coeff2), score)
+
         std = coeff1
         return x_mean, std
 

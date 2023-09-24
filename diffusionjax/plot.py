@@ -3,9 +3,6 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax import jit, vmap
 from functools import partial
-import seaborn as sns
-sns.set_style("darkgrid")
-cm = sns.color_palette("mako_r", as_cmap=True)
 import matplotlib.animation as animation
 
 BG_ALPHA = 1.0

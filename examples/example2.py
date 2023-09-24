@@ -4,12 +4,10 @@ An example using 2 dimensional image data.
 """
 import jax
 from jax import vmap, jit, grad
-from functools import partial
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 import optax
-from functools import partial
 from flax import serialization
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
