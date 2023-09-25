@@ -12,7 +12,6 @@ The development of diffusionjax has been supported by The Alan Turing Institute 
 Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 
 Contents:
-
 - [Installation](#installation)
 - [Examples](#examples)
     - [Introduction to diffusion models](#introduction-to-diffusion-models)

@@ -32,7 +32,7 @@ def plot_heatmap(samples, area_min=-3, area_max=3, lengthscale=350, fname="plot_
 
     hm = produce_heatmap(samples, area_min, area_max)
     extent = [area_min, area_max, area_max, area_min]
-    plt.imshow(hm, cmap=cm, interpolation='nearest', extent=extent)
+    plt.imshow(hm, interpolation='nearest', extent=extent)
     ax = plt.gca()
     ax.invert_yaxis()
     plt.savefig(fname)
@@ -132,7 +132,7 @@ def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3, lengthscale=350):
 
     hm = produce_heatmap(samples, area_min, area_max)
     extent = [area_min, area_max, area_max, area_min]
-    ax.imshow(hm, cmap=cm, interpolation='nearest', extent=extent)
+    ax.imshow(hm, interpolation='nearest', extent=extent)
     ax = plt.gca()
     ax.invert_yaxis()
     ax.set_xlabel(r"$x_0$")
