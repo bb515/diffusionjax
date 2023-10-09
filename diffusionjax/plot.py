@@ -1,37 +1,35 @@
-"""Helper functions for plots in the example."""
+"""Plotting code for the examples."""
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from jax import jit, vmap
 from functools import partial
 import matplotlib.animation as animation
+from jaxtyping import ArrayLike, Array
 
 BG_ALPHA = 1.0
 MG_ALPHA = 0.2
 FG_ALPHA = 0.4
 
 
-def plot_heatmap(samples, area_min=-3, area_max=3, lengthscale=350, fname="plot_heatmap"):
-    """Plots a heatmap of all samples in the area [area_min, area_max] x [area_min, area_max].
+def plot_heatmap(samples: ArrayLike, area_bounds: list[float], lengthscale=350.0, fname="plot_heatmap") -> None:
+    """Plots a heatmap of all samples in the area area_bounds x area_bounds.
     Args:
-        samples: locations of all particles in R^2, array (J, 2)
-        area_min: lowest x and y coordinate
-        area_max: highest x and y coordinate
+      samples: locations of particles shape (num_particles, 2)
     """
-    def small_kernel(z, area_min, area_max):
-        a = jnp.linspace(area_min, area_max, 512)
-        x, y = jnp.meshgrid(a, a)
-        dist = (x - z[0])**2 + (y - z[1])**2
-        hm = jnp.exp(-lengthscale * dist)
-        return hm
+    def small_kernel(z, area_bounds):
+      a = jnp.linspace(area_bounds[0], area_bounds[1], 512)
+      x, y = jnp.meshgrid(a, a)
+      dist = (x - z[0])**2 + (y - z[1])**2
+      hm = jnp.exp(-lengthscale * dist)
+      return hm
 
-    # We try to jit most of the code, but use the helper functions
-    # since we cannot jit all of it because of the plt functions
+    # jit most of the code, but use the helper functions since cannot jit all of it because of plt
     @jit
-    def produce_heatmap(samples, area_min, area_max):
-        return jnp.sum(vmap(small_kernel, in_axes=(0, None, None))(samples, area_min, area_max), axis=0)
+    def produce_heatmap(samples, area_bounds):
+      return jnp.sum(vmap(small_kernel, in_axes=(0, None, None))(samples, area_bounds[0], area_bounds[1]), axis=0)
 
-    hm = produce_heatmap(samples, area_min, area_max)
-    extent = [area_min, area_max, area_max, area_min]
+    hm = produce_heatmap(samples, area_bounds)
+    extent = area_bounds + area_bounds
     plt.imshow(hm, interpolation='nearest', extent=extent)
     ax = plt.gca()
     ax.invert_yaxis()
