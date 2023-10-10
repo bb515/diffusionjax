@@ -23,12 +23,14 @@ from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import os
 
+
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file(
   "config", './configs/example.py', "Training configuration.",
   lock_config=True)
 flags.DEFINE_string("workdir", './examples/', "Work directory.")
 flags.mark_flags_as_required(["workdir", "config"])
+
 
 class CircleDataset(Dataset):
   """Dataset containing samples from the circle."""
@@ -71,6 +73,7 @@ class CircleDataset(Dataset):
     def data_inverse_scaler(x):
       return x * jnp.sqrt(2)
     return data_inverse_scaler
+
 
 def main(argv):
   workdir = FLAGS.workdir
@@ -198,6 +201,7 @@ def main(argv):
   rng, sample_rng = random.split(rng, 2)
   q_samples, _ = inpainter(sample_rng, data, mask)
   plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap inpainted")
+
 
 if __name__ == "__main__":
   app.run(main)

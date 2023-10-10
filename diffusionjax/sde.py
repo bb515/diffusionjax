@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from jax import random
 from diffusionjax.utils import batch_mul
 
+
 class SDE(abc.ABC):
   """SDE abstract class. Functions are designed for a mini-batch of inputs."""
 
@@ -34,13 +35,14 @@ class SDE(abc.ABC):
       drift = -drift + batch_mul(diffusion**2, self.score(x, t))
       return drift, diffusion
 
-def corrector(self, Corrector, score):
+  def corrector(self, Corrector, score):
 
-  class CSDE(Corrector, self.__class__):
-    def __init__(self):
-      super().__init__(score)
+    class CSDE(Corrector, self.__class__):
+      def __init__(self):
+        super().__init__(score)
 
-  return CSDE()
+    return CSDE()
+
 
 class ODLangevin(SDE):
   """Overdamped langevin SDE."""
@@ -55,6 +57,7 @@ class ODLangevin(SDE):
     diffusion = jnp.ones(x.shape) * jnp.sqrt(2 * self.damping / self.L)
     return drift, diffusion
 
+
 class UDLangevin(SDE):
   """Underdamped Langevin SDE."""
   def __init__(self, score):
@@ -65,6 +68,7 @@ class UDLangevin(SDE):
     drift = -self.score(x, t)
     diffusion = jnp.ones(x.shape) * jnp.sqrt(2)
     return drift, diffusion
+
 
 class VE(SDE):
   """Variance exploding (VE) SDE, also known as diffusion process
@@ -124,6 +128,7 @@ class VE(SDE):
         return estimate_x_0
 
     return RVE()
+
 
 class VP(SDE):
   """Variance preserving (VP) SDE, also known

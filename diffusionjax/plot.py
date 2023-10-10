@@ -5,9 +5,11 @@ from jax import jit, vmap
 from functools import partial
 import matplotlib.animation as animation
 
+
 BG_ALPHA = 1.0
 MG_ALPHA = 0.2
 FG_ALPHA = 0.4
+
 
 def plot_heatmap(samples, area_bounds, lengthscale=350.0, fname="plot_heatmap") -> None:
   """Plots a heatmap of all samples in the area area_bounds x area_bounds.
@@ -34,6 +36,7 @@ def plot_heatmap(samples, area_bounds, lengthscale=350.0, fname="plot_heatmap") 
   plt.savefig(fname)
   plt.close()
 
+
 def plot_samples(samples, index, fname="samples.png", lims=None):
   fig, ax = plt.subplots(1, 1)
   fig.patch.set_facecolor('white')
@@ -54,6 +57,7 @@ def plot_samples(samples, index, fname="samples.png", lims=None):
     facecolor=fig.get_facecolor(), edgecolor='none')
   plt.close()
 
+
 def plot_animation(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300):
   ani = animation.FuncAnimation(
     fig, animate, frames=frames, interval=1, fargs=(ax,))
@@ -62,6 +66,7 @@ def plot_animation(fig, ax, animate, frames, fname, fps=20, bitrate=800, dpi=300
   writer = Writer(fps=fps, metadata=dict(artist='Me'), bitrate=bitrate)
   # Note that mp4 does not work on pdf
   ani.save('{}.mp4'.format(fname), writer=writer, dpi=dpi)
+
 
 def plot_score(score, scaler, t, area_min=-1, area_max=1, fname="plot_score"):
   fig, ax = plt.subplots(1, 1)
@@ -84,6 +89,7 @@ def plot_score(score, scaler, t, area_min=-1, area_max=1, fname="plot_score"):
   fig.savefig(fname)
   plt.close()
 
+
 def plot_score_ax(ax, score, scaler, t, area_min=-1, area_max=1):
   # This helper function is here so that we can jit it.
   # We can not jit the whole function since plt.quiver cannot be jitted
@@ -99,6 +105,7 @@ def plot_score_ax(ax, score, scaler, t, area_min=-1, area_max=1):
   ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0], scores[:, 3])
   ax.set_xlabel(r"$x_0$")
   ax.set_ylabel(r"$x_1$")
+
 
 def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3, lengthscale=350):
   """Plots a heatmap of all samples in the area [area_min, area_max] x [area_min, area_max].
@@ -128,6 +135,7 @@ def plot_heatmap_ax(ax, samples, area_min=-3, area_max=3, lengthscale=350):
   ax.set_xlabel(r"$x_0$")
   ax.set_ylabel(r"$x_1$")
 
+
 def plot_temperature_schedule(sde, solver):
   """Plots the temperature schedule of the SDE marginals.
 
@@ -141,6 +149,7 @@ def plot_temperature_schedule(sde, solver):
   plt.legend()
   plt.savefig("plot_temperature_schedule.png")
   plt.close()
+
 
 def plot_scatter(samples, fname="samples"):
   fig, ax = plt.subplots(1, 1)

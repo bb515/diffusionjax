@@ -3,6 +3,7 @@ import flax.linen as nn
 import numpy as np
 import jax.numpy as jnp
 
+
 class MLP(nn.Module):
   @nn.compact
   def __call__(self, x, t):
@@ -21,6 +22,7 @@ class MLP(nn.Module):
     x = nn.relu(x)
     x = nn.Dense(in_size)(x)
     return x.reshape(x_shape)
+
 
 class CNN(nn.Module):
   @nn.compact

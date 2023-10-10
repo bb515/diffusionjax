@@ -8,10 +8,11 @@ from jax import vmap, jit, value_and_grad
 import jax.random as random
 from functools import partial
 import optax
-import numpy as np
+
 
 def batch_mul(a, b):
   return vmap(lambda a, b: a * b)(a, b)
+
 
 def errors(ts, sde, score, rng, data, likelihood_weighting=True):
   """
@@ -33,6 +34,7 @@ def errors(ts, sde, score, rng, data, likelihood_weighting=True):
     return noise + batch_mul(score(x_t, ts), std)
   else:
     return batch_mul(noise, 1. / std) + score(x_t, ts)
+
 
 def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, reduce_mean=True, pointwise_t=False):
   """Create a loss function for score matching training.
@@ -75,6 +77,7 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
       return jnp.mean(losses)
   return loss
 
+
 def get_step_fn(loss, optimizer, train, pmap):
   """Create a one-step training/evaluation function.
 
@@ -105,8 +108,10 @@ def get_step_fn(loss, optimizer, train, pmap):
     return (rng, params, opt_state), loss_val
   return step_fn
 
+
 #Initialize the optimizer
 optimizer = optax.adam(1e-3)
+
 
 @partial(jit, static_argnums=[4])
 def update_step(params, rng, batch, opt_state, loss):
@@ -126,6 +131,7 @@ def update_step(params, rng, batch, opt_state, loss):
   updates, opt_state = optimizer.update(grads, opt_state)
   params = optax.apply_updates(params, updates)
   return val, params, opt_state
+
 
 def retrain_nn(
     update_step, num_epochs, step_rng, samples, params,
@@ -151,11 +157,13 @@ def retrain_nn(
       print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
   return params, opt_state, mean_losses
 
+
 def get_score(sde, model, params, score_scaling):
   if score_scaling is True:
     return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / jnp.sqrt(sde.variance(t)))
   else:
     return lambda x, t: -model.apply(params, x, t)
+
 
 def get_epsilon(sde, model, params, score_scaling):
   if score_scaling is True:
@@ -163,12 +171,14 @@ def get_epsilon(sde, model, params, score_scaling):
   else:
     return lambda x, t: batch_mul(jnp.sqrt(sde.variance(t)), model.apply(params, x, t))
 
+
 def shared_update(rng, x, t, solver, probability_flow=None):
   """A wrapper that configures and returns the update function of the solvers.
 
   :probablity_flow: Placeholder for probability flow ODE (TODO).
   """
   return solver.update(rng, x, t)
+
 
 def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samples=False, inverse_scaler=None):
   """Get a sampler from (possibly interleaved) numerical solver(s).
@@ -254,8 +264,10 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
   # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
   return sampler
 
+
 def merge_data_with_mask(x_space, data, mask, coeff=1.):
   return data * mask * coeff + x_space * (1. - mask * coeff)
+
 
 def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samples=False):
   """Create an image inpainting function that uses sampler, that returns only the final sample.

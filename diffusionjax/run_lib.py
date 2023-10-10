@@ -23,8 +23,10 @@ import logging
 import wandb
 import orbax.checkpoint
 
+
 FLAGS = flags.FLAGS
 logger = logging.getLogger(__name__)
+
 
 # The dataclass that stores all training states
 @flax.struct.dataclass
@@ -35,6 +37,7 @@ class State:
   rng: Any
   lr: float
 
+
 def get_sde(config):
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
@@ -44,6 +47,7 @@ def get_sde(config):
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
   return sde
+
 
 def get_optimizer(config):
   """Returns an optax optimizer object based on `config`."""
@@ -75,6 +79,7 @@ def get_optimizer(config):
     )
   return optimizer
 
+
 def get_model(config):
   if config.model.name.lower()=='mlp':
     model = MLP()
@@ -83,6 +88,7 @@ def get_model(config):
   else:
     raise NotImplementedError(f"Model {config.model.name} unknown.")
   return model
+
 
 def get_solver(config, sde, score):
   if config.solver.outer_solver.lower()=="eulermaruyama":
@@ -98,6 +104,7 @@ def get_solver(config, sde, score):
   else:
     raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
   return outer_solver, inner_solver
+
 
 def get_ddim_chain(config, model):
   """
@@ -118,6 +125,7 @@ def get_ddim_chain(config, model):
     raise NotImplementedError(f"DDIM Chain {config.solver.outer_solver} unknown.")
   return outer_solver
 
+
 def get_markov_chain(config, score):
   """
   Args:
@@ -137,6 +145,7 @@ def get_markov_chain(config, score):
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
   return outer_solver
 
+
 def numpy_collate(batch):
   if isinstance(batch[0], np.ndarray):
     return np.stack(batch)
@@ -146,14 +155,18 @@ def numpy_collate(batch):
   else:
     return np.array(batch)
 
+
 def jit_collate(n_jitted_steps, batch_size, batch):
   return np.reshape(batch, (n_jitted_steps, batch_size, -1))
+
 
 def pmap_and_jit_collate(num_devices, n_jitted_steps, per_device_batch_size, batch):
   return np.reshape(batch, (num_devices, n_jitted_steps, per_device_batch_size, -1))
 
+
 def pmap_collate(num_devices, per_device_batch_size, batch):
   return np.reshape(batch, (num_devices, per_device_batch_size, -1))
+
 
 class NumpyLoader(DataLoader):
   def __init__(self, config, dataset,
@@ -188,6 +201,7 @@ class NumpyLoader(DataLoader):
                                          drop_last=drop_last,
                                          timeout=timeout,
                                          worker_init_fn=worker_init_fn)
+
 
 def train(sampling_shape, config, workdir, dataset):
   """ Train a score based generative model using stochastic gradient descent

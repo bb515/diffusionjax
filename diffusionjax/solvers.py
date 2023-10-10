@@ -5,6 +5,7 @@ import jax.random as random
 from diffusionjax.utils import batch_mul
 import abc
 
+
 class Solver(abc.ABC):
   """Solver abstract class. Functions are designed for a mini-batch of inputs."""
 
@@ -58,6 +59,7 @@ class Solver(abc.ABC):
       x_mean: A JAX array. The next state without random noise. Useful for denoising.
     """
 
+
 class EulerMaruyama(Solver):
   """Euler Maruyama numerical solver of an SDE.
   Functions are designed for a mini-batch of inputs."""
@@ -79,6 +81,7 @@ class EulerMaruyama(Solver):
     x_mean = x + f
     x = x_mean + batch_mul(G, noise)
     return x, x_mean
+
 
 class Annealed(Solver):
   """Annealed Langevin numerical solver of an SDE.
@@ -109,6 +112,7 @@ class Annealed(Solver):
     x_mean = x + batch_mul(grad, dt)
     x = x_mean + batch_mul(2 * dt, noise)
     return x, x_mean
+
 
 class DDPM(Solver):
   """DDPM Markov chain using Ancestral sampling."""
@@ -170,6 +174,7 @@ class DDPM(Solver):
     x = x_mean + batch_mul(std, z)
     return x, x_mean
 
+
 class SMLD(Solver):
   """SMLD(NCSN) Markov Chain using Ancestral sampling."""
   def __init__(self, score, num_steps=1000, dt=None, epsilon=None, sigma_min=0.01, sigma_max=378.):
@@ -220,6 +225,7 @@ class SMLD(Solver):
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
     return x, x_mean
+
 
 class DDIMVP(Solver):
   """DDIM Markov chain. For the DDPM Markov Chain or VP SDE."""
@@ -286,6 +292,7 @@ class DDIMVP(Solver):
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
     return x, x_mean
+
 
 class DDIMVE(Solver):
   """DDIM Markov chain. For the SMLD Markov Chain or VE SDE.

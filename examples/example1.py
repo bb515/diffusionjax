@@ -23,8 +23,10 @@ import os
 import lab as B
 from mlkernels import Matern52
 
+
 x_max = 5.0
 epsilon = 1e-4
+
 
 def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels=1):
   """Samples from a GMRF"""
@@ -34,6 +36,7 @@ def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels=1):
   u = random.multivariate_normal(rng, mean=jnp.zeros(x.shape[0]), cov=C, shape=(num_samples, num_channels))
   u = u.transpose((0, 2, 1))
   return u, C
+
 
 def plot_score_ax_sample(ax, sample, score, t, area_min=-1, area_max=1, fname="plot_score"):
   @partial(jit, static_argnums=[0,])
@@ -49,11 +52,13 @@ def plot_score_ax_sample(ax, sample, score, t, area_min=-1, area_max=1, fname="p
   grid, scores = helper(score, sample, t, area_min, area_max)
   ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0, 0, 0], scores[:, 1, 0, 0])
 
+
 def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
   x = np.linspace(-x_max, x_max, image_size)
   plt.plot(x, samples[:, :, 0].T)
   plt.savefig(fname)
   plt.close()
+
 
 def main():
   num_epochs = 128
@@ -81,7 +86,7 @@ def main():
     Returns:
       The empirical log density, as described in the Jupyter notebook
       .. math::
-        \hat{p}_{t}(x)
+        \log \hat{p}_{t}(x)
     """
     mean, std = sde.marginal_prob(samples[:, [0, 1], 0], t)
     potentials = jnp.sum(-(x - mean)**2 / (2 * std**2), axis=1)
@@ -90,13 +95,10 @@ def main():
   def log_hat_pt(x, t):
     """Empirical distribution score.
 
-    Args:
-      x: One location in $\mathbb{R}^{image_size}$
-      t: time
     Returns:
       The empirical log density, as described in the Jupyter notebook
       .. math::
-        \hat{p}_{t}(x)
+        \log \hat{p}_{t}(x)
     """
     mean, std = sde.marginal_prob(samples, t)
     losses = -(x - mean)**2 / (2 * std**2)
@@ -107,13 +109,10 @@ def main():
   def nabla_log_pt(x, t):
     """Score.
 
-    Args:
-      x: One location in $\mathbb{R}^{image_size}$
-      t: time
     Returns:
       The true log density.
       .. math::
-        p_{t}(x)
+        \nabla_{x} \log p_{t}(x)
     """
     x_shape = x.shape
     v_t = sde.variance(t)
@@ -130,17 +129,17 @@ def main():
     # Running the reverse SDE with the empirical score
     plot_score(score=nabla_log_hat_pt_tmp, scaler=lambda x:x, t=0.01, area_min=-3, area_max=3, fname="empirical score")
     sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
-    q_samples, num_function_evaluations = sampler(rng)
+    q_samples, _ = sampler(rng)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples empirical score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap empirical score")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap empirical score")
 
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
     rng, step_rng = random.split(rng)
     sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
-    q_samples, num_function_evaluations = sampler(rng)
+    q_samples, _ = sampler(rng)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap bounded perturbation")
 
     nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
 
@@ -148,15 +147,15 @@ def main():
     sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_pt)))
     q_samples, num_function_evaluations = sampler(rng)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples true score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true score")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap true score")
 
     # What happens when I perturb the score with a constant?
     perturbed_score = lambda x, t: nabla_log_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
     sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
     rng, sample_rng = random.split(rng, 2)
-    q_samples, num_function_evaluations = sampler(sample_rng)
+    q_samples, _ = sampler(sample_rng)
     plot_samples_1D(q_samples, image_size=image_size, fname="samples true bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap true bounded perturbation")
+    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap true bounded perturbation")
 
   # Neural network training via score matching
   batch_size = 64
@@ -208,7 +207,7 @@ def main():
   # delta = jnp.linalg.norm(C - C_emp) / image_size
 
   plot_samples_1D(q_samples[:64], image_size=image_size, fname="samples trained score")
-  plot_heatmap(samples=q_samples[:, [0, 1], 0], area_min=-3, area_max=3, fname="heatmap trained score")
+  plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap trained score")
 
   if 0:
     frames = 100
@@ -231,14 +230,15 @@ def main():
   # Get inpainter
   inpainter = get_inpainter(solver, stack_samples=False)
   rng, sample_rng = random.split(rng, 2)
-  q_samples, num_function_evaluations = inpainter(sample_rng, data, mask)
+  q_samples, _ = inpainter(sample_rng, data, mask)
   plot_samples_1D(q_samples, image_size=image_size, fname="samples inpainted")
 
   # Get projection sampler
   projection_sampler = get_projection_sampler(solver, stack_samples=False)
   rng, sample_rng = random.split(rng, 2)
-  q_samples, num_function_evaluations = projection_sampler(sample_rng, data, mask, 1e-2)
+  q_samples, _ = projection_sampler(sample_rng, data, mask, 1e-2)
   plot_samples_1D(q_samples, image_size=image_size, fname="samples projected")
+
 
 if __name__ == "__main__":
   main()

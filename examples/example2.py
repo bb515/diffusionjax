@@ -20,13 +20,16 @@ import os
 from mlkernels import Matern52
 import lab as B
 
+
 x_max = 5.0
 epsilon = 1e-4
+
 
 def image_grid(x, image_size, num_channels):
   img = x.reshape(-1, image_size, image_size, num_channels)
   w = int(np.sqrt(img.shape[0]))
   return img.reshape((w, w, image_size, image_size, num_channels)).transpose((0, 2, 1, 3, 4)).reshape((w * image_size, w * image_size, num_channels))
+
 
 def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
   img = image_grid(x, image_size, num_channels)
@@ -35,6 +38,7 @@ def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
   plt.imshow(img)
   plt.savefig(fname)
   plt.close()
+
 
 def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
   """Samples from a GMRF."""
@@ -49,11 +53,13 @@ def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
   u = u.transpose((0, 2, 1))
   return u, C
 
+
 def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
   x = np.linspace(-x_max, x_max, image_size)
   plt.plot(x, samples[:, :, 0, 0].T)
   plt.savefig(fname)
   plt.close()
+
 
 def main():
   num_epochs = 128
@@ -164,11 +170,12 @@ def main():
   )
   rng, *sample_rng = random.split(rng, num_devices + 1)
   sample_rng = jnp.asarray(sample_rng)
-  q_samples, num_function_evaluations = sampler(sample_rng)
+  q_samples, _ = sampler(sample_rng)
   q_samples = q_samples.reshape(64, image_size, image_size, num_channels)
   plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
   plot_samples_1D(q_samples, image_size, fname="samples 1D trained score")
-  plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap trained score")
+  plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_bounds=[-3., 3.], fname="heatmap trained score")
+
 
 if __name__ == "__main__":
   main()
