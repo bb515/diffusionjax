@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip setuptools numpy
-          pip install --no-cache-dir -U -r requirements.txt | cat
+          pip install -e '.[linting,testing]'
           pip install --upgrade numpy
       - name: Test
         env:
