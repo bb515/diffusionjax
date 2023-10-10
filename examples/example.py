@@ -127,7 +127,7 @@ def main(argv):
                         inverse_scaler=inverse_scaler)
   rng, sample_rng = random.split(rng, 2)
   q_samples, _ = sampler(sample_rng)
-  plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap empirical score")
+  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap empirical score")
 
   # What happens when I perturb the score with a constant?
   perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
@@ -137,8 +137,8 @@ def main(argv):
                         denoise=config.sampling.denoise,
                         inverse_scaler=inverse_scaler)
   rng, sample_rng = random.split(rng, 2)
-  q_samples, num_function_evaluations = sampler(sample_rng)
-  plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap bounded perturbation")
+  q_samples, _ = sampler(sample_rng)
+  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap bounded perturbation")
 
   if not os.path.exists('/tmp/output0'):
       time_prev = time.time()
@@ -183,7 +183,7 @@ def main(argv):
 
   q_samples, _ = sampler(sample_rng)
   q_samples = q_samples.reshape(config.solver.num_outer_steps, config.data.image_size)
-  plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap trained score")
+  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap trained score")
 
   # Condition on one of the coordinates
   data = jnp.array([-0.5, 0.0])
@@ -194,11 +194,10 @@ def main(argv):
   inpainter = get_inpainter(
     outer_solver,
     stack_samples=False,
-    denoise=config.sampling.denoise,
     inverse_scaler=inverse_scaler)
   rng, sample_rng = random.split(rng, 2)
   q_samples, _ = inpainter(sample_rng, data, mask)
-  plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
+  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap inpainted")
 
 if __name__ == "__main__":
   app.run(main)

@@ -12,6 +12,7 @@ import numpy as np
 import optax
 from functools import partial
 import flax
+import flax.training.orbax_utils as orbax_utils
 import flax.jax_utils as flax_utils
 from absl import flags
 from tqdm import tqdm, trange
@@ -20,7 +21,7 @@ import time
 from typing import Any
 import logging
 import wandb
-import orbax
+import orbax.checkpoint
 
 FLAGS = flags.FLAGS
 logger = logging.getLogger(__name__)
@@ -268,7 +269,7 @@ def train(sampling_shape, config, workdir, dataset):
     orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
 
   # Resume training when intermediate checkpoints are detected
-  restore_args = flax.training.orbax_utils.restore_args_from_target(state, mesh=None)
+  restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
   save_step = meta_checkpoint_manager.latest_step()
   if save_step is not None:
     meta_checkpoint_manager.restore(
@@ -382,7 +383,7 @@ def train(sampling_shape, config, workdir, dataset):
           else:
             saved_state = state
           saved_state = saved_state.replace(rng=rng)
-          saved_args = flax.training.orbax_utils.save_args_from_target(saved_state)
+          saved_args = orbax_utils.save_args_from_target(saved_state)
           meta_checkpoint_manager.save(step//config.training.snapshot_freq_for_preemption, saved_state, save_kwargs={'save_args': saved_args})
 
         # Report the loss on an evaluation dataset periodically
@@ -414,7 +415,7 @@ def train(sampling_shape, config, workdir, dataset):
             else:
               saved_state = state
             saved_state = saved_state.replace(rng=rng)
-            saved_args = flax.training.orbax_utils.save_args_from_target(saved_state)
+            saved_args = orbax_utils.save_args_from_target(saved_state)
             checkpoint_manager.save(step // config.training.snapshot_freq, saved_state, save_kwargs={'save_args': saved_args})
 
           # Generate and save samples

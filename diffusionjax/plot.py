@@ -24,7 +24,7 @@ def plot_heatmap(samples, area_bounds, lengthscale=350.0, fname="plot_heatmap") 
   # jit most of the code, but use the helper functions since cannot jit all of it because of plt
   @jit
   def produce_heatmap(samples, area_bounds):
-    return jnp.sum(vmap(small_kernel, in_axes=(0, None, None))(samples, area_bounds[0], area_bounds[1]), axis=0)
+    return jnp.sum(vmap(small_kernel, in_axes=(0, None))(samples, area_bounds), axis=0)
 
   hm = produce_heatmap(samples, area_bounds)
   extent = area_bounds + area_bounds

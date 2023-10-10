@@ -1,7 +1,6 @@
 """Config for `examples/example.py`."""
 from configs.default_cs_configs import get_default_configs
 
-
 def get_config():
     config = get_default_configs()
     # training
