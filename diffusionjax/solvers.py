@@ -170,7 +170,6 @@ class DDPM(Solver):
     x = x_mean + batch_mul(std, z)
     return x, x_mean
 
-
 class SMLD(Solver):
   """SMLD(NCSN) Markov Chain using Ancestral sampling."""
   def __init__(self, score, num_steps=1000, dt=None, epsilon=None, sigma_min=0.01, sigma_max=378.):
@@ -221,7 +220,6 @@ class SMLD(Solver):
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
     return x, x_mean
-
 
 class DDIMVP(Solver):
   """DDIM Markov chain. For the DDPM Markov Chain or VP SDE."""
@@ -288,7 +286,6 @@ class DDIMVP(Solver):
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
     return x, x_mean
-
 
 class DDIMVE(Solver):
   """DDIM Markov chain. For the SMLD Markov Chain or VE SDE.

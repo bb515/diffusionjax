@@ -96,10 +96,6 @@ class VE(SDE):
 
     .. math::
       p_t(x)
-
-    Args:
-      x: a JAX tensor of the state
-      t: JAX float of the time
     """
     std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     mean = x
@@ -157,10 +153,6 @@ class VP(SDE):
 
     .. math::
       p_t(x)
-
-    Args:
-      x: a JAX tensor of the state
-      t: JAX float of the time
     """
     m = self.mean_coeff(t)
     mean = batch_mul(m, x)
