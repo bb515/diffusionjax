@@ -1,15 +1,13 @@
 """Training and evaluation for score-based generative models."""
 import jax
+from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
 from diffusionjax.utils import get_loss, get_score, get_sampler
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
-from diffusionjax.utils import get_step_fn
-from torch.utils.data import DataLoader
 import numpy as np
-import optax
 from functools import partial
 import flax
 import flax.training.orbax_utils as orbax_utils
@@ -21,11 +19,48 @@ import time
 from typing import Any
 import logging
 import wandb
-import orbax.checkpoint
 
+
+# This file requires optax, https://optax.readthedocs.io/en/latest/
+import optax
+# This file requires orbax, https://orbax.readthedocs.io/en/latest/
+import orbax.checkpoint
+# This file requires torch[cpu], https://pytorch.org/get-started/locally/
+from torch.utils.data import DataLoader
 
 FLAGS = flags.FLAGS
 logger = logging.getLogger(__name__)
+
+
+def get_step_fn(loss, optimizer, train, pmap):
+  """Create a one-step training/evaluation function.
+
+  Args:
+    loss: A loss function.
+    optimizer: An optimization function.
+    train: `True` for training and `False` for evaluation.
+    pmap: `True` for pmap across jax devices, `False` for single device.
+
+  Returns:
+    A one-step function for training or evaluation.
+  """
+  @jit
+  def step_fn(carry, batch):
+    (rng, params, opt_state) = carry
+    rng, step_rng = random.split(rng)
+    grad_fn = value_and_grad(loss)
+    if train:
+      loss_val, grads = grad_fn(params, step_rng, batch)
+      if pmap:
+        loss_val = jax.lax.pmean(loss_val, axis_name='batch')
+        grads = jax.lax.pmean(grads, axis_name='batch')
+      updates, opt_state = optimizer.update(grads, opt_state)
+      params = optax.apply_updates(params, updates)
+    else:
+      loss_val = loss(params, step_rng, batch)
+      if pmap: loss_val = jax.lax.pmean(loss_val, axis_name='batch')
+    return (rng, params, opt_state), loss_val
+  return step_fn
 
 
 # The dataclass that stores all training states

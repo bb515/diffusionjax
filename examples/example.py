@@ -12,16 +12,21 @@ import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from diffusionjax.run_lib import get_model, train, get_solver
-from diffusionjax.utils import get_score, get_sampler, get_inpainter
+from diffusionjax.utils import get_score, get_sampler
+from diffusionjax.inverse_problems import get_inpainter
 from diffusionjax.plot import plot_samples, plot_score, plot_heatmap
 import diffusionjax.sde as sde_lib
 from absl import app, flags
 from ml_collections.config_flags import config_flags
 from flax import serialization
 import time
-from torch.utils.data import Dataset
-import matplotlib.pyplot as plt
 import os
+
+# Dependencies:
+# This example requires optax, https://optax.readthedocs.io/en/latest/
+# This example requires orbax, https://orbax.readthedocs.io/en/latest/
+# This example requires torch[cpu], https://pytorch.org/get-started/locally/
+from torch.utils.data import Dataset
 
 
 FLAGS = flags.FLAGS

@@ -6,7 +6,6 @@ This setup is required or else
 will occur.
 """
 from setuptools import setup, find_packages
-import subprocess
 import pathlib
 
 
@@ -29,17 +28,16 @@ setup(
   author="Benjamin Boys and Jakiw Pidstrigach",
   license="MIT",
   license_file=LICENSE,
-  packages=find_packages(exclude=['*.test']),
+  packages=find_packages(exclude=["*.test"]),
   install_requires=[
-    'numpy',
-    'scipy',
-    'matplotlib',
-    'optax',
-    'flax',
-    'ml_collections',
-    'tqdm',
-    'absl-py',
-    'wandb',
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "flax",
+    "ml_collections",
+    "tqdm",
+    "absl-py",
+    "wandb",
     ],
   extras_require={
     'linting': [
@@ -60,6 +58,12 @@ setup(
       "jaxlib>=0.4.1",
       "setuptools_scm[toml]",
       "setuptools_scm_git_archive",
+    ],
+    'examples': [
+      "optax",
+      "orbax-checkpoint",
+      "torch",
+      "mlkernels",
     ],
   },
   include_package_data=True)

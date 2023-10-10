@@ -1,28 +1,79 @@
 """Diffusion models introduction. An example using 2 dimensional image data."""
 import jax
-from jax import vmap, jit, grad
+from jax import vmap, jit, grad, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
-import optax
 from flax import serialization
+from functools import partial
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap
-from diffusionjax.utils import get_score, retrain_nn, optimizer, update_step, get_loss, get_sampler
+from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.models import CNN
 from diffusionjax.sde import VP, UDLangevin
 import numpy as np
 import os
 
-# Dependencies: This example requires mlkernels package,
-# https://github.com/wesselb/mlkernels#installation
+# Dependencies:
+# This example requires mlkernels package, https://github.com/wesselb/mlkernels#installation
 from mlkernels import Matern52
 import lab as B
+# This example requires optax, https://optax.readthedocs.io/en/latest/
+import optax
 
 
 x_max = 5.0
 epsilon = 1e-4
+
+
+#Initialize the optimizer
+optimizer = optax.adam(1e-3)
+
+
+@partial(jit, static_argnums=[4])
+def update_step(params, rng, batch, opt_state, loss):
+  """
+  Takes the gradient of the loss function and updates the model weights (params) using it.
+  Args:
+      params: the current weights of the model
+      rng: random number generator from jax
+      batch: a batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N)
+      opt_state: the internal state of the optimizer
+      loss: A loss function that can be used for score matching training.
+  Returns:
+      The value of the loss function (for metrics), the new params and the new optimizer states function (for metrics),
+      the new params and the new optimizer state.
+  """
+  val, grads = value_and_grad(loss)(params, rng, batch)
+  updates, opt_state = optimizer.update(grads, opt_state)
+  params = optax.apply_updates(params, updates)
+  return val, params, opt_state
+
+
+def retrain_nn(
+    update_step, num_epochs, step_rng, samples, params,
+    opt_state, loss, batch_size=5):
+  train_size = samples.shape[0]
+  batch_size = min(train_size, batch_size)
+  steps_per_epoch = train_size // batch_size
+  mean_losses = jnp.zeros((num_epochs, 1))
+  for i in range(num_epochs):
+    rng, step_rng = random.split(step_rng)
+    perms = random.permutation(step_rng, train_size)
+    perms = perms[:steps_per_epoch * batch_size]  # skip incomplete batch
+    perms = perms.reshape((steps_per_epoch, batch_size))
+    losses = jnp.zeros((jnp.shape(perms)[0], 1))
+    for j, perm in enumerate(perms):
+      batch = samples[perm, :]
+      rng, step_rng = random.split(rng)
+      loss_eval, params, opt_state = update_step(params, step_rng, batch, opt_state, loss)
+      losses = losses.at[j].set(loss_eval)
+    mean_loss = jnp.mean(losses, axis=0)
+    mean_losses = mean_losses.at[i].set(mean_loss)
+    if i % 10 == 0:
+      print("Epoch {:d}, Loss {:.2f} ".format(i, mean_loss[0]))
+  return params, opt_state, mean_losses
 
 
 def image_grid(x, image_size, num_channels):
