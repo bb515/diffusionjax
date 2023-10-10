@@ -22,6 +22,7 @@ Contents:
 The package requires Python 3.8+. First, it is recommended to [create a new python virtual environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands). 
 diffusionjax depends on JAX. Because the JAX installation is different depending on your CUDA version, diffusionjax does not list JAX as a dependency in `setup.py`.
 First, [follow these instructions](https://github.com/google/jax#installation) to install JAX with the relevant accelerator support.
+To run the examples, you may optionally need to install [optax](https://optax.readthedocs.io/en/latest/), [orbax-checkpoint](https://orbax.readthedocs.io/en/latest/), [torch[cpu]](https://pytorch.org/get-started/locally/) and [mlkernels](https://github.com/wesselb/mlkernels#installation), which the package depends on only through the examples given.
 Then, `pip install diffusionjax` or for developers,
 - Clone the repository `git clone git@github.com:bb515/diffusionjax.git`
 - Install using pip `pip install -e .` from the root directory of the repository (see the `setup.py` for the requirements that this command installs).
