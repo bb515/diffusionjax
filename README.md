@@ -2,14 +2,13 @@ diffusionjax
 ============
 [![CI](https://github.com/bb515/diffusionjax/actions/workflows/CI.yml/badge.svg)](https://github.com/bb515/diffusionjax/actions/workflows/CI.yml)
 [![Coverage Status](https://coveralls.io/repos/github/bb515/diffusionjax/badge.svg?branch=master)](https://coveralls.io/github/bb515/diffusionjax?branch=master)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+![nPlan](readme_nPlan.png)
+Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 
 diffusionjax is a simple, accessible introduction to diffusion models, also known as score-based generative models (SGMs). It is implemented in Python via the autodiff framework, [JAX](https://github.com/google/jax). In particular, diffusionjax uses the [Flax](https://github.com/google/flax) library for the neural network approximator of the score.
 
 The development of diffusionjax has been supported by The Alan Turing Institute through the Theory and Methods Challenge Fortnights event "Accelerating generative models and nonconvex optimisation", which took place on 6-10 June 2022 and 5-9 Sep 2022 at The Alan Turing Institute headquarters.
-
-![nPlan](readme_nPlan.png)
-Thank you to [nPlan](https://www.nplan.io/), who are supporting this project.
 
 Contents:
 - [Installation](#installation)
@@ -23,6 +22,7 @@ Contents:
 The package requires Python 3.8+. First, it is recommended to [create a new python virtual environment](https://conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#creating-an-environment-with-commands). 
 diffusionjax depends on JAX. Because the JAX installation is different depending on your CUDA version, diffusionjax does not list JAX as a dependency in `setup.py`.
 First, [follow these instructions](https://github.com/google/jax#installation) to install JAX with the relevant accelerator support.
+To run the examples, you may optionally need to install [optax](https://optax.readthedocs.io/en/latest/), [orbax-checkpoint](https://orbax.readthedocs.io/en/latest/), [torch[cpu]](https://pytorch.org/get-started/locally/) and [mlkernels](https://github.com/wesselb/mlkernels#installation), which the package depends on only through the examples given.
 Then, `pip install diffusionjax` or for developers,
 - Clone the repository `git clone git@github.com:bb515/diffusionjax.git`
 - Install using pip `pip install -e .` from the root directory of the repository (see the `setup.py` for the requirements that this command installs).
