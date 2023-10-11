@@ -3,6 +3,7 @@ import abc
 import jax.numpy as jnp
 from jax import random
 from diffusionjax.utils import batch_mul
+from jaxtyping import Array, Float
 
 
 class SDE(abc.ABC):
@@ -12,6 +13,7 @@ class SDE(abc.ABC):
     """Construct an SDE."""
 
   @abc.abstractmethod
+  # def sde(self, x: Float[Array, 'batch ...'], t: Float) -> [Float[Array], Float[Array]]:
   def sde(self, x, t):
     """Return the drift and diffusion coefficients of the SDE.
 
@@ -30,7 +32,8 @@ class SDE(abc.ABC):
       self.score = score
       self.forward_sde = forward_sde
 
-    def sde(self, x, t):
+    # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
+    def sde(self, x: Array, t: Float):
       drift, diffusion = self.forward_sde(x, t)
       drift = -drift + batch_mul(diffusion**2, self.score(x, t))
       return drift, diffusion
@@ -79,6 +82,7 @@ class VE(SDE):
     self.sigma_min = sigma_min
     self.sigma_max = sigma_max
 
+  # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
   def sde(self, x, t):
     sigma = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     drift = jnp.zeros_like(x)
@@ -94,16 +98,6 @@ class VE(SDE):
   def variance(self, t):
     std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     return std**2
-
-  def marginal_prob(self, x, t):
-    r"""Parameters to determine the marginal distribution of the SDE,
-
-    .. math::
-      p_t(x)
-    """
-    std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
-    mean = x
-    return mean, std
 
   def prior(self, rng, shape):
     return random.normal(rng, shape) * self.sigma_max
@@ -129,6 +123,20 @@ class VE(SDE):
 
     return RVE()
 
+  def r2(self, t, data_variance):
+    r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
+    the data distribution is isotropic-Gaussian.
+
+    .. math::
+      \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
+    """
+    variance = self.variance(t)
+    return variance * data_variance / (variance + data_variance)
+
+  def ratio(self, t):
+    """Ratio of marginal variance and mean coeff."""
+    return self.variance(t)
+
 
 class VP(SDE):
   """Variance preserving (VP) SDE, also known
@@ -138,6 +146,7 @@ class VP(SDE):
     self.beta_min = beta_min
     self.beta_max = beta_max
 
+  # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
   def sde(self, x, t):
     beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
     drift = -0.5 * batch_mul(beta_t, x)
@@ -152,17 +161,6 @@ class VP(SDE):
 
   def variance(self, t):
     return 1.0 - jnp.exp(2 * self.log_mean_coeff(t))
-
-  def marginal_prob(self, x, t):
-    r"""Parameters to determine the marginal distribution of the SDE,
-
-    .. math::
-      p_t(x)
-    """
-    m = self.mean_coeff(t)
-    mean = batch_mul(m, x)
-    std = jnp.sqrt(self.variance(t))
-    return mean, std
 
   def prior(self, rng, shape):
     return random.normal(rng, shape)
@@ -188,3 +186,17 @@ class VP(SDE):
         return estimate_x_0
 
     return RVP()
+
+  def r2(self, t, data_variance):
+    r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
+    the data distribution is isotropic-Gaussian.
+
+    .. math::
+      \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
+    """
+    alpha = jnp.exp(2 * self.log_mean_coeff(t))
+    return (1 - alpha) * data_variance / (1 - alpha + alpha * data_variance)
+
+  def ratio(self, t):
+    """Ratio of marginal variance and mean coeff."""
+    return self.variance(t) / self.mean_coeff(t)

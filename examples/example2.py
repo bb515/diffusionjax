@@ -130,41 +130,6 @@ def main():
   # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
   sde = VP(beta_min=0.1, beta_max=25.0)
 
-  def log_hat_pt(x, t):
-    """
-    Empirical distribution score.
-
-    Args:
-      x: One location in $\mathbb{R}^{image_size}$
-      t: time
-    Returns:
-      The empirical log density, as described in the Jupyter notebook
-      .. math::
-        \hat{p}_{t}(x)
-    """
-    mean, std = sde.marginal_prob(samples, t)
-    losses = -(x - mean)**2 / (2 * std**2)
-    # Needs to be reshaped, since x is an image
-    potentials = jnp.sum(losses.reshape((losses.shape[0], -1)), axis=-1)
-    return logsumexp(potentials, axis=0, b=1/num_samples)
-
-  if 0:  # this may take a while
-    # Get a jax grad function, which can be batched with vmap
-    nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
-    # Running the reverse SDE with the empirical score
-    sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps)), axis_name='batch')
-    q_samples, _ = sampler(rng)
-    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
-    plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
-    # What happens when I perturb the score with a constant?
-    perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
-    rng, step_rng = random.split(rng)
-    sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps)), axis_name='batch')
-    q_samples, num_function_evaluations = sampler(rng)
-    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
-
   # Neural network training via score matching
   batch_size = 16
   score_model = CNN()

@@ -12,7 +12,7 @@ def batch_mul(a, b):
   return vmap(lambda a, b: a * b)(a, b)
 
 
-def errors(ts, sde, score, rng, data, likelihood_weighting=True):
+def errors(t, sde, score, rng, data, likelihood_weighting=True):
   """
   Args:
     ts: JAX array of times.
@@ -24,14 +24,16 @@ def errors(ts, sde, score, rng, data, likelihood_weighting=True):
   Returns:
     A random (MC) approximation to the (likelihood weighted) score errors.
   """
-  mean, std = sde.marginal_prob(data, ts)
+  m = sde.mean_coeff(t)
+  mean = batch_mul(m, data)
+  std = jnp.sqrt(sde.variance(t))
   rng, step_rng = random.split(rng)
   noise = random.normal(step_rng, data.shape)
-  x_t = mean + batch_mul(std, noise)
+  x = mean + batch_mul(std, noise)
   if not likelihood_weighting:
-    return noise + batch_mul(score(x_t, ts), std)
+    return noise + batch_mul(score(x, t), std)
   else:
-    return batch_mul(noise, 1. / std) + score(x_t, ts)
+    return batch_mul(noise, 1. / std) + score(x, t)
 
 
 def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, reduce_mean=True, pointwise_t=False):
