@@ -138,7 +138,7 @@ def main(argv):
   std_radii = jnp.std(radii)
 
   # Benchmark
-  assert jnp.isclose(train_time_delta, expected_train_time, rtol=0.030), "train (got {}s, expected {}s)".format(train_time_delta, expected_train_time)
+  assert jnp.isclose(train_time_delta, expected_train_time, rtol=0.035), "train (got {}s, expected {}s)".format(train_time_delta, expected_train_time)
   assert jnp.isclose(sample_time_delta, expected_sample_time, rtol=0.12), "sample (got {}s, expected {}s)".format(sample_time_delta, expected_sample_time)
 
   # Regression

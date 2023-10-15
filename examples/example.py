@@ -114,14 +114,9 @@ def main(argv):
     Returns:
       The empirical log density, as described in the Jupyter notebook
       .. math::
-        \hat{p}_{t}(x)
+        \log\hat{p}_{t}(x)
     """
-    # diffusionjax functions expect batch arrays
-    print(t.shape)
-    t = jnp.array(t).reshape(1,)
-    print(t.shape)
-    # t = t.reshape(1, -1)
-    # print(t.shape)
+    t = t.reshape(1,)  # diffusionjax.sde methods expect JAX arrays, not float
     mean_coeff = sde.mean_coeff(t)
     mean = mean_coeff * scaler(dataset.train_data)
     std = jnp.sqrt(sde.variance(t))
@@ -129,11 +124,10 @@ def main(argv):
     return logsumexp(potentials, axis=0, b=1/num_samples)
 
   # Get a jax grad function, which can be batched with vmap
-  nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
-  # nabla_log_hat_pt = jit(vmap(grad(log_hat_pt)))
+  nabla_log_hat_pt = jit(vmap(grad(log_hat_pt)))
 
   # Running the reverse SDE with the empirical drift
-  plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_min=-3, area_max=3, fname="empirical score")
+  plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_bounds=[-3., 3], fname="empirical score")
   outer_solver, inner_solver = get_solver(config, sde, nabla_log_hat_pt)
   sampler = get_sampler((5760, config.data.image_size),
                         outer_solver, inner_solver,
@@ -180,7 +174,7 @@ def main(argv):
 
   # Get trained score
   trained_score = get_score(sde, get_model(config), params, score_scaling=config.training.score_scaling)
-  plot_score(score=trained_score, scaler=scaler, t=0.01, area_min=-3, area_max=3, fname="trained score")
+  plot_score(score=trained_score, scaler=scaler, t=0.01, area_bounds=[-3., 3.], fname="trained score")
   outer_solver, inner_solver = get_solver(config, sde, trained_score)
   sampler = get_sampler(
     (config.eval.batch_size // num_devices, config.data.image_size),
@@ -202,7 +196,7 @@ def main(argv):
 
   # Condition on one of the coordinates
   data = jnp.array([-0.5, 0.0])
-  mask = jnp.array([1, 0])
+  mask = jnp.array([1., 0.])
   data = jnp.tile(data, (64, 1))
   data = scaler(data)
   mask = jnp.tile(mask, (64, 1))

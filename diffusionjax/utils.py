@@ -10,6 +10,7 @@ from diffusionjax.typing import typed, Shape
 from jaxtyping import Array, Float, PRNGKeyArray
 
 
+@typed
 def batch_mul(a: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
   return vmap(lambda a, b: a * b)(a, b)
 
@@ -163,7 +164,7 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
       num_function_evaluations = jnp.size(outer_ts)
       def outer_step(carry, t):
         rng, x, x_mean = carry
-        vec_t = jnp.full(shape[0], t)
+        vec_t = jnp.full((shape[0],), t)
         rng, step_rng = random.split(rng)
         x, x_mean = outer_update(step_rng, x, vec_t)
         if not stack_samples:
