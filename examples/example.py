@@ -116,7 +116,7 @@ def main(argv):
       .. math::
         \log\hat{p}_{t}(x)
     """
-    t = t.reshape(1,)  # diffusionjax.sde methods expect JAX arrays, not float
+    t = jnp.expand_dims(t, axis=0)  # diffusionjax.sde methods expect JAX arrays, not float
     mean_coeff = sde.mean_coeff(t)
     mean = mean_coeff * scaler(dataset.train_data)
     std = jnp.sqrt(sde.variance(t))
