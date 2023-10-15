@@ -6,8 +6,8 @@ from jax.lax import scan
 from jax import vmap
 import jax.random as random
 from functools import partial
-from diffusionjax.typing import typed, Shape
-from jaxtyping import Array, Float, PRNGKeyArray
+from diffusionjax.typing import typed
+from jaxtyping import Array, Float
 
 
 @typed
