@@ -3,7 +3,8 @@ import abc
 import jax.numpy as jnp
 from jax import random
 from diffusionjax.utils import batch_mul
-from jaxtyping import Array, Float
+from diffusionjax.typing import typed, Shape
+from jaxtyping import Array, Float, PRNGKeyArray
 
 
 class SDE(abc.ABC):
@@ -13,8 +14,7 @@ class SDE(abc.ABC):
     """Construct an SDE."""
 
   @abc.abstractmethod
-  # def sde(self, x: Float[Array, 'batch ...'], t: Float) -> [Float[Array], Float[Array]]:
-  def sde(self, x, t):
+  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
     """Return the drift and diffusion coefficients of the SDE.
 
     Args:
@@ -32,8 +32,8 @@ class SDE(abc.ABC):
       self.score = score
       self.forward_sde = forward_sde
 
-    # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
-    def sde(self, x: Array, t: Float):
+    @typed
+    def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
       drift, diffusion = self.forward_sde(x, t)
       drift = -drift + batch_mul(diffusion**2, self.score(x, t))
       return drift, diffusion
@@ -55,7 +55,8 @@ class ODLangevin(SDE):
     self.damping = damping
     self.L = L
 
-  def sde(self, x, t):
+  @typed
+  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
     drift = -self.score(x, t)
     diffusion = jnp.ones(x.shape) * jnp.sqrt(2 * self.damping / self.L)
     return drift, diffusion
@@ -67,7 +68,8 @@ class UDLangevin(SDE):
     super().__init__()
     self.score = score
 
-  def sde(self, x, t):
+  @typed
+  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
     drift = -self.score(x, t)
     diffusion = jnp.ones(x.shape) * jnp.sqrt(2)
     return drift, diffusion
@@ -82,24 +84,28 @@ class VE(SDE):
     self.sigma_min = sigma_min
     self.sigma_max = sigma_max
 
-  # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
-  def sde(self, x, t):
+  @typed
+  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
     sigma = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     drift = jnp.zeros_like(x)
     diffusion = sigma * jnp.sqrt(2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min)))
     return drift, diffusion
 
-  def log_mean_coeff(self, t):
+  @typed
+  def log_mean_coeff(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size"]:
     return jnp.zeros_like(t)
 
-  def mean_coeff(self, t):
+  @typed
+  def mean_coeff(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size"]:
     return jnp.ones_like(t)
 
-  def variance(self, t):
+  @typed
+  def variance(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size"]:
     std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     return std**2
 
-  def prior(self, rng, shape):
+  @typed
+  def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
     return random.normal(rng, shape) * self.sigma_max
 
   def reverse(self, score):
@@ -114,7 +120,8 @@ class VE(SDE):
         self.sigma_max = sigma_max
 
       def get_estimate_x_0(self, observation_map):
-        def estimate_x_0(x, t):
+        @typed
+        def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."] [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:
           v_t = self.variance(t)
           s = self.score(x, t)
           x_0 = x + v_t * s
@@ -123,7 +130,8 @@ class VE(SDE):
 
     return RVE()
 
-  def r2(self, t, data_variance):
+  @typed
+  def r2(self, t: Float[Array, "batch_size"], data_variance: Float[Array, "batch_size"]) -> Float[Array, "batch_size ..."]:
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
     the data distribution is isotropic-Gaussian.
 
@@ -133,7 +141,8 @@ class VE(SDE):
     variance = self.variance(t)
     return variance * data_variance / (variance + data_variance)
 
-  def ratio(self, t):
+  @typed
+  def ratio(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size ..."]:
     """Ratio of marginal variance and mean coeff."""
     return self.variance(t)
 
@@ -146,23 +155,27 @@ class VP(SDE):
     self.beta_min = beta_min
     self.beta_max = beta_max
 
-  # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
-  def sde(self, x, t):
+  @typed
+  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
     beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
     drift = -0.5 * batch_mul(beta_t, x)
     diffusion = jnp.sqrt(beta_t)
     return drift, diffusion
 
-  def log_mean_coeff(self, t):
+  @typed
+  def log_mean_coeff(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size"]:
     return -0.5 * t * self.beta_min - 0.25 * t**2 * (self.beta_max - self.beta_min)
 
-  def mean_coeff(self, t):
+  @typed
+  def mean_coeff(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size"]:
     return jnp.exp(self.log_mean_coeff(t))
 
-  def variance(self, t):
+  @typed
+  def variance(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size"]:
     return 1.0 - jnp.exp(2 * self.log_mean_coeff(t))
 
-  def prior(self, rng, shape):
+  @typed
+  def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
     return random.normal(rng, shape)
 
   def reverse(self, score):
@@ -177,7 +190,8 @@ class VP(SDE):
         self.beta_max = beta_max
 
       def get_estimate_x_0(self, observation_map):
-        def estimate_x_0(x, t):
+        @typed
+        def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."] [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:
           m_t = self.mean_coeff(t)
           v_t = self.variance(t)
           s = self.score(x, t)
@@ -187,7 +201,8 @@ class VP(SDE):
 
     return RVP()
 
-  def r2(self, t, data_variance):
+  @typed
+  def r2(self, t: Float[Array, "batch_size"], data_variance: Float[Array, "batch_size"]) -> Float[Array, "batch_size ..."]:
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
     the data distribution is isotropic-Gaussian.
 
@@ -197,6 +212,7 @@ class VP(SDE):
     alpha = jnp.exp(2 * self.log_mean_coeff(t))
     return (1 - alpha) * data_variance / (1 - alpha + alpha * data_variance)
 
-  def ratio(self, t):
+  @typed
+  def ratio(self, t: Float[Array, "batch_size"]) -> Float[Array, "batch_size ..."]:
     """Ratio of marginal variance and mean coeff."""
     return self.variance(t) / self.mean_coeff(t)

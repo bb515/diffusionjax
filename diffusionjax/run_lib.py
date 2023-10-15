@@ -20,13 +20,13 @@ from typing import Any
 import logging
 import wandb
 
-
-# This file requires optax, https://optax.readthedocs.io/en/latest/
+# This run library requires optax, https://optax.readthedocs.io/en/latest/
 import optax
-# This file requires orbax, https://orbax.readthedocs.io/en/latest/
+# This run library requires orbax, https://orbax.readthedocs.io/en/latest/
 import orbax.checkpoint
-# This file requires torch[cpu], https://pytorch.org/get-started/locally/
+# This run librar requires torch[cpu], https://pytorch.org/get-started/locally/
 from torch.utils.data import DataLoader
+
 
 FLAGS = flags.FLAGS
 logger = logging.getLogger(__name__)
@@ -144,7 +144,7 @@ def get_solver(config, sde, score):
 def get_ddim_chain(config, model):
   """
   Args:
-      model: DDIM parameterizes the `\epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
+      model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
   """
   if config.solver.outer_solver.lower()=="ddimvp":
     outer_solver = DDIMVP(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
@@ -238,15 +238,16 @@ class NumpyLoader(DataLoader):
                                          worker_init_fn=worker_init_fn)
 
 
-def train(sampling_shape, config, workdir, dataset):
+def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   """ Train a score based generative model using stochastic gradient descent
 
   Args:
     sampling_shape : sampling shape may differ depending on the modality of data
     config: An ml-collections configuration to use.
-    workdir: Working directory for checkpoints and TF summaries. If this
-      contains checkpoint training will be resumed from the latest checkpoint.
     dataset: a valid `torch.DataLoader` class.
+    workdir: Optional working directory for checkpoints and TF summaries. If this
+      contains checkpoint training will be resumed from the latest checkpoint.
+    use_wandb: Bool. If set to `True`, uses weights and biases to store and visualize loss data.
   """
   train_dataloader = NumpyLoader(config, dataset)
   eval_dataloader = NumpyLoader(config, dataset)
@@ -259,15 +260,16 @@ def train(sampling_shape, config, workdir, dataset):
     num_devices, config.training.pmap))
 
   # Create directories for experimental logs
-  sample_dir = os.path.join(workdir, "samples")
-  if not os.path.exists(sample_dir):
-    os.mkdir(sample_dir)
+  if workdir is not None:
+    sample_dir = os.path.join(workdir, "samples")
+    if not os.path.exists(sample_dir):
+      os.mkdir(sample_dir)
 
   scaler = dataset.get_data_scaler(config)
   inverse_scaler = dataset.get_data_inverse_scaler(config)
   # eval_function = dataset.calculate_metrics_batch
   # metric_names = dataset.metric_names()
-  if jax.process_index()==0:
+  if jax.process_index()==0 and use_wandb:
     run = wandb.init(
       project="diffusionjax",
       config=config,
@@ -294,36 +296,37 @@ def train(sampling_shape, config, workdir, dataset):
     lr=config.optim.lr,
     rng=rng)
 
-  # Create checkpoints directory
-  checkpoint_dir = os.path.join(workdir, "checkpoints")
-  if not os.path.exists(checkpoint_dir):
-    os.mkdir(checkpoint_dir)
+  if workdir is not None:
+    # Create checkpoints directory
+    checkpoint_dir = os.path.join(workdir, "checkpoints")
+    if not os.path.exists(checkpoint_dir):
+      os.mkdir(checkpoint_dir)
 
-  # Intermediate checkpoints to resume training after pre-emption in cloud environments
-  checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta")
-  if not os.path.exists(checkpoint_meta_dir):
-    os.mkdir(checkpoint_meta_dir)
+    # Intermediate checkpoints to resume training after pre-emption in cloud environments
+    checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta")
+    if not os.path.exists(checkpoint_meta_dir):
+      os.mkdir(checkpoint_meta_dir)
 
-  # Orbax checkpointer boilerplate
-  manager_options = orbax.checkpoint.CheckpointManagerOptions(
-    create=True, max_to_keep=np.inf)
-  checkpoint_manager = orbax.checkpoint.CheckpointManager(
-    checkpoint_dir,
-    orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
+    # Orbax checkpointer boilerplate
+    manager_options = orbax.checkpoint.CheckpointManagerOptions(
+      create=True, max_to_keep=np.inf)
+    checkpoint_manager = orbax.checkpoint.CheckpointManager(
+      checkpoint_dir,
+      orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
 
-  # meta_manager_options = orbax.checkpoint.CheckpointManagerOptions(
-  #   create=True, max_to_keep=1)
-  meta_checkpoint_manager = orbax.checkpoint.CheckpointManager(
-    checkpoint_meta_dir,
-    orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
+    # meta_manager_options = orbax.checkpoint.CheckpointManagerOptions(
+    #   create=True, max_to_keep=1)
+    meta_checkpoint_manager = orbax.checkpoint.CheckpointManager(
+      checkpoint_meta_dir,
+      orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
 
-  # Resume training when intermediate checkpoints are detected
-  restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
-  save_step = meta_checkpoint_manager.latest_step()
-  if save_step is not None:
-    meta_checkpoint_manager.restore(
-      save_step,
-      items=state, restore_kwargs={'restore_args': restore_args})
+    # Resume training when intermediate checkpoints are detected
+    restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
+    save_step = meta_checkpoint_manager.latest_step()
+    if save_step is not None:
+      meta_checkpoint_manager.restore(
+        save_step,
+        items=state, restore_kwargs={'restore_args': restore_args})
 
   # `state.step` is JAX integer on the GPU/TPU devices
   initial_step = int(state.step)
@@ -422,7 +425,7 @@ def train(sampling_shape, config, workdir, dataset):
         if jax.process_index()==0:
           step += config.training.n_jitted_steps
           losses = losses.at[i_batch].set(loss_train)
-          if step % config.training.log_step_freq==0 and jax.process_index() == 0:
+          if step % config.training.log_step_freq==0 and jax.process_index() == 0 and use_wandb:
             logging.info("step {:d}, training_loss {:.2e}".format(step, loss_train))
 
         # Save a temporary checkpoint to resume training after pre-emption (for cloud computing environments) periodically
@@ -432,8 +435,9 @@ def train(sampling_shape, config, workdir, dataset):
           else:
             saved_state = state
           saved_state = saved_state.replace(rng=rng)
-          saved_args = orbax_utils.save_args_from_target(saved_state)
-          meta_checkpoint_manager.save(step//config.training.snapshot_freq_for_preemption, saved_state, save_kwargs={'save_args': saved_args})
+          if workdir:
+            saved_args = orbax_utils.save_args_from_target(saved_state)
+            meta_checkpoint_manager.save(step//config.training.snapshot_freq_for_preemption, saved_state, save_kwargs={'save_args': saved_args})
 
         # Report the loss on an evaluation dataset periodically
         if step % config.training.eval_freq == 0:
@@ -451,7 +455,7 @@ def train(sampling_shape, config, workdir, dataset):
           else:
             loss_eval = loss_eval.mean()
 
-          if jax.process_index()==0:
+          if jax.process_index()==0 and use_wandb:
             logging.info("batch: {:d}, eval_loss: {:.5e}".format(step, loss_eval))
             wandb.log({"eval-loss": loss_eval})
 
@@ -464,8 +468,9 @@ def train(sampling_shape, config, workdir, dataset):
             else:
               saved_state = state
             saved_state = saved_state.replace(rng=rng)
-            saved_args = orbax_utils.save_args_from_target(saved_state)
-            checkpoint_manager.save(step // config.training.snapshot_freq, saved_state, save_kwargs={'save_args': saved_args})
+            if workdir:
+              saved_args = orbax_utils.save_args_from_target(saved_state)
+              checkpoint_manager.save(step // config.training.snapshot_freq, saved_state, save_kwargs={'save_args': saved_args})
 
           # Generate and save samples
           if config.training.snapshot_sampling:
@@ -491,25 +496,28 @@ def train(sampling_shape, config, workdir, dataset):
             # eval_fn = eval_function(sample)
             # wandb.log({metric_names[0]: eval_fn})
 
-            this_sample_dir = os.path.join(
-              sample_dir, "iter_{}_host_{}".format(step, jax.process_index()))
-            if not os.path.isdir(this_sample_dir):
-              os.mkdir(this_sample_dir)
+            if workdir:
+              this_sample_dir = os.path.join(
+                sample_dir, "iter_{}_host_{}".format(step, jax.process_index()))
+              if not os.path.isdir(this_sample_dir):
+                os.mkdir(this_sample_dir)
 
-            with open(os.path.join(this_sample_dir, "sample.np"), 'wb') as infile:
-              np.save(infile, sample)
+              with open(os.path.join(this_sample_dir, "sample.np"), 'wb') as infile:
+                np.save(infile, sample)
 
       if jax.process_index()==0:
         mean_loss = jnp.mean(losses, axis=0)
 
     if jax.process_index()==0 and i_epoch % config.training.log_epoch_freq==0:
-      logging.info("step {:d}, mean_loss {:.2e}".format(step, mean_loss[0]))
       mean_losses = mean_losses.at[i_epoch].set(mean_loss)
-      wandb.log({"train-loss": mean_loss})
+      if use_wandb:
+        logging.info("step {:d}, mean_loss {:.2e}".format(step, mean_loss[0]))
+        wandb.log({"train-loss": mean_loss})
 
-  artifact = wandb.Artifact(name='checkpoint', type='checkpoint')
-  artifact.add_dir(local_path=checkpoint_dir)
-  run.log_artifact(artifact)
+  if workdir and use_wandb:
+    artifact = wandb.Artifact(name='checkpoint', type='checkpoint')
+    artifact.add_dir(local_path=checkpoint_dir)
+    run.log_artifact(artifact)
 
   # Get the model and do test dataset
   if config.training.pmap:

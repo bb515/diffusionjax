@@ -4,9 +4,12 @@ from jax.lax import scan
 from jax import vmap
 import jax.random as random
 from diffusionjax.utils import batch_mul
+from diffusionjax.typing import typed, Shape
+from jaxtyping import Array, Float, PRNGKeyArray
 
 
-def merge_data_with_mask(x_space, data, mask, coeff=1.):
+@typed
+def merge_data_with_mask(x_space: Float[Array, "batch_size ..."], data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], coeff=1.) -> Float[Array, "batch_size ..."]:
   return data * mask * coeff + x_space * (1. - mask * coeff)
 
 

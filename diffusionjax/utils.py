@@ -6,9 +6,11 @@ from jax.lax import scan
 from jax import vmap
 import jax.random as random
 from functools import partial
+from diffusionjax.typing import typed, Shape
+from jaxtyping import Array, Float, PRNGKeyArray
 
 
-def batch_mul(a, b):
+def batch_mul(a: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
   return vmap(lambda a, b: a * b)(a, b)
 
 
@@ -19,10 +21,10 @@ def errors(t, sde, score, rng, data, likelihood_weighting=True):
     sde: Instantiation of a valid SDE class.
     score: A function taking in (x, t) and returning the score.
     rng: Random number generator from JAX.
-    data: A batch of samples from the training data, representing samples from \mu_text{data}, shape (J, N).
-    likelihood_weighting: Boolean variable, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
+    data: A batch of samples from the training data, representing samples from the data distribution, shape (J, N).
+    likelihood_weighting: Bool, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
   Returns:
-    A random (MC) approximation to the (likelihood weighted) score errors.
+    A Monte-Carlo approximation to the (likelihood weighted) score errors.
   """
   m = sde.mean_coeff(t)
   mean = batch_mul(m, data)
@@ -42,10 +44,10 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
     sde: Instantiation of a valid SDE class.
     solver: Instantiation of a valid Solver class.
     model: A valid flax neural network `:class:flax.linen.Module` class.
-    score_scaling: Boolean variable, set to `True` if learning a score scaled by the marginal standard deviation.
-    likelihood_weighting: Boolean variable, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
-    reduce_mean: Boolean variable, set to `True` if taking the mean of the errors in the loss, set to `False` if taking the sum.
-    pointwise_t: Boolean variable, set to `True` if returning a function that can evaluate the loss pointwise over time. Set to `False` if returns an expectation of the loss over time.
+    score_scaling: Bool, set to `True` if learning a score scaled by the marginal standard deviation.
+    likelihood_weighting: Bool, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
+    reduce_mean: Bool, set to `True` if taking the mean of the errors in the loss, set to `False` if taking the sum.
+    pointwise_t: Bool, set to `True` if returning a function that can evaluate the loss pointwise over time. Set to `False` if returns an expectation of the loss over time.
 
   Returns:
     A loss function that can be used for score matching training.
@@ -109,8 +111,8 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
       obj_shape==(H, W, C), and so shape==(N, H, W, C) where N is the number of samples.
     outer_solver: A valid numerical solver class that will act on an outer loop.
     inner_solver: '' that will act on an inner loop.
-    denoise: Boolean variable that if `True` applies one-step denoising to final samples.
-    stack_samples: Boolean variable that if `True` return all of the sample path or
+    denoise: Bool, that if `True` applies one-step denoising to final samples.
+    stack_samples: Bool, that if `True` return all of the sample path or
       just returns the last sample.
     inverse_scaler: The inverse data normalizer function.
   Returns:
@@ -124,7 +126,7 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
       rng: A JAX random state.
       x_0: Initial condition. If `None`, then samples an initial condition from the
           sde's initial condition prior. Note that this initial condition represents
-          `x_T \sim \text{Normal}(O, I)` in reverse-time diffusion.
+          `x_T sim Normal(O, I)` in reverse-time diffusion.
     Returns:
         Samples and the number of score function (model) evaluations.
     """
