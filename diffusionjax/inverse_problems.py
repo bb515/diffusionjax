@@ -4,12 +4,9 @@ from jax.lax import scan
 from jax import vmap
 import jax.random as random
 from diffusionjax.utils import batch_mul
-from diffusionjax.typing import typed
-from jaxtyping import Array, Float, PRNGKeyArray
 
 
-@typed
-def merge_data_with_mask(x_space: Float[Array, "batch_size ..."], data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], coeff=1.) -> Float[Array, "batch_size ..."]:
+def merge_data_with_mask(x_space, data, mask, coeff=1.):
   return data * mask * coeff + x_space * (1. - mask * coeff)
 
 
@@ -27,8 +24,7 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
     def inverse_scaler(x): return x
   vmap_inverse_scaler = vmap(inverse_scaler)
 
-  @typed
-  def update(rng: PRNGKeyArray, data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], coeff: float) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+  def update(rng, data, mask, x, t, coeff):
     mean_coeff = solver.sde.mean_coeff(t)
     data_mean = batch_mul(mean_coeff, data)
     std = jnp.sqrt(solver.sde.variance(t))
@@ -90,8 +86,7 @@ def get_inpainter(solver, inverse_scaler=None, stack_samples=False):
     def inverse_scaler(x): return x
   vmap_inverse_scaler = vmap(inverse_scaler)
 
-  @typed
-  def update(rng: PRNGKeyArray, data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+  def update(rng, data, mask, x, t):
     x, x_mean = solver.update(rng, x, t)
     mean_coeff = solver.sde.mean_coeff(t)
     masked_data_mean = batch_mul(mean_coeff, data)

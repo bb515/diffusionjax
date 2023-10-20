@@ -406,7 +406,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
           rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
           next_rng = jnp.asarray(next_rng)  # type: ignore
         else:
-          rng, next_rng = jax.random.split(rng, num=2)
+          rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
 
         (_, params, opt_state), loss_train = train_step(
           (next_rng, state.params, state.opt_state), batch)
@@ -442,7 +442,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
             rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
             next_rng = jnp.asarray(next_rng)  # type: ignore
           else:
-            rng, next_rng = jax.random.split(rng, num=2)
+            rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
           (_, _, _), loss_eval = eval_step(
             (next_rng, state.params, state.opt_state), eval_batch)
 
@@ -485,7 +485,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
               rng, *sample_rng = random.split(rng, 1 + jax.local_device_count())
               sample_rng = jnp.asarray(sample_rng)  # type: ignore
             else:
-              rng, sample_rng = random.split(rng, 2)
+              rng, sample_rng = random.split(rng, 2)  # type: ignore
 
             sample, _ = sampler(sample_rng)
 

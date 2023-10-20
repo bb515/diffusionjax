@@ -2,13 +2,9 @@
 import jax.numpy as jnp
 from jax import random, vmap
 from diffusionjax.utils import batch_mul
-from diffusionjax.typing import typed, Shape
-from jaxtyping import Array, Float, PRNGKeyArray
-from typing import Any
 
 
-@typed
-def udlangevin(score, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+def udlangevin(score, x, t):
   drift = -score(x, t)
   diffusion = jnp.ones(x.shape) * jnp.sqrt(2)
   return drift, diffusion
@@ -21,8 +17,7 @@ class RSDE:
     self.score = score
     self.forward_sde = forward_sde
 
-  @typed
-  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+  def sde(self, x, t):
     drift, diffusion = self.forward_sde(x, t)
     drift = -drift + batch_mul(diffusion**2, self.score(x, t))
     return drift, diffusion
@@ -35,8 +30,7 @@ class ODLangevin:
     self.damping = damping
     self.L = L
 
-  @typed
-  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+  def sde(self, x, t):
     drift = -self.score(x, t)
     diffusion = jnp.ones(x.shape) * jnp.sqrt(2 * self.damping / self.L)
     return drift, diffusion
@@ -55,25 +49,23 @@ class VE:
     self.sigma_min = sigma_min
     self.sigma_max = sigma_max
 
-  @typed
-  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+  def sde(self, x, t):
     sigma = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     drift = jnp.zeros_like(x)
     diffusion = sigma * jnp.sqrt(2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min)))
     return drift, diffusion
 
-  def log_mean_coeff(self, t: Any) -> Any:
+  def log_mean_coeff(self, t):
     return jnp.zeros_like(t)
 
-  def mean_coeff(self, t: Any) -> Any:
+  def mean_coeff(self, t):
     return jnp.ones_like(t)
 
-  def variance(self, t: Any) -> Any:
+  def variance(self, t):
     std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     return std**2
 
-  @typed
-  def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
+  def prior(self, rng, shape):
     return random.normal(rng, shape) * self.sigma_max
 
   def reverse(self, score):
@@ -83,7 +75,7 @@ class VE:
 
     return RVE(score, forward_sde, sigma_min, sigma_max)
 
-  def r2(self, t: Any, data_variance: Any) -> Any:
+  def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
     the data distribution is isotropic-Gaussian.
 
@@ -93,7 +85,7 @@ class VE:
     variance = self.variance(t)
     return variance * data_variance / (variance + data_variance)
 
-  def ratio(self, t: Any) -> Any:
+  def ratio(self, t):
     """Ratio of marginal variance and mean coeff."""
     return self.variance(t)
 
@@ -104,24 +96,22 @@ class VP:
     self.beta_min = beta_min
     self.beta_max = beta_max
 
-  @typed
-  def sde(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
+  def sde(self, x, t):
     beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
     drift = -0.5 * batch_mul(beta_t, x)
     diffusion = jnp.sqrt(beta_t)
     return drift, diffusion
 
-  def log_mean_coeff(self, t: Any) -> Any:
+  def log_mean_coeff(self, t):
     return -0.5 * t * self.beta_min - 0.25 * t**2 * (self.beta_max - self.beta_min)
 
-  def mean_coeff(self, t: Any) -> Any:
+  def mean_coeff(self, t):
     return jnp.exp(self.log_mean_coeff(t))
 
-  def variance(self, t: Any) -> Any:
+  def variance(self, t):
     return 1.0 - jnp.exp(2 * self.log_mean_coeff(t))
 
-  @typed
-  def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
+  def prior(self, rng, shape):
     return random.normal(rng, shape)
 
   def reverse(self, score):
@@ -130,7 +120,7 @@ class VP:
     beta_max = self.beta_max
     return RVP(score, fwd_sde, beta_min, beta_max)
 
-  def r2(self, t: Any, data_variance: Any) -> Any:
+  def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
     the data distribution is isotropic-Gaussian.
 
@@ -140,7 +130,7 @@ class VP:
     alpha = jnp.exp(2 * self.log_mean_coeff(t))
     return (1 - alpha) * data_variance / (1 - alpha + alpha * data_variance)
 
-  def ratio(self, t: Any) -> Any:
+  def ratio(self, t):
     """Ratio of marginal variance and mean coeff."""
     return self.variance(t) / self.mean_coeff(t)
 
@@ -149,8 +139,8 @@ class RVE(RSDE, VE):
 
   def get_estimate_x_0(self, observation_map):
     batch_observation_map = vmap(observation_map)
-    @typed
-    def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
+
+    def estimate_x_0(self, x, t):
       v_t = self.variance(t)
       s = self.score(x, t)
       x_0 = x + v_t * s
@@ -161,8 +151,9 @@ class RVE(RSDE, VE):
     guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
     return RVE(guidance_score, self.forward_sde, self.sigma_min, self.sigma_max)
 
-  def correct(self, corrector):  # type: ignore
-    class CVE(RVE):  # type: ignore
+  def correct(self, corrector):
+
+    class CVE(RVE):
 
       def sde(x, t):
         return corrector(self.score, x, t)
@@ -174,8 +165,8 @@ class RVP(RSDE, VP):
 
   def get_estimate_x_0(self, observation_map):
     batch_observation_map = vmap(observation_map)
-    @typed
-    def estimate_x_0(x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
+
+    def estimate_x_0(x, t):
       m_t = self.mean_coeff(t)
       v_t = self.variance(t)
       s = self.score(x, t)
@@ -187,8 +178,9 @@ class RVP(RSDE, VP):
     guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
     return RVP(guidance_score, self.forward_sde, self.beta_min, self.beta_max)
 
-  def correct(self, corrector):  # type: ignore
-    class CVP(RVP):  # type: ignore
+  def correct(self, corrector):
+
+    class CVP(RVP):
 
       def sde(x, t):
         return corrector(self.score, x, t)

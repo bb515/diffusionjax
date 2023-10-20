@@ -20,9 +20,9 @@ select = [
   "UP039",  # unnecessary-class-parentheses
 ]
 
-ignore= ["F722",  # 'Syntax error in forward annotation' seems incompatible with jaxtyping syntax
-         "F821",  # 'Undefined name' seems incompatible with jaxtyping syntax
-]
+# ignore= ["F722",  # 'Syntax error in forward annotation' seems incompatible with jaxtyping syntax
+#          "F821",  # 'Undefined name' seems incompatible with jaxtyping syntax
+# ]
 
 exclude = [
   "examples/",

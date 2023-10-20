@@ -6,32 +6,25 @@ from jax.lax import scan
 from jax import vmap
 import jax.random as random
 from functools import partial
-from diffusionjax.typing import typed
-from jaxtyping import Array, Float
 
 
-@typed
-def batch_linalg_solve_A(A: Float[Array, "..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+def batch_linalg_solve_A(A, b):
   return vmap(lambda b: jnp.linalg.solve(A, b))(b)
 
 
-@typed
-def batch_linalg_solve(A: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+def batch_linalg_solve(A, b):
   return vmap(jnp.linalg.solve)(A, b)
 
 
-@typed
-def batch_mul(a: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+def batch_mul(a, b):
   return vmap(lambda a, b: a * b)(a, b)
 
 
-@typed
-def batch_mul_A(a: Float[Array, "..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+def batch_mul_A(a, b):
   return vmap(lambda b: a * b)(b)
 
 
-@typed
-def batch_matmul(A: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+def batch_matmul(A, b):
   return vmap(lambda A, b: A @ b)(A, b)
 
 
