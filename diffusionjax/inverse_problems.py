@@ -21,17 +21,18 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
     A projection sampler function.
   """
   if inverse_scaler is None:
-    def inverse_scaler(x):
-      return x
+    def inverse_scaler(x): return x
   vmap_inverse_scaler = vmap(inverse_scaler)
 
-  def update(rng, data, mask, x, vec_t, coeff):
-    data_mean, std = solver.sde.marginal_prob(data, vec_t)
+  def update(rng, data, mask, x, t, coeff):
+    mean_coeff = solver.sde.mean_coeff(t)
+    data_mean = batch_mul(mean_coeff, data)
+    std = jnp.sqrt(solver.sde.variance(t))
     z = random.normal(rng, x.shape)
     z_data = data_mean + batch_mul(std, z)
     x = merge_data_with_mask(x, z_data, mask, coeff)
     rng, step_rng = random.split(rng)
-    x, x_mean = solver.update(step_rng, x, vec_t)
+    x, x_mean = solver.update(step_rng, x, t)
     return x, x_mean
 
   ts = solver.ts
@@ -82,13 +83,14 @@ def get_inpainter(solver, inverse_scaler=None, stack_samples=False):
     An inpainting function.
   """
   if inverse_scaler is None:
-    def inverse_scaler(x):
-      return x
+    def inverse_scaler(x): return x
   vmap_inverse_scaler = vmap(inverse_scaler)
 
-  def update(rng, data, mask, x, vec_t):
-    x, x_mean = solver.update(rng, x, vec_t)
-    masked_data_mean, std = solver.sde.marginal_prob(data, vec_t)
+  def update(rng, data, mask, x, t):
+    x, x_mean = solver.update(rng, x, t)
+    mean_coeff = solver.sde.mean_coeff(t)
+    masked_data_mean = batch_mul(mean_coeff, data)
+    std = jnp.sqrt(solver.sde.variance(t))
     rng, step_rng = random.split(rng)
     masked_data = masked_data_mean + batch_mul(random.normal(step_rng, x.shape), std)
     x = x * (1. - mask) + masked_data * mask

@@ -27,7 +27,7 @@ jobs:
           COVERALLS_FLAG_NAME: ${{ matrix.python-version }}
           COVERALLS_PARALLEL: true
         run: |
-          JAX_ENABLE_X64=1 pytest -v --cov=diffusionjax --cov-report term-missing
+          JAX_ENABLE_X64=1 pytest -v --cov=diffusionjax --cov-report term-missing --ignore test/external
           coveralls --service=github
   coveralls:
     name: Finish coverage

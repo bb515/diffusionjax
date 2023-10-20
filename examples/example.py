@@ -114,19 +114,19 @@ def main(argv):
     Returns:
       The empirical log density, as described in the Jupyter notebook
       .. math::
-        \hat{p}_{t}(x)
+        \log\hat{p}_{t}(x)
     """
-    mean_coeff = sde.mean_coeff(t)
+    mean_coeff = sde.mean_coeff(t)  # argument t can be scalar BatchTracer or JaxArray
     mean = mean_coeff * scaler(dataset.train_data)
     std = jnp.sqrt(sde.variance(t))
     potentials = jnp.sum(-(x - mean)**2 / (2 * std**2), axis=1)
     return logsumexp(potentials, axis=0, b=1/num_samples)
 
   # Get a jax grad function, which can be batched with vmap
-  nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
+  nabla_log_hat_pt = jit(vmap(grad(log_hat_pt)))
 
   # Running the reverse SDE with the empirical drift
-  plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_min=-3, area_max=3, fname="empirical score")
+  plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_bounds=[-3., 3], fname="empirical score")
   outer_solver, inner_solver = get_solver(config, sde, nabla_log_hat_pt)
   sampler = get_sampler((5760, config.data.image_size),
                         outer_solver, inner_solver,
@@ -138,7 +138,7 @@ def main(argv):
   plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap empirical score")
 
   # What happens when I perturb the score with a constant?
-  perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1
+  perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1.
   outer_solver, inner_solver = get_solver(config, sde, perturbed_score)
   sampler = get_sampler((5760, config.data.image_size),
                         outer_solver, inner_solver,
@@ -149,34 +149,34 @@ def main(argv):
   plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap bounded perturbation")
 
   if not os.path.exists('/tmp/output0'):
-      time_prev = time.time()
-      params, *_ = train(
-        (config.training.batch_size//jax.local_device_count(), config.data.image_size),
-        config, workdir, dataset)
-      time_delta = time.time() - time_prev
-      print("train time: {}s".format(time_delta))
+    time_prev = time.time()
+    params, *_ = train(
+      (config.training.batch_size//jax.local_device_count(), config.data.image_size),
+      config, dataset, workdir, use_wandb=False)  # Optionally visualize results on weightsandbiases
+    time_delta = time.time() - time_prev
+    print("train time: {}s".format(time_delta))
 
-      # Save params
-      output = serialization.to_bytes(params)
-      f = open('/tmp/output0', 'wb')
-      f.write(output)
+    # Save params
+    output = serialization.to_bytes(params)
+    f = open('/tmp/output0', 'wb')
+    f.write(output)
   else:  # Load pre-trained model parameters
-      params = get_model(config).init(
-        rng,
-        jnp.zeros(
-          (config.training.batch_size//jax.local_device_count(), config.data.image_size)
-        ),
-        jnp.ones((config.training.batch_size//jax.local_device_count(),)))
-      f = open('/tmp/output0', 'rb')
-      output = f.read()
-      params = serialization.from_bytes(params, output)
+    params = get_model(config).init(
+      rng,
+      jnp.zeros(
+        (config.training.batch_size//jax.local_device_count(), config.data.image_size)
+      ),
+      jnp.ones((config.training.batch_size//jax.local_device_count(),)))
+    f = open('/tmp/output0', 'rb')
+    output = f.read()
+    params = serialization.from_bytes(params, output)
 
   # Get trained score
   trained_score = get_score(sde, get_model(config), params, score_scaling=config.training.score_scaling)
-  plot_score(score=trained_score, scaler=scaler, t=0.01, area_min=-3, area_max=3, fname="trained score")
+  plot_score(score=trained_score, scaler=scaler, t=0.01, area_bounds=[-3., 3.], fname="trained score")
   outer_solver, inner_solver = get_solver(config, sde, trained_score)
   sampler = get_sampler(
-    (config.solver.num_outer_steps // num_devices, config.data.image_size),
+    (config.eval.batch_size // num_devices, config.data.image_size),
     outer_solver,
     inner_solver,
     denoise=config.sampling.denoise,
@@ -190,12 +190,12 @@ def main(argv):
     rng, sample_rng = random.split(rng, 2)
 
   q_samples, _ = sampler(sample_rng)
-  q_samples = q_samples.reshape(config.solver.num_outer_steps, config.data.image_size)
+  q_samples = q_samples.reshape(config.eval.batch_size, config.data.image_size)
   plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap trained score")
 
   # Condition on one of the coordinates
   data = jnp.array([-0.5, 0.0])
-  mask = jnp.array([1, 0])
+  mask = jnp.array([1., 0.])
   data = jnp.tile(data, (64, 1))
   data = scaler(data)
   mask = jnp.tile(mask, (64, 1))

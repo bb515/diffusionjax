@@ -11,7 +11,7 @@ from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.models import CNN
-from diffusionjax.sde import VP, UDLangevin
+from diffusionjax.sde import VE, udlangevin
 import numpy as np
 import os
 
@@ -113,7 +113,7 @@ def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
 
 
 def main():
-  num_epochs = 128
+  num_epochs = 200
   rng = random.PRNGKey(2023)
   rng, step_rng = random.split(rng, 2)
   num_samples = 144
@@ -127,43 +127,8 @@ def main():
   samples = samples.reshape(-1, image_size, image_size, num_channels)
   plot_samples_1D(samples[:64], image_size, "samples 1D")
 
-  # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
-  sde = VP(beta_min=0.1, beta_max=25.0)
-
-  def log_hat_pt(x, t):
-    """
-    Empirical distribution score.
-
-    Args:
-      x: One location in $\mathbb{R}^{image_size}$
-      t: time
-    Returns:
-      The empirical log density, as described in the Jupyter notebook
-      .. math::
-        \hat{p}_{t}(x)
-    """
-    mean, std = sde.marginal_prob(samples, t)
-    losses = -(x - mean)**2 / (2 * std**2)
-    # Needs to be reshaped, since x is an image
-    potentials = jnp.sum(losses.reshape((losses.shape[0], -1)), axis=-1)
-    return logsumexp(potentials, axis=0, b=1/num_samples)
-
-  if 0:  # this may take a while
-    # Get a jax grad function, which can be batched with vmap
-    nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
-    # Running the reverse SDE with the empirical score
-    sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt), num_steps=num_steps)), axis_name='batch')
-    q_samples, _ = sampler(rng)
-    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples empirical score")
-    plot_samples_1D(q_samples, image_size, "samples 1D empirical score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap empirical score")
-    # What happens when I perturb the score with a constant?
-    perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
-    rng, step_rng = random.split(rng)
-    sampler = jax.pmap(get_sampler((64, image_size, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score), num_steps=num_steps)), axis_name='batch')
-    q_samples, num_function_evaluations = sampler(rng)
-    plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_min=-3, area_max=3, fname="heatmap bounded perturbation")
+  # Get sde model
+  sde = VE(sigma_min=0.001, sigma_max=3.0)
 
   # Neural network training via score matching
   batch_size = 16
@@ -206,10 +171,11 @@ def main():
   trained_score = get_score(sde, score_model, params, score_scaling=True)
 
   # Get the outer loop of a numerical solver, also known as "predictor"
-  outer_solver = EulerMaruyama(sde.reverse(trained_score), num_steps=num_steps)
+  rsde = sde.reverse(trained_score)
+  outer_solver = EulerMaruyama(rsde, num_steps=num_steps)
 
   # Get the inner loop of a numerical solver, also known as "corrector"
-  inner_solver = Annealed(sde.corrector(UDLangevin, trained_score), num_steps=2, snr=0.01)
+  inner_solver = Annealed(rsde.correct(udlangevin), num_steps=2, snr=0.01)
 
   # pmap across devices. pmap assumes devices are identical model. If this is not the case,
   # use the devices argument in pmap

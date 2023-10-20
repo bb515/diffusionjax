@@ -2,6 +2,7 @@
 import jax
 import jax.numpy as jnp
 import jax.random as random
+from jax import vmap
 from diffusionjax.utils import batch_mul
 import abc
 
@@ -18,6 +19,8 @@ class Solver(abc.ABC):
       epsilon: A small float 0. < `epsilon` << 1. The SDE or ODE are integrated to `epsilon` to avoid numerical issues.
     """
     self.num_steps = num_steps
+
+    # Handle four different ways of specifying the discretisation step size, its terminal time and its total time.
     if dt is not None:
       self.t1 = dt * num_steps
       if epsilon is not None:
@@ -28,7 +31,7 @@ class Solver(abc.ABC):
         self.dt = step
       else:
         # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
-        step = jnp.linspace(0, self.t1, num_steps + 1)
+        ts, step = jnp.linspace(0, self.t1, num_steps + 1, retstep=True)
         self.ts = ts[1:].reshape(-1, 1)
         assert step == dt
         self.dt = step
@@ -47,7 +50,7 @@ class Solver(abc.ABC):
 
   @abc.abstractmethod
   def update(self, rng, x, t):
-    r"""Return the update of the state and any auxilliary values.
+    """Return the update of the state and any auxilliary values.
 
     Args:
       rng: A JAX random state.
@@ -96,7 +99,7 @@ class Annealed(Solver):
     super().__init__(num_steps, dt=dt, epsilon=epsilon)
     self.sde = sde
     self.snr = snr
-    self.prior = sde.prior
+    # self.prior = sde.prior
 
   def update(self, rng, x, t):
     grad = self.sde.score(x, t)
@@ -129,11 +132,12 @@ class DDPM(Solver):
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-  def get_estimate_x_0(self, shape, observation_map):
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
     def estimate_x_0(x, t, timestep):
       m = self.sqrt_alphas_cumprod[timestep]
       v = self.sqrt_1m_alphas_cumprod[timestep]**2
-      x = x.reshape(shape)
+      x = x.reshape(shape[1:])
       x = jnp.expand_dims(x, axis=0)
       t = jnp.expand_dims(t, axis=0)
       s = self.score(x, t)
@@ -141,6 +145,17 @@ class DDPM(Solver):
       x = x.flatten()
       x_0 = (x + v * s) / m
       return observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(x, t, timestep):
+      m = self.sqrt_alphas_cumprod[timestep]
+      v = self.sqrt_1m_alphas_cumprod[timestep]**2
+      s = self.score(x, t)
+      x_0 = batch_mul(x + batch_mul(v, s), 1. / m)
+      return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
   def prior(self, rng, shape):
@@ -177,6 +192,7 @@ class DDPM(Solver):
 
 class SMLD(Solver):
   """SMLD(NCSN) Markov Chain using Ancestral sampling."""
+
   def __init__(self, score, num_steps=1000, dt=None, epsilon=None, sigma_min=0.01, sigma_max=378.):
     super().__init__(num_steps, dt, epsilon)
     self.score = score
@@ -188,7 +204,8 @@ class SMLD(Solver):
                      self.num_steps))
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
 
-  def get_estimate_x_0(self, shape, observation_map):
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
     def estimate_x_0(x, t, timestep):
       v = self.discrete_sigmas[timestep]**2
       x = x.reshape(shape)
@@ -198,6 +215,15 @@ class SMLD(Solver):
       x = x.flatten()
       s = s.flatten()
       x_0 = x + v * s
+      return observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
+  def get_estimate_x_0(self, observation_map):
+
+    def estimate_x_0(x, t, timestep):
+      v = self.discrete_sigmas[timestep]**2
+      s = self.score(x, t)
+      x_0 = x + batch_mul(v, s)
       return observation_map(x_0), (s, x_0)
     return estimate_x_0
 
@@ -229,10 +255,11 @@ class SMLD(Solver):
 
 class DDIMVP(Solver):
   """DDIM Markov chain. For the DDPM Markov Chain or VP SDE."""
+
   def __init__(self, model, eta=0.0, num_steps=1000, dt=None, epsilon=None, beta_min=0.1, beta_max=20.0):
     """
     Args:
-        model: DDIM parameterizes the `\epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
+        model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
         eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVP.
     """
     super().__init__(num_steps, dt, epsilon)
@@ -250,11 +277,12 @@ class DDIMVP(Solver):
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-  def get_estimate_x_0(self, shape, observation_map):
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
     def estimate_x_0(x, t, timestep):
       m = self.sqrt_alphas_cumprod[timestep]
       sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
-      x = x.reshape(shape)
+      # x = x.reshape(shape)
       x = jnp.expand_dims(x, axis=0)
       t = jnp.expand_dims(t, axis=0)
       epsilon = self.model(x, t)
@@ -262,6 +290,17 @@ class DDIMVP(Solver):
       x = x.flatten()
       x_0 = (x - sqrt_1m_alpha * epsilon) / m
       return observation_map(x_0), (epsilon, x_0)
+    return estimate_x_0
+
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(x, t, timestep):
+      m = self.sqrt_alphas_cumprod[timestep]
+      sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
+      epsilon = self.model(x, t)
+      x_0 = batch_mul(x - batch_mul(sqrt_1m_alpha, epsilon), 1. / m)
+      return batch_observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
   def prior(self, rng, shape):
@@ -295,12 +334,12 @@ class DDIMVP(Solver):
 
 
 class DDIMVE(Solver):
-  """DDIM Markov chain. For the SMLD Markov Chain or VE SDE.
-  """
+  """DDIM Markov chain. For the SMLD Markov Chain or VE SDE."""
+
   def __init__(self, model, eta=0.0, num_steps=1000, dt=None, epsilon=None, sigma_min=0.01, sigma_max=378.):
     """
     Args:
-        model: DDIM parameterizes the `\epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
+        model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
         eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVE.
     """
     super().__init__(num_steps, dt, epsilon)
@@ -314,7 +353,8 @@ class DDIMVE(Solver):
                     self.num_steps))
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
 
-  def get_estimate_x_0(self, shape, observation_map):
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
     def estimate_x_0(x, t, timestep):
       std = self.discrete_sigmas[timestep]
       x = x.reshape(shape)
@@ -324,6 +364,17 @@ class DDIMVE(Solver):
       epsilon = epsilon.flatten()
       x = x.flatten()
       x_0 = x - std * epsilon
+      return observation_map(x_0), (epsilon, x_0)
+    return estimate_x_0
+
+  def get_estimate_x_0(self, observation_map):
+
+    def estimate_x_0(x, t, timestep):
+      std = self.discrete_sigmas[timestep]
+      epsilon = self.model(x, t)
+      epsilon = epsilon.flatten()
+      x = x.flatten()
+      x_0 = x - batch_mul(std, epsilon)
       return observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 

@@ -6,7 +6,7 @@ from jax.scipy.special import logsumexp
 from flax import serialization
 from functools import partial
 import matplotlib.pyplot as plt
-from diffusionjax.plot import plot_score, plot_heatmap, plot_animation
+from diffusionjax.plot import plot_score, plot_heatmap
 from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
 from diffusionjax.solvers import EulerMaruyama
@@ -125,35 +125,6 @@ def main():
   # Get sde model
   sde = VE(sigma_min=0.01, sigma_max=3.0)
 
-  def log_hat_pt_tmp(x, t):
-    """Empirical distribution score.
-
-    Args:
-      x: One location in $\mathbb{R}^{image_size}$
-      t: time
-    Returns:
-      The empirical log density, as described in the Jupyter notebook
-      .. math::
-        \log \hat{p}_{t}(x)
-    """
-    mean, std = sde.marginal_prob(samples[:, [0, 1], 0], t)
-    potentials = jnp.sum(-(x - mean)**2 / (2 * std**2), axis=1)
-    return logsumexp(potentials, axis=0, b=1/num_samples)
-
-  def log_hat_pt(x, t):
-    """Empirical distribution score.
-
-    Returns:
-      The empirical log density, as described in the Jupyter notebook
-      .. math::
-        \log \hat{p}_{t}(x)
-    """
-    mean, std = sde.marginal_prob(samples, t)
-    losses = -(x - mean)**2 / (2 * std**2)
-    # Needs to be reshaped, since x is an image
-    potentials = jnp.sum(losses.reshape((losses.shape[0], -1)), axis=-1)
-    return logsumexp(potentials, axis=0, b=1/num_samples)
-
   def nabla_log_pt(x, t):
     """Score.
 
@@ -168,42 +139,6 @@ def main():
     x = x.flatten()
     score = - jnp.linalg.solve(m_t**2 * C + v_t * jnp.eye(x_shape[0]), x)
     return score.reshape(x_shape)
-
-  if 0:  # This may take a while
-    # Get a jax grad function, which can be batched with vmap
-    nabla_log_hat_pt_tmp = jit(vmap(grad(log_hat_pt_tmp), in_axes=(0, 0), out_axes=(0)))
-    nabla_log_hat_pt = jit(vmap(grad(log_hat_pt), in_axes=(0, 0), out_axes=(0)))
-
-    # Running the reverse SDE with the empirical score
-    plot_score(score=nabla_log_hat_pt_tmp, scaler=lambda x:x, t=0.01, area_min=-3, area_max=3, fname="empirical score")
-    sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_hat_pt)))
-    q_samples, _ = sampler(rng)
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples empirical score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap empirical score")
-
-    # What happens when I perturb the score with a constant?
-    perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
-    rng, step_rng = random.split(rng)
-    sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
-    q_samples, _ = sampler(rng)
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap bounded perturbation")
-
-    nabla_log_pt = jit(vmap(nabla_log_pt, in_axes=(0, 0), out_axes=(0)))
-
-    # Running the reverse SDE with the true score
-    sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(nabla_log_pt)))
-    q_samples, num_function_evaluations = sampler(rng)
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples true score")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap true score")
-
-    # What happens when I perturb the score with a constant?
-    perturbed_score = lambda x, t: nabla_log_pt(x, t) + 10.0 * jnp.ones(jnp.shape(x))
-    sampler = get_sampler((64, image_size, num_channels), EulerMaruyama(sde.reverse(perturbed_score)))
-    rng, sample_rng = random.split(rng, 2)
-    q_samples, _ = sampler(sample_rng)
-    plot_samples_1D(q_samples, image_size=image_size, fname="samples true bounded perturbation")
-    plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap true bounded perturbation")
 
   # Neural network training via score matching
   batch_size = 64
@@ -257,21 +192,11 @@ def main():
   plot_samples_1D(q_samples[:64], image_size=image_size, fname="samples trained score")
   plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap trained score")
 
-  if 0:
-    frames = 100
-    fig, ax = plt.subplots()
-    def animate(i, ax):
-      ax.clear()
-      plot_score_ax_sample(
-        ax, q_samples[0], trained_score, t=1 - (i / frames), area_min=-5, area_max=5, fname="trained score")
-    # Plot animation of the trained score over time
-    plot_animation(fig, ax, animate, frames, "trained_score")
-
   # Condition on one of the coordinates
   data = jnp.zeros((image_size, num_channels))
-  data = data.at[[0, -1], 0].set([-1.0, 1.0])
-  mask = jnp.zeros((image_size, num_channels), dtype=int)
-  mask = mask.at[[0, -1], 0].set([1, 1])
+  data = data.at[[0, -1], 0].set([-1., 1.])
+  mask = jnp.zeros((image_size, num_channels), dtype=float)
+  mask = mask.at[[0, -1], 0].set([1., 1.])
   data = jnp.tile(data, (5, 1, 1))
   mask = jnp.tile(mask, (5, 1, 1))
 
