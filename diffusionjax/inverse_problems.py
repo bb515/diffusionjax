@@ -24,11 +24,11 @@ def get_projection_sampler(solver, inverse_scaler=None, denoise=True, stack_samp
     A projection sampler function.
   """
   if inverse_scaler is None:
-    inverse_scaler = lambda x: x
+    def inverse_scaler(x): return x
   vmap_inverse_scaler = vmap(inverse_scaler)
 
   @typed
-  def update(rng: PRNGKeyArray, data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], coeff: float) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(rng: PRNGKeyArray, data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], coeff: float) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     mean_coeff = solver.sde.mean_coeff(t)
     data_mean = batch_mul(mean_coeff, data)
     std = jnp.sqrt(solver.sde.variance(t))
@@ -87,11 +87,11 @@ def get_inpainter(solver, inverse_scaler=None, stack_samples=False):
     An inpainting function.
   """
   if inverse_scaler is None:
-    inverse_scaler = lambda x: x
+    def inverse_scaler(x): return x
   vmap_inverse_scaler = vmap(inverse_scaler)
 
   @typed
-  def update(rng: PRNGKeyArray, data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(rng: PRNGKeyArray, data: Float[Array, "batch_size ..."], mask: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     x, x_mean = solver.update(rng, x, t)
     mean_coeff = solver.sde.mean_coeff(t)
     masked_data_mean = batch_mul(mean_coeff, data)

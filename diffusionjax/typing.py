@@ -5,4 +5,4 @@ import typeguard
 
 
 Shape = Tuple[int, ...]
-typed = lambda fn: jaxtyping.jaxtyped(typeguard.typechecked(fn))
+def typed(fn): return jaxtyping.jaxtyped(typeguard.typechecked(fn))

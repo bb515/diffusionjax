@@ -76,12 +76,11 @@ class State:
 def get_sde(config):
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
-    sde = sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    return sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
   elif config.training.sde.lower()=='vesde':
-    sde = sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    return sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
-  return sde
 
 
 def get_optimizer(config):
@@ -117,12 +116,11 @@ def get_optimizer(config):
 
 def get_model(config):
   if config.model.name.lower()=='mlp':
-    model = MLP()
+    return MLP()
   elif config.model.name.lower()=='cnn':
-    model = CNN()
+    return CNN()
   else:
     raise NotImplementedError(f"Model {config.model.name} unknown.")
-  return model
 
 
 def get_solver(config, sde, score):
@@ -147,18 +145,17 @@ def get_ddim_chain(config, model):
       model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
   """
   if config.solver.outer_solver.lower()=="ddimvp":
-    outer_solver = DDIMVP(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
+    return DDIMVP(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
                           dt=config.solver.dt, epsilon=config.solver.epsilon,
                           beta_min=config.model.beta_min,
                           beta_max=config.model.beta_max)
   elif config.solver.outer_solver.lower()=="ddimve":
-    outer_solver = DDIMVE(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
+    return DDIMVE(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
                           dt=config.solver.dt, epsilon=config.solver.epsilon,
                           sigma_min=config.model.sigma_min,
                           sigma_max=config.model.sigma_max)
   else:
     raise NotImplementedError(f"DDIM Chain {config.solver.outer_solver} unknown.")
-  return outer_solver
 
 
 def get_markov_chain(config, score):
@@ -167,18 +164,17 @@ def get_markov_chain(config, score):
     score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
   """
   if config.solver.outer_solver.lower()=="ddpm":
-    outer_solver = DDPM(score, num_steps=config.solver.num_outer_steps,
+    return DDPM(score, num_steps=config.solver.num_outer_steps,
                         dt=config.solver.dt, epsilon=config.solver.epsilon,
                         beta_min=config.model.beta_min,
                         beta_max=config.model.beta_max)
   elif config.solver.outer_solver.lower()=="smld":
-    outer_solver = SMLD(score, num_steps=config.solver.num_outer_steps,
+    return SMLD(score, num_steps=config.solver.num_outer_steps,
                         dt=config.solver.dt, epsilon=config.solver.epsilon,
                         sigma_min=config.model.sigma_min,
                         sigma_max=config.model.sigma_max)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
-  return outer_solver
 
 
 def numpy_collate(batch):
@@ -223,19 +219,19 @@ class NumpyLoader(DataLoader):
       collate_fn = partial(
         jit_collate, config.training.n_jitted_steps, config.training.batch_size)
     else:
-      collate_fn = numpy_collate
+      collate_fn = numpy_collate  # type: ignore
 
-    super(self.__class__, self).__init__(dataset,
-                                         batch_size=prod_batch_dims,
-                                         shuffle=shuffle,
-                                         sampler=sampler,
-                                         batch_sampler=batch_sampler,
-                                         num_workers=num_workers,
-                                         collate_fn=collate_fn,
-                                         pin_memory=pin_memory,
-                                         drop_last=drop_last,
-                                         timeout=timeout,
-                                         worker_init_fn=worker_init_fn)
+    super().__init__(dataset,
+                     batch_size=prod_batch_dims,
+                     shuffle=shuffle,
+                     sampler=sampler,
+                     batch_sampler=batch_sampler,
+                     num_workers=num_workers,
+                     collate_fn=collate_fn,
+                     pin_memory=pin_memory,
+                     drop_last=drop_last,
+                     timeout=timeout,
+                     worker_init_fn=worker_init_fn)
 
 
 def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
@@ -252,7 +248,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   train_dataloader = NumpyLoader(config, dataset)
   eval_dataloader = NumpyLoader(config, dataset)
 
-  jax.default_device = jax.devices()[0]
+  jax.default_device = jax.devices()[0]  # type: ignore
   # Tip: use `export CUDA_VISIBLE_DEVICES` to restrict the devices visible to jax
   # ... devices (GPUs/TPUs) must be all the same model for pmap to work
   num_devices =  int(jax.local_device_count())
@@ -408,13 +404,13 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
         # Execute one training step
         if config.training.pmap:
           rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
-          next_rng = jnp.asarray(next_rng)
+          next_rng = jnp.asarray(next_rng)  # type: ignore
         else:
           rng, next_rng = jax.random.split(rng, num=2)
 
         (_, params, opt_state), loss_train = train_step(
           (next_rng, state.params, state.opt_state), batch)
-        state = state.replace(opt_state=opt_state, params=params)
+        state = state.replace(opt_state=opt_state, params=params)  # type: ignore
 
         if config.training.pmap:
           loss_train = flax_utils.unreplicate(loss_train).mean()  # returns a single instance of replicated loss array
@@ -444,7 +440,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
           eval_batch = jax.tree_map(lambda x: scaler(x), next(eval_iter))
           if config.training.pmap:
             rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
-            next_rng = jnp.asarray(next_rng)
+            next_rng = jnp.asarray(next_rng)  # type: ignore
           else:
             rng, next_rng = jax.random.split(rng, num=2)
           (_, _, _), loss_eval = eval_step(
@@ -487,7 +483,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
             if config.training.pmap:
               sampler = jax.pmap(sampler, axis_name='batch')
               rng, *sample_rng = random.split(rng, 1 + jax.local_device_count())
-              sample_rng = jnp.asarray(sample_rng)
+              sample_rng = jnp.asarray(sample_rng)  # type: ignore
             else:
               rng, sample_rng = random.split(rng, 2)
 
@@ -511,13 +507,13 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
     if jax.process_index()==0 and i_epoch % config.training.log_epoch_freq==0:
       mean_losses = mean_losses.at[i_epoch].set(mean_loss)
       if use_wandb:
-        logging.info("step {:d}, mean_loss {:.2e}".format(step, mean_loss[0]))
+        logging.info("step {:d}, mean_loss {:.2e}".format(int(step), float(mean_loss[0])))
         wandb.log({"train-loss": mean_loss})
 
   if workdir and use_wandb:
     artifact = wandb.Artifact(name='checkpoint', type='checkpoint')
     artifact.add_dir(local_path=checkpoint_dir)
-    run.log_artifact(artifact)
+    run.log_artifact(artifact)  # type: ignore
 
   # Get the model and do test dataset
   if config.training.pmap:

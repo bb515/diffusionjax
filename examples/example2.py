@@ -11,7 +11,7 @@ from diffusionjax.plot import plot_samples, plot_heatmap
 from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.solvers import EulerMaruyama, Annealed
 from diffusionjax.models import CNN
-from diffusionjax.sde import VP, UDLangevin
+from diffusionjax.sde import VE, udlangevin
 import numpy as np
 import os
 
@@ -113,7 +113,7 @@ def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
 
 
 def main():
-  num_epochs = 128
+  num_epochs = 200
   rng = random.PRNGKey(2023)
   rng, step_rng = random.split(rng, 2)
   num_samples = 144
@@ -127,8 +127,8 @@ def main():
   samples = samples.reshape(-1, image_size, image_size, num_channels)
   plot_samples_1D(samples[:64], image_size, "samples 1D")
 
-  # Get sde model, variance preserving (VP) a.k.a. time-changed Ohrnstein Uhlenbeck (OU)
-  sde = VP(beta_min=0.1, beta_max=25.0)
+  # Get sde model
+  sde = VE(sigma_min=0.001, sigma_max=3.0)
 
   # Neural network training via score matching
   batch_size = 16
@@ -171,10 +171,11 @@ def main():
   trained_score = get_score(sde, score_model, params, score_scaling=True)
 
   # Get the outer loop of a numerical solver, also known as "predictor"
-  outer_solver = EulerMaruyama(sde.reverse(trained_score), num_steps=num_steps)
+  rsde = sde.reverse(trained_score)
+  outer_solver = EulerMaruyama(rsde, num_steps=num_steps)
 
   # Get the inner loop of a numerical solver, also known as "corrector"
-  inner_solver = Annealed(sde.corrector(UDLangevin, trained_score), num_steps=2, snr=0.01)
+  inner_solver = Annealed(rsde.correct(udlangevin), num_steps=2, snr=0.01)
 
   # pmap across devices. pmap assumes devices are identical model. If this is not the case,
   # use the devices argument in pmap

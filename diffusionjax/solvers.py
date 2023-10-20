@@ -2,10 +2,12 @@
 import jax
 import jax.numpy as jnp
 import jax.random as random
+from jax import vmap
 from diffusionjax.utils import batch_mul
 import abc
 from diffusionjax.typing import typed, Shape
 from jaxtyping import Array, Float, PRNGKeyArray
+from typing import Any
 
 
 class Solver(abc.ABC):
@@ -32,7 +34,7 @@ class Solver(abc.ABC):
         self.dt = step
       else:
         # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
-        step = jnp.linspace(0, self.t1, num_steps + 1)
+        ts, step = jnp.linspace(0, self.t1, num_steps + 1, retstep=True)
         self.ts = ts[1:].reshape(-1, 1)
         assert step == dt
         self.dt = step
@@ -50,7 +52,7 @@ class Solver(abc.ABC):
         self.dt = step
 
   @abc.abstractmethod
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     """Return the update of the state and any auxilliary values.
 
     Args:
@@ -78,7 +80,7 @@ class EulerMaruyama(Solver):
     self.prior = sde.prior
 
   @typed
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     drift, diffusion = self.sde.sde(x, t)
     f = drift * self.dt
     G = diffusion * jnp.sqrt(self.dt)
@@ -101,10 +103,10 @@ class Annealed(Solver):
     super().__init__(num_steps, dt=dt, epsilon=epsilon)
     self.sde = sde
     self.snr = snr
-    self.prior = sde.prior
+    # self.prior = sde.prior
 
   @typed
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     grad = self.sde.score(x, t)
     grad_norm = jnp.linalg.norm(
       grad.reshape((grad.shape[0], -1)), axis=-1).mean()
@@ -135,13 +137,12 @@ class DDPM(Solver):
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-  def get_estimate_x_0(self, shape, observation_map):
+  def get_estimate_x_0_vmap(self, shape, observation_map):
 
-    @typed
-    def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Float[Array, "batch_size ..."]) -> [Float[Array, "batch_size ..."] [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:
+    def estimate_x_0(x: Float[Array, "..."], t: Any, timestep: Any) -> [Float[Array, "..."], [Float[Array, "..."], Float[Array, "..."]]]:  # type: ignore
       m = self.sqrt_alphas_cumprod[timestep]
       v = self.sqrt_1m_alphas_cumprod[timestep]**2
-      x = x.reshape(shape)
+      x = x.reshape(shape[1:])
       x = jnp.expand_dims(x, axis=0)
       t = jnp.expand_dims(t, axis=0)
       s = self.score(x, t)
@@ -151,12 +152,24 @@ class DDPM(Solver):
       return observation_map(x_0), (s, x_0)
     return estimate_x_0
 
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    @typed
+    def estimate_x_0(x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Any) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
+      m = self.sqrt_alphas_cumprod[timestep]
+      v = self.sqrt_1m_alphas_cumprod[timestep]**2
+      s = self.score(x, t)
+      x_0 = batch_mul(x + batch_mul(v, s), 1. / m)
+      return batch_observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
   @typed
   def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
     return random.normal(rng, shape)
 
   @typed
-  def posterior(self, score: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], timestep: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def posterior(self, score: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], timestep: Any) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     beta = self.discrete_betas[timestep]
     # As implemented by Song
     # https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8cccd935068cd9c657318fbc6ce4c/sampling.py#L237C5-L237C79
@@ -177,7 +190,7 @@ class DDPM(Solver):
     return x_mean, std
 
   @typed
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     score = self.score(x, t)
     timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
     x_mean, std = self.posterior(score, x, timestep)
@@ -200,9 +213,9 @@ class SMLD(Solver):
                      self.num_steps))
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
 
-  def get_estimate_x_0(self, shape, observation_map):
-    @typed
-    def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Float[Array, "batch_size ..."]) -> [Float[Array, "batch_size ..."] [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
+    def estimate_x_0(x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Any) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
       v = self.discrete_sigmas[timestep]**2
       x = x.reshape(shape)
       x = jnp.expand_dims(x, axis=0)
@@ -214,12 +227,22 @@ class SMLD(Solver):
       return observation_map(x_0), (s, x_0)
     return estimate_x_0
 
+  def get_estimate_x_0(self, observation_map):
+
+    @typed
+    def estimate_x_0(x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Any) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
+      v = self.discrete_sigmas[timestep]**2
+      s = self.score(x, t)
+      x_0 = x + batch_mul(v, s)
+      return observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
   @typed
   def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
     return random.normal(rng, shape) * self.sigma_max
 
   @typed
-  def posterior(self, score: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], timestep: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def posterior(self, score: Float[Array, "batch_size ..."], x: Float[Array, "batch_size ..."], timestep: Any) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     sigma = self.discrete_sigmas[timestep]
     sigma_prev = self.discrete_sigmas_prev[timestep]
 
@@ -234,7 +257,7 @@ class SMLD(Solver):
     return x_mean, std
 
   @typed
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
     score = self.score(x, t)
     x_mean, std = self.posterior(score, x, timestep)
@@ -267,12 +290,12 @@ class DDIMVP(Solver):
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-  def get_estimate_x_0(self, shape, observation_map):
-    @typed
-    def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Float[Array, "batch_size ..."]) -> [Float[Array, "batch_size ..."] [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
+    def estimate_x_0(x: Float[Array, "..."], t: Any, timestep: Any) -> [Float[Array, "..."], [Float[Array, "..."], Float[Array, "..."]]]:  # type: ignore
       m = self.sqrt_alphas_cumprod[timestep]
       sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
-      x = x.reshape(shape)
+      # x = x.reshape(shape)
       x = jnp.expand_dims(x, axis=0)
       t = jnp.expand_dims(t, axis=0)
       epsilon = self.model(x, t)
@@ -282,12 +305,23 @@ class DDIMVP(Solver):
       return observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(x: Float[Array, "..."], t: Any, timestep: Any) -> [Float[Array, "..."], [Float[Array, "..."], Float[Array, "..."]]]:  # type: ignore
+      m = self.sqrt_alphas_cumprod[timestep]
+      sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
+      epsilon = self.model(x, t)
+      x_0 = batch_mul(x - batch_mul(sqrt_1m_alpha, epsilon), 1. / m)
+      return batch_observation_map(x_0), (epsilon, x_0)
+    return estimate_x_0
+
   @typed
   def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
     return random.normal(rng, shape)
 
   @typed
-  def posterior(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def posterior(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     # # As implemented by DPS2022
     # https://github.com/DPS2022/diffusion-posterior-sampling/blob/effbde7325b22ce8dc3e2c06c160c021e743a12d/guided_diffusion/gaussian_diffusion.py#L373
     # and as written in https://arxiv.org/pdf/2010.02502.pdf
@@ -308,7 +342,7 @@ class DDIMVP(Solver):
     return x_mean, std
 
   @typed
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     x_mean, std = self.posterior(x, t)
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
@@ -335,9 +369,10 @@ class DDIMVE(Solver):
                     self.num_steps))
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
 
-  def get_estimate_x_0(self, shape, observation_map):
+  def get_estimate_x_0_vmap(self, shape, observation_map):
+
     @typed
-    def estimate_x_0(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Float[Array, "batch_size ..."]) -> [Float[Array, "batch_size ..."] [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:
+    def estimate_x_0(x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Any) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
       std = self.discrete_sigmas[timestep]
       x = x.reshape(shape)
       x = jnp.expand_dims(x, axis=0)
@@ -349,12 +384,24 @@ class DDIMVE(Solver):
       return observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
+  def get_estimate_x_0(self, observation_map):
+
+    @typed
+    def estimate_x_0(x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"], timestep: Any) -> [Float[Array, "batch_size ..."], [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]]:  # type: ignore
+      std = self.discrete_sigmas[timestep]
+      epsilon = self.model(x, t)
+      epsilon = epsilon.flatten()
+      x = x.flatten()
+      x_0 = x - batch_mul(std, epsilon)
+      return observation_map(x_0), (epsilon, x_0)
+    return estimate_x_0
+
   @typed
-  def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:
+  def prior(self, rng: PRNGKeyArray, shape: Shape) -> Float[Array, "batch_size ..."]:  # type: ignore
     return random.normal(rng, shape) * self.sigma_max
 
   @typed
-  def posterior(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def posterior(self, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
     epsilon = self.model(x, t)
     sigma = self.discrete_sigmas[timestep]
@@ -374,7 +421,7 @@ class DDIMVE(Solver):
     return x_mean, std
 
   @typed
-  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:
+  def update(self, rng: PRNGKeyArray, x: Float[Array, "batch_size ..."], t: Float[Array, "batch_size"]) -> [Float[Array, "batch_size ..."], Float[Array, "batch_size ..."]]:  # type: ignore
     x_mean, std = self.posterior(x, t)
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)

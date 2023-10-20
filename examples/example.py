@@ -116,8 +116,7 @@ def main(argv):
       .. math::
         \log\hat{p}_{t}(x)
     """
-    t = jnp.expand_dims(t, axis=0)  # diffusionjax.sde methods expect JAX arrays, not float
-    mean_coeff = sde.mean_coeff(t)
+    mean_coeff = sde.mean_coeff(t)  # argument t can be scalar BatchTracer or JaxArray
     mean = mean_coeff * scaler(dataset.train_data)
     std = jnp.sqrt(sde.variance(t))
     potentials = jnp.sum(-(x - mean)**2 / (2 * std**2), axis=1)
@@ -153,7 +152,7 @@ def main(argv):
     time_prev = time.time()
     params, *_ = train(
       (config.training.batch_size//jax.local_device_count(), config.data.image_size),
-      config, dataset, workdir, wandb=False)  # Optionally visualize results on weightsandbiases
+      config, dataset, workdir, use_wandb=False)  # Optionally visualize results on weightsandbiases
     time_delta = time.time() - time_prev
     print("train time: {}s".format(time_delta))
 

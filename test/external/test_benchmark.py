@@ -1,4 +1,5 @@
 """Benchmark of example.py training time, sample time and regression test of summary statistic of samples."""
+import pytest
 import jax
 from jax import jit, vmap, grad
 import jax.random as random

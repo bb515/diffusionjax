@@ -11,8 +11,28 @@ from jaxtyping import Array, Float
 
 
 @typed
+def batch_linalg_solve_A(A: Float[Array, "..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+  return vmap(lambda b: jnp.linalg.solve(A, b))(b)
+
+
+@typed
+def batch_linalg_solve(A: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+  return vmap(jnp.linalg.solve)(A, b)
+
+
+@typed
 def batch_mul(a: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
   return vmap(lambda a, b: a * b)(a, b)
+
+
+@typed
+def batch_mul_A(a: Float[Array, "..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+  return vmap(lambda b: a * b)(b)
+
+
+@typed
+def batch_matmul(A: Float[Array, "batch_size ..."], b: Float[Array, "batch_size ..."]) -> Float[Array, "batch_size ..."]:
+  return vmap(lambda A, b: A @ b)(A, b)
 
 
 def errors(t, sde, score, rng, data, likelihood_weighting=True):
@@ -55,7 +75,7 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
   """
   reduce_op = jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
   if pointwise_t:
-    def loss(t, params, rng, data):
+    def pointwise_loss(t, params, rng, data):
       n_batch = data.shape[0]
       ts = jnp.ones((n_batch,)) * t
       score = get_score(sde, model, params, score_scaling)
@@ -66,6 +86,7 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
         g2 = sde.sde(jnp.zeros_like(data), ts)[1]**2
         losses = losses * g2
       return jnp.mean(losses)
+    return pointwise_loss
   else:
     def loss(params, rng, data):
       rng, step_rng = random.split(rng)
@@ -78,7 +99,7 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
         g2 = sde.sde(jnp.zeros_like(data), ts)[1]**2
         losses = losses * g2
       return jnp.mean(losses)
-  return loss
+    return loss
 
 
 def get_score(sde, model, params, score_scaling):
