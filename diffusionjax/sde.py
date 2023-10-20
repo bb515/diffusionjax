@@ -1,56 +1,31 @@
 """SDE class."""
-import abc
 import jax.numpy as jnp
-from jax import random
+from jax import random, vmap
 from diffusionjax.utils import batch_mul
-from jaxtyping import Array, Float
 
 
-class SDE(abc.ABC):
-  """SDE abstract class. Functions are designed for a mini-batch of inputs."""
+def udlangevin(score, x, t):
+  drift = -score(x, t)
+  diffusion = jnp.ones(x.shape) * jnp.sqrt(2)
+  return drift, diffusion
 
-  def __init__(self):
-    """Construct an SDE."""
 
-  @abc.abstractmethod
-  # def sde(self, x: Float[Array, 'batch ...'], t: Float) -> [Float[Array], Float[Array]]:
+class RSDE:
+  """Reverse SDE class."""
+  def __init__(self, score, forward_sde, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.score = score
+    self.forward_sde = forward_sde
+
   def sde(self, x, t):
-    """Return the drift and diffusion coefficients of the SDE.
-
-    Args:
-      x: a JAX tensor of the state
-      t: JAX float of the time
-
-    Returns:
-      drift: drift function of the forward SDE
-      diffusion: dispersion function of the forward SDE
-    """
-
-  class RSDE:
-    """Reverse SDE class."""
-    def __init__(self, score, forward_sde):
-      self.score = score
-      self.forward_sde = forward_sde
-
-    # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
-    def sde(self, x: Array, t: Float):
-      drift, diffusion = self.forward_sde(x, t)
-      drift = -drift + batch_mul(diffusion**2, self.score(x, t))
-      return drift, diffusion
-
-  def corrector(self, Corrector, score):
-
-    class CSDE(Corrector, self.__class__):
-      def __init__(self):
-        super().__init__(score)
-
-    return CSDE()
+    drift, diffusion = self.forward_sde(x, t)
+    drift = -drift + batch_mul(diffusion**2, self.score(x, t))
+    return drift, diffusion
 
 
-class ODLangevin(SDE):
+class ODLangevin:
   """Overdamped langevin SDE."""
   def __init__(self, score, damping=2e0, L=1.0):
-    super().__init__()
     self.score = score
     self.damping = damping
     self.L = L
@@ -61,28 +36,19 @@ class ODLangevin(SDE):
     return drift, diffusion
 
 
-class UDLangevin(SDE):
+class UDLangevin:
   """Underdamped Langevin SDE."""
   def __init__(self, score):
-    super().__init__()
     self.score = score
-
-  def sde(self, x, t):
-    drift = -self.score(x, t)
-    diffusion = jnp.ones(x.shape) * jnp.sqrt(2)
-    return drift, diffusion
+    self.sde = lambda x, t: udlangevin(self.score, x, t)
 
 
-class VE(SDE):
-  """Variance exploding (VE) SDE, also known as diffusion process
-  with a time dependent diffusion coefficient.
-  """
-  def __init__(self, sigma_min=0.1, sigma_max=20.0):
-    super().__init__()
+class VE:
+  """Variance exploding (VE) SDE, a.k.a. diffusion process with a time dependent diffusion coefficient."""
+  def __init__(self, sigma_min=0.01, sigma_max=378.):
     self.sigma_min = sigma_min
     self.sigma_max = sigma_max
 
-  # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
   def sde(self, x, t):
     sigma = self.sigma_min * (self.sigma_max / self.sigma_min)**t
     drift = jnp.zeros_like(x)
@@ -103,25 +69,11 @@ class VE(SDE):
     return random.normal(rng, shape) * self.sigma_max
 
   def reverse(self, score):
-    fwd_sde = self.sde
+    forward_sde = self.sde
     sigma_min = self.sigma_min
     sigma_max = self.sigma_max
 
-    class RVE(self.RSDE, self.__class__):
-      def __init__(self):
-        super().__init__(score, fwd_sde)
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-
-      def get_estimate_x_0(self, observation_map):
-        def estimate_x_0(x, t):
-          v_t = self.variance(t)
-          s = self.score(x, t)
-          x_0 = x + v_t * s
-          return observation_map(x_0), (s, x_0)
-        return estimate_x_0
-
-    return RVE()
+    return RVE(score, forward_sde, sigma_min, sigma_max)
 
   def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
@@ -138,15 +90,12 @@ class VE(SDE):
     return self.variance(t)
 
 
-class VP(SDE):
-  """Variance preserving (VP) SDE, also known
-  as time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
-  def __init__(self, beta_min=0.1, beta_max=20.0):
-    super().__init__()
+class VP:
+  """Variance preserving (VP) SDE, a.k.a. time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
+  def __init__(self, beta_min=0.1, beta_max=20.):
     self.beta_min = beta_min
     self.beta_max = beta_max
 
-  # def sde(self, x: Float[Array], t: Float) -> [Float[Array], Float[Array]]:
   def sde(self, x, t):
     beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
     drift = -0.5 * batch_mul(beta_t, x)
@@ -169,23 +118,7 @@ class VP(SDE):
     fwd_sde = self.sde
     beta_min = self.beta_min
     beta_max = self.beta_max
-
-    class RVP(self.RSDE, self.__class__):
-      def __init__(self):
-        super().__init__(score, fwd_sde)
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-
-      def get_estimate_x_0(self, observation_map):
-        def estimate_x_0(x, t):
-          m_t = self.mean_coeff(t)
-          v_t = self.variance(t)
-          s = self.score(x, t)
-          x_0 = (x + v_t * s) / m_t
-          return observation_map(x_0), (s, x_0)
-        return estimate_x_0
-
-    return RVP()
+    return RVP(score, fwd_sde, beta_min, beta_max)
 
   def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
@@ -200,3 +133,56 @@ class VP(SDE):
   def ratio(self, t):
     """Ratio of marginal variance and mean coeff."""
     return self.variance(t) / self.mean_coeff(t)
+
+
+class RVE(RSDE, VE):
+
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(self, x, t):
+      v_t = self.variance(t)
+      s = self.score(x, t)
+      x_0 = x + v_t * s
+      return batch_observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
+  def guide(self, get_guidance_score, observation_map, *args, **kwargs):
+    guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
+    return RVE(guidance_score, self.forward_sde, self.sigma_min, self.sigma_max)
+
+  def correct(self, corrector):
+
+    class CVE(RVE):
+
+      def sde(x, t):
+        return corrector(self.score, x, t)
+
+    return CVE(self.score, self.forward_sde, self.sigma_min, self.sigma_max)
+
+
+class RVP(RSDE, VP):
+
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(x, t):
+      m_t = self.mean_coeff(t)
+      v_t = self.variance(t)
+      s = self.score(x, t)
+      x_0 = batch_mul(x + batch_mul(v_t, s), 1. / m_t)
+      return batch_observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
+  def guide(self, get_guidance_score, observation_map, *args, **kwargs):
+    guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
+    return RVP(guidance_score, self.forward_sde, self.beta_min, self.beta_max)
+
+  def correct(self, corrector):
+
+    class CVP(RVP):
+
+      def sde(x, t):
+        return corrector(self.score, x, t)
+
+    return CVP(self.score, self.forward_sde, self.beta_min, self.beta_max)

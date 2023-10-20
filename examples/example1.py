@@ -6,7 +6,7 @@ from jax.scipy.special import logsumexp
 from flax import serialization
 from functools import partial
 import matplotlib.pyplot as plt
-from diffusionjax.plot import plot_score, plot_heatmap, plot_animation
+from diffusionjax.plot import plot_score, plot_heatmap
 from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
 from diffusionjax.solvers import EulerMaruyama
@@ -192,21 +192,11 @@ def main():
   plot_samples_1D(q_samples[:64], image_size=image_size, fname="samples trained score")
   plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap trained score")
 
-  if 0:
-    frames = 100
-    fig, ax = plt.subplots()
-    def animate(i, ax):
-      ax.clear()
-      plot_score_ax_sample(
-        ax, q_samples[0], trained_score, t=1 - (i / frames), area_min=-5, area_max=5, fname="trained score")
-    # Plot animation of the trained score over time
-    plot_animation(fig, ax, animate, frames, "trained_score")
-
   # Condition on one of the coordinates
   data = jnp.zeros((image_size, num_channels))
-  data = data.at[[0, -1], 0].set([-1.0, 1.0])
-  mask = jnp.zeros((image_size, num_channels), dtype=int)
-  mask = mask.at[[0, -1], 0].set([1, 1])
+  data = data.at[[0, -1], 0].set([-1., 1.])
+  mask = jnp.zeros((image_size, num_channels), dtype=float)
+  mask = mask.at[[0, -1], 0].set([1., 1.])
   data = jnp.tile(data, (5, 1, 1))
   mask = jnp.tile(mask, (5, 1, 1))
 
