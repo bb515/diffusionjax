@@ -29,6 +29,7 @@ def get_config():
     # sampling
     sampling = config.sampling
     sampling.denoise = True
+    sampling.noise_std = 0.01
 
     # data
     data = config.data

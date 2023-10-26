@@ -140,10 +140,10 @@ class RVE(RSDE, VE):
   def get_estimate_x_0(self, observation_map):
     batch_observation_map = vmap(observation_map)
 
-    def estimate_x_0(self, x, t):
+    def estimate_x_0(x, t):
       v_t = self.variance(t)
       s = self.score(x, t)
-      x_0 = x + v_t * s
+      x_0 = x + batch_mul(v_t, s)
       return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
