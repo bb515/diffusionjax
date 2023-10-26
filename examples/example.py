@@ -7,14 +7,15 @@ A tutorial on the theoretical and implementation aspects of score-based generati
 # from jax.config import config as jax_config
 # jax_config.update("jax_enable_x64", True)
 import jax
-from jax import jit, vmap, grad
+from jax import jit, vmap, grad, vjp
 import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
-from diffusionjax.run_lib import get_model, train, get_solver
+from diffusionjax.run_lib import get_model, train
 from diffusionjax.utils import get_score, get_sampler
-from diffusionjax.inverse_problems import get_inpainter
-from diffusionjax.plot import plot_samples, plot_score, plot_heatmap
+from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
+from diffusionjax.inverse_problems import get_pseudo_inverse_guidance_mask, get_vjp_guidance_mask
+from diffusionjax.plot import plot_scatter, plot_score, plot_heatmap
 import diffusionjax.sde as sde_lib
 from absl import app, flags
 from ml_collections.config_flags import config_flags
@@ -102,7 +103,7 @@ def main(argv):
   dataset = CircleDataset(num_samples=num_samples)
   scaler = dataset.get_data_scaler(config)
   inverse_scaler = dataset.get_data_inverse_scaler(config)
-  plot_samples(
+  plot_scatter(
     samples=dataset.train_data, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 
   def log_hat_pt(x, t):
@@ -127,9 +128,11 @@ def main(argv):
 
   # Running the reverse SDE with the empirical drift
   plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_bounds=[-3., 3], fname="empirical score")
-  outer_solver, inner_solver = get_solver(config, sde, nabla_log_hat_pt)
+  outer_solver = EulerMaruyama(sde.reverse(nabla_log_hat_pt),
+                                num_steps=config.solver.num_outer_steps,
+                                dt=config.solver.dt, epsilon=config.solver.epsilon)
   sampler = get_sampler((5760, config.data.image_size),
-                        outer_solver, inner_solver,
+                        outer_solver,
                         denoise=config.sampling.denoise,
                         stack_samples=False,
                         inverse_scaler=inverse_scaler)
@@ -139,9 +142,11 @@ def main(argv):
 
   # What happens when I perturb the score with a constant?
   perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1.
-  outer_solver, inner_solver = get_solver(config, sde, perturbed_score)
+  outer_solver = EulerMaruyama(sde.reverse(perturbed_score),
+                                num_steps=config.solver.num_outer_steps,
+                                dt=config.solver.dt, epsilon=config.solver.epsilon)
   sampler = get_sampler((5760, config.data.image_size),
-                        outer_solver, inner_solver,
+                        outer_solver,
                         denoise=config.sampling.denoise,
                         inverse_scaler=inverse_scaler)
   rng, sample_rng = random.split(rng, 2)
@@ -174,11 +179,12 @@ def main(argv):
   # Get trained score
   trained_score = get_score(sde, get_model(config), params, score_scaling=config.training.score_scaling)
   plot_score(score=trained_score, scaler=scaler, t=0.01, area_bounds=[-3., 3.], fname="trained score")
-  outer_solver, inner_solver = get_solver(config, sde, trained_score)
+  outer_solver = EulerMaruyama(sde.reverse(trained_score),
+                                num_steps=config.solver.num_outer_steps,
+                                dt=config.solver.dt, epsilon=config.solver.epsilon)
   sampler = get_sampler(
     (config.eval.batch_size // num_devices, config.data.image_size),
     outer_solver,
-    inner_solver,
     denoise=config.sampling.denoise,
     inverse_scaler=inverse_scaler)
 
@@ -193,19 +199,49 @@ def main(argv):
   q_samples = q_samples.reshape(config.eval.batch_size, config.data.image_size)
   plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap trained score")
 
+  sampling_shape = (config.eval.batch_size, config.data.image_size)
+  rsde = sde.reverse(trained_score)
+
+  # Inverse problems
   # Condition on one of the coordinates
-  data = jnp.array([-0.5, 0.0])
+  y = jnp.array([-0.5, 0.0])
   mask = jnp.array([1., 0.])
-  data = jnp.tile(data, (64, 1))
-  data = scaler(data)
-  mask = jnp.tile(mask, (64, 1))
-  inpainter = get_inpainter(
-    outer_solver,
-    stack_samples=False,
-    inverse_scaler=inverse_scaler)
-  rng, sample_rng = random.split(rng, 2)
-  q_samples, _ = inpainter(sample_rng, data, mask)
+  y = scaler(y)
+
+  # Get inpainter
+  sampler = get_sampler(sampling_shape,
+                        outer_solver,
+                        Inpainted(rsde, mask, y),
+                        inverse_scaler=inverse_scaler,
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(sample_rng)
+  q_samples = q_samples.reshape(sampling_shape)
   plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap inpainted")
+
+  # Get projection sampler
+  sampler = get_sampler(sampling_shape,
+                        outer_solver,
+                        Inpainted(rsde, mask, y),
+                        inverse_scaler=inverse_scaler,
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(sample_rng)
+  q_samples = q_samples.reshape(sampling_shape)
+  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap projected")
+
+  def observation_map(x):
+    return mask * x
+
+  sampler = get_sampler(sampling_shape,
+                        EulerMaruyama(sde.reverse(trained_score).guide(
+                          get_vjp_guidance_mask, observation_map, sampling_shape, y, config.sampling.noise_std)),
+                        inverse_scaler=inverse_scaler,
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(sample_rng)
+  q_samples = q_samples.reshape(sampling_shape)
+  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap guided")
 
 
 if __name__ == "__main__":

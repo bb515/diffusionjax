@@ -4,11 +4,16 @@ import matplotlib.pyplot as plt
 from jax import jit, vmap
 from functools import partial
 import matplotlib.animation as animation
+import numpy as np
 
 
 BG_ALPHA = 1.0
-MG_ALPHA = 0.2
-FG_ALPHA = 0.4
+MG_ALPHA = 1.0
+FG_ALPHA = 0.3
+color_posterior = '#a2c4c9'
+color_algorithm = '#ff7878'
+dpi_val = 1200
+cmap = 'magma'
 
 
 def plot_heatmap(samples, area_bounds, lengthscale=350.0, fname="plot_heatmap") -> None:
@@ -32,11 +37,27 @@ def plot_heatmap(samples, area_bounds, lengthscale=350.0, fname="plot_heatmap") 
   plt.imshow(hm, interpolation='nearest', extent=extent)
   ax = plt.gca()
   ax.invert_yaxis()
-  plt.savefig(fname)
+  plt.savefig(fname + '.png')
   plt.close()
 
 
-def plot_samples(samples, index, fname="samples.png", lims=None):
+def image_grid(x, image_size, num_channels):
+    img = x.reshape(-1, image_size, image_size, num_channels)
+    w = int(np.sqrt(img.shape[0]))
+    return img.reshape((w, w, image_size, image_size, num_channels)).transpose((0, 2, 1, 3, 4)).reshape((w * image_size, w * image_size, num_channels))
+
+
+def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
+    img = image_grid(x, image_size, num_channels)
+    plt.figure(figsize=(8,8))
+    plt.axis('off')
+    plt.imshow(img, cmap=cmap)
+    plt.savefig(fname + '.png', bbox_inches='tight', pad_inches=0.0)
+    # plt.savefig(fname + '.pdf', bbox_inches='tight', pad_inches=0.0)
+    plt.close()
+
+
+def plot_scatter(samples, index, fname="samples", lims=None):
   fig, ax = plt.subplots(1, 1)
   fig.patch.set_facecolor('white')
   fig.patch.set_alpha(BG_ALPHA)
@@ -52,8 +73,17 @@ def plot_samples(samples, index, fname="samples.png", lims=None):
   plt.gca().set_aspect('equal', adjustable='box')
   plt.draw()
   fig.savefig(
-    fname,
+    fname + '.png',
     facecolor=fig.get_facecolor(), edgecolor='none')
+  plt.close()
+
+
+def plot_samples_1D(samples, image_size, x_max=5.0, fname="samples 1D"):
+  x = np.linspace(-x_max, x_max, image_size)
+  plt.plot(x, samples[..., 0].T)
+  plt.xlim(-5, 5)
+  plt.ylim(-5, 5)
+  plt.savefig(fname + '.png')
   plt.close()
 
 
@@ -84,7 +114,7 @@ def plot_score(score, scaler, t, area_bounds=[-3., 3.], fname="plot_score"):
   ax.set_xlabel(r"$x_0$")
   ax.set_ylabel(r"$x_1$")
   plt.gca().set_aspect('equal', adjustable='box')
-  fig.savefig(fname)
+  fig.savefig(fname + '.png')
   plt.close()
 
 
@@ -144,21 +174,3 @@ def plot_temperature_schedule(sde, solver):
   plt.close()
 
 
-def plot_scatter(samples, fname="samples"):
-  fig, ax = plt.subplots(1, 1)
-  fig.patch.set_facecolor('white')
-  fig.patch.set_alpha(1.0)
-  ax.scatter(
-    samples[:, 0], samples[:, 1],
-    alpha=0.1, label=r"$x$")
-  ax.legend()
-  ax.set_xlabel(r"$x_{}$".format(0))
-  ax.set_ylabel(r"$x_{}$".format(1))
-  ax.set_xlim(-3, 3)
-  ax.set_ylim(-3, 3)
-  plt.gca().set_aspect('equal', adjustable='box')
-  plt.draw()
-  fig.savefig(
-    fname,
-    facecolor=fig.get_facecolor(), edgecolor='none')
-  plt.close()

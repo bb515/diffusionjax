@@ -7,9 +7,10 @@ from jax.scipy.special import logsumexp
 from flax import serialization
 from functools import partial
 import matplotlib.pyplot as plt
-from diffusionjax.plot import plot_samples, plot_heatmap
+from diffusionjax.plot import plot_samples, plot_heatmap, plot_samples_1D, plot_samples
 from diffusionjax.utils import get_score, get_loss, get_sampler
-from diffusionjax.solvers import EulerMaruyama, Annealed
+from diffusionjax.solvers import EulerMaruyama, Annealed, Inpainted, Projected
+from diffusionjax.inverse_problems import get_pseudo_inverse_guidance_mask
 from diffusionjax.models import CNN
 from diffusionjax.sde import VE, udlangevin
 import numpy as np
@@ -76,19 +77,13 @@ def retrain_nn(
   return params, opt_state, mean_losses
 
 
-def image_grid(x, image_size, num_channels):
-  img = x.reshape(-1, image_size, image_size, num_channels)
-  w = int(np.sqrt(img.shape[0]))
-  return img.reshape((w, w, image_size, image_size, num_channels)).transpose((0, 2, 1, 3, 4)).reshape((w * image_size, w * image_size, num_channels))
-
-
-def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
-  img = image_grid(x, image_size, num_channels)
-  plt.figure(figsize=(8,8))
-  plt.axis('off')
-  plt.imshow(img)
-  plt.savefig(fname)
-  plt.close()
+# def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
+#   img = image_grid(x, image_size, num_channels)
+#   plt.figure(figsize=(8,8))
+#   plt.axis('off')
+#   plt.imshow(img)
+#   plt.savefig(fname)
+#   plt.close()
 
 
 def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
@@ -105,13 +100,6 @@ def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
   return u, C
 
 
-def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
-  x = np.linspace(-x_max, x_max, image_size)
-  plt.plot(x, samples[:, :, 0, 0].T)
-  plt.savefig(fname)
-  plt.close()
-
-
 def main():
   num_epochs = 200
   rng = random.PRNGKey(2023)
@@ -125,7 +113,7 @@ def main():
   samples, _ = sample_image_rgb(rng, num_samples=num_samples, image_size=image_size, kernel=Matern52(), num_channels=num_channels)  # (num_samples, image_size**2, num_channels)
   plot_samples(samples[:64], image_size=image_size, num_channels=num_channels)
   samples = samples.reshape(-1, image_size, image_size, num_channels)
-  plot_samples_1D(samples[:64], image_size, "samples 1D")
+  plot_samples_1D(samples[:64, 0], image_size, x_max=x_max, fname="samples 1D")
 
   # Get sde model
   sde = VE(sigma_min=0.001, sigma_max=3.0)
@@ -180,19 +168,58 @@ def main():
   # pmap across devices. pmap assumes devices are identical model. If this is not the case,
   # use the devices argument in pmap
   num_devices =  jax.local_device_count()
+  sampling_shape = (64, image_size, image_size, num_channels)
   sampler = jax.pmap(
-    get_sampler((64//num_devices, image_size, image_size, num_channels), outer_solver, inner_solver, denoise=True),
+    get_sampler((sampling_shape[0]//num_devices,) + sampling_shape[1:], outer_solver, inner_solver, denoise=True),
     axis_name='batch',
     # devices = jax.devices()[:],
   )
   rng, *sample_rng = random.split(rng, num_devices + 1)
   sample_rng = jnp.asarray(sample_rng)
   q_samples, _ = sampler(sample_rng)
-  q_samples = q_samples.reshape(64, image_size, image_size, num_channels)
+  q_samples = q_samples.reshape(sampling_shape)
   plot_samples(q_samples, image_size=image_size, num_channels=num_channels, fname="samples trained score")
-  plot_samples_1D(q_samples, image_size, fname="samples 1D trained score")
+  plot_samples_1D(q_samples[:, 0], image_size, x_max=x_max, fname="samples 1D trained score")
   plot_heatmap(samples=q_samples[:, [0, 1], 0, 0], area_bounds=[-3., 3.], fname="heatmap trained score")
 
+  # Condition on one of the coordinates
+  y = jnp.zeros(sampling_shape[1:])
+  y = y.at[[0, -1], [0, -1], 0].set([-1., 1.])
+  mask = jnp.zeros(sampling_shape[1:], dtype=float)
+  mask = mask.at[[0, -1], [0, -1], 0].set([1., 1.])
+
+  # Get inpainting sampler
+  sampler = get_sampler(sampling_shape,
+                        outer_solver,
+                        Inpainted(rsde, mask, y),
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(rng)
+  plot_samples_1D(q_samples[:, 0], image_size=image_size, x_max=x_max, fname="samples inpainted")
+  # plot_samples(q_samples[:64], image_size=image_size, num_channels=num_channels, fname="samples inpainted")
+
+  # Get projection sampler
+  sampler = get_sampler(sampling_shape,
+                        outer_solver,
+                        Projected(rsde, mask, y, coeff=1e-2),
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(rng)
+  plot_samples_1D(q_samples[:, 0], image_size=image_size, x_max=x_max, fname="samples projected")
+  # plot_samples(q_samples[:64], image_size=image_size, num_channels=num_channels, fname="samples projected")
+
+  def observation_map(x): return mask * x
+
+  # Get guidance sampler
+  sampler = get_sampler(sampling_shape,
+                        EulerMaruyama(rsde.guide(
+                          get_pseudo_inverse_guidance_mask, observation_map, sampling_shape, y, noise_std=1e-5)),
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(rng)
+  q_samples = q_samples.reshape(sampling_shape)
+  plot_samples_1D(q_samples[:, 0], image_size=image_size, x_max=x_max, fname="samples guided")
+  # plot_samples(q_samples[:64], image_size=image_size, num_channels=num_channels, fname="samples guided")
 
 if __name__ == "__main__":
   main()
