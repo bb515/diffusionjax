@@ -49,7 +49,7 @@ The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by 
 >>> num_samples = 8
 >>> samples = sample_circle(num_samples)
 >>> N = samples.shape[1]
->>> plot_samples(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
+>>> plot_scatter(samples=samples, index=(0, 1), fname="samples", lims=((-3, 3), (-3, 3)))
 >>> rng = random.PRNGKey(2023)
 ```
 ![Prediction](readme_samples.png)
@@ -136,22 +136,27 @@ The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by 
 ```
 ![Prediction](readme_heatmap_trained_score.png)
 ```python
->>> inpainter = get_inpainter(solver, stack_samples=False)
->>> data = jnp.array([-0.5, 0.0])
->>> mask = jnp.array([1, 0])
->>> data = jnp.tile(data, (64, 1))
->>> mask = jnp.tile(mask, (64, 1))
->>> rng, *sample_rng = random.split(rng, 2)
->>> q_samples = inpainter(jnp.array(sample_rng), data, mask)
->>> q_samples = q_samples.reshape(64, N)
->>> plot_heatmap(samples=q_samples, area_min=-3, area_max=3, fname="heatmap inpainted")
+>>>  # Condition on one of the coordinates
+>>>  y = jnp.array([-0.5, 0.0])
+>>>  mask = jnp.array([1., 0.])
+>>>  # Get inpainter
+>>>  sampler = get_sampler(sampling_shape,
+                           solver,
+                           Inpainted(sde.reverse(trained_score), mask, y),
+                           inverse_scaler=inverse_scaler,
+                           stack_samples=False,
+                           denoise=True)
+>>>  q_samples, _ = sampler(sample_rng)
+>>>  q_samples = q_samples.reshape(sampling_shape)
+>>>  plot_heatmap(samples=q_samples, area_bounds=[-3., 3.], fname="heatmap inpainted")
 ```
 ![Prediction](readme_heatmap_inpainted.png)
 
 ## Does haves
 - Training scores on (possibly, image) data and sampling from the generative model. Also inverse problems, such as inpainting.
-- Not many lines of code.
 - jit multiple training steps together to improve training speed at the cost of more memory usage. This can be set via `config.training.n_jitted_steps`.
+- Not many lines of code.
+- Bayesian inversion (inverse problems) with linear observation maps.
 - Easy to use, extendable. Get started with the example, provided.
 
 ## Doesn't haves
@@ -160,8 +165,5 @@ The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by 
 - Augmented with critically-damped Langevin diffusion.
 
 ## References
-Algorithms in this package were ported from pre-existing code. In particular, the code was ported from the following papers and repositories:
-
-The [official implementation](https://github.com/yang-song/score_sde) for the paper [Score-Based Generative Modeling through Stochastic Differential Equations](https://openreview.net/forum?id=PxTIG12RRHS) by [Yang Song](https://yang-song.github.io), [Jascha Sohl-Dickstein](http://www.sohldickstein.com/), [Diederik P. Kingma](http://dpkingma.com/), [Abhishek Kumar](http://users.umiacs.umd.edu/~abhishek/), [Stefano Ermon](https://cs.stanford.edu/~ermon/), and [Ben Poole](https://cs.stanford.edu/~poole/)
-
+This is the implementation for the paper [Tweedie Moment Projected Diffusions for Inverse Problems](https://arxiv.org/pdf/2310.06721.pdf) by Benjamin Boys, Mark Girolami, Jakiw Pidstrigach, Sebastian Reich, Alan Mosca and O. Deniz Akyildiz.
 
