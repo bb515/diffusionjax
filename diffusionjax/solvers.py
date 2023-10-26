@@ -2,7 +2,8 @@
 import jax
 import jax.numpy as jnp
 import jax.random as random
-from diffusionjax.utils import batch_mul
+from jax import vmap
+from diffusionjax.utils import batch_mul, batch_mul_A
 import abc
 
 
@@ -111,6 +112,67 @@ class Annealed(Solver):
     dt = (self.snr * noise_norm / grad_norm)**2 * 2 * alpha
     x_mean = x + batch_mul(grad, dt)
     x = x_mean + batch_mul(2 * dt, noise)
+    return x, x_mean
+
+
+class Inpainted(Solver):
+  """Inpainting constraint for numerical solver of an SDE.
+  Functions are designed for a mini-batch of inputs."""
+
+  def __init__(self, sde, mask, y, num_steps=1):
+    """Constructs an Annealed Langevin Solver.
+    Args:
+      sde: A valid SDE class.
+      snr: A hyperparameter representing a signal-to-noise ratio.
+    """
+    super().__init__(num_steps)
+    self.sde = sde
+    self.mask = mask
+    self.y = y
+
+  def prior(self, rng, shape):
+    x = self.sde.prior(rng, shape)
+    rng, step_rng = random.split(rng)
+    x = batch_mul_A((1. - self.mask), x) + self.y * self.mask
+    return x
+
+  def update(self, rng, x, t):
+    mean_coeff = self.sde.mean_coeff(t)
+    std = jnp.sqrt(self.sde.variance(t))
+    masked_data_mean = batch_mul_A(self.y, mean_coeff)
+    masked_data = masked_data_mean + batch_mul(random.normal(rng, x.shape), std)
+    x = batch_mul_A((1. - self.mask), x) + batch_mul_A(self.mask, masked_data)
+    x_mean = batch_mul_A((1. - self.mask), x) + batch_mul_A(self.mask, masked_data_mean)
+    return x, x_mean
+
+
+class Projected(Solver):
+  """Inpainting constraint for numerical solver of an SDE.
+  Functions are designed for a mini-batch of inputs."""
+
+  def __init__(self, sde, mask, y, coeff=1., num_steps=1):
+    """Constructs an Annealed Langevin Solver.
+    Args:
+      sde: A valid SDE class.
+      snr: A hyperparameter representing a signal-to-noise ratio.
+    """
+    super().__init__(num_steps)
+    self.sde = sde
+    self.mask = mask
+    self.y = y
+    self.coeff = coeff
+    self.prior = sde.prior
+
+  def merge_data_with_mask(self, x_space, data, mask, coeff):
+    return batch_mul_A(mask * coeff, data) + batch_mul_A((1. - mask * coeff), x_space)
+
+  def update(self, rng, x, t):
+    mean_coeff = self.sde.mean_coeff(t)
+    masked_data_mean = batch_mul_A(self.y, mean_coeff)
+    std = jnp.sqrt(self.sde.variance(t))
+    z_data = masked_data_mean + batch_mul(std, random.normal(rng, x.shape))
+    x = self.merge_data_with_mask(x, z_data, self.mask, self.coeff)
+    x_mean = self.merge_data_with_mask(x, masked_data_mean, self.mask, self.coeff)
     return x, x_mean
 
 

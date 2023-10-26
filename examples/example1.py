@@ -6,10 +6,10 @@ from jax.scipy.special import logsumexp
 from flax import serialization
 from functools import partial
 import matplotlib.pyplot as plt
-from diffusionjax.plot import plot_score, plot_heatmap, plot_animation
+from diffusionjax.inverse_problems import get_pseudo_inverse_guidance_mask
+from diffusionjax.plot import plot_score, plot_heatmap, plot_samples_1D
 from diffusionjax.utils import get_score, get_loss, get_sampler
-from diffusionjax.inverse_problems import get_inpainter, get_projection_sampler
-from diffusionjax.solvers import EulerMaruyama
+from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
 from diffusionjax.models import MLP
 from diffusionjax.sde import VE
 import numpy as np
@@ -101,13 +101,6 @@ def plot_score_ax_sample(ax, sample, score, t, area_min=-1, area_max=1, fname="p
   ax.quiver(grid[:, 0], grid[:, 1], scores[:, 0, 0, 0], scores[:, 1, 0, 0])
 
 
-def plot_samples_1D(samples, image_size, fname="samples 1D.png"):
-  x = np.linspace(-x_max, x_max, image_size)
-  plt.plot(x, samples[:, :, 0].T)
-  plt.savefig(fname)
-  plt.close()
-
-
 def main():
   num_epochs = 128
   rng = random.PRNGKey(2023)
@@ -120,7 +113,7 @@ def main():
 
   # Reshape image data
   samples = samples.reshape(-1, image_size, num_channels)
-  plot_samples_1D(samples[:64], image_size, "samples")
+  plot_samples_1D(samples[:64], image_size, x_max=x_max, fname="samples")
 
   # Get sde model
   sde = VE(sigma_min=0.01, sigma_max=3.0)
@@ -180,8 +173,10 @@ def main():
 
   # Get trained score
   trained_score = get_score(sde, score_model, params, score_scaling=True)
-  solver = EulerMaruyama(sde.reverse(trained_score))
-  sampler = get_sampler((512, image_size, num_channels), solver, denoise=True)
+  rsde = sde.reverse(trained_score)
+  outer_solver = EulerMaruyama(rsde)
+  sampling_shape = (512, image_size, num_channels)
+  sampler = get_sampler(sampling_shape, outer_solver, denoise=True)
 
   rng, sample_rng = random.split(rng, 2)
   q_samples, num_function_evaluations = sampler(sample_rng)
@@ -189,7 +184,7 @@ def main():
   # C_emp = jnp.corrcoef(q_samples[:, :, 0].T)
   # delta = jnp.linalg.norm(C - C_emp) / image_size
 
-  plot_samples_1D(q_samples[:64], image_size=image_size, fname="samples trained score")
+  plot_samples_1D(q_samples[:64], image_size=image_size, x_max=x_max, fname="samples trained score")
   plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap trained score")
 
   if 0:
@@ -203,24 +198,40 @@ def main():
     plot_animation(fig, ax, animate, frames, "trained_score")
 
   # Condition on one of the coordinates
-  data = jnp.zeros((image_size, num_channels))
-  data = data.at[[0, -1], 0].set([-1.0, 1.0])
-  mask = jnp.zeros((image_size, num_channels), dtype=int)
-  mask = mask.at[[0, -1], 0].set([1, 1])
-  data = jnp.tile(data, (5, 1, 1))
-  mask = jnp.tile(mask, (5, 1, 1))
+  y = jnp.zeros((image_size, num_channels))
+  y = y.at[[0, -1], 0].set([-1., 1.])
+  mask = jnp.zeros((image_size, num_channels), dtype=float)
+  mask = mask.at[[0, -1], 0].set([1., 1.])
 
-  # Get inpainter
-  inpainter = get_inpainter(solver, stack_samples=False)
-  rng, sample_rng = random.split(rng, 2)
-  q_samples, _ = inpainter(sample_rng, data, mask)
-  plot_samples_1D(q_samples, image_size=image_size, fname="samples inpainted")
+  # Get inpainting sampler
+  sampler = get_sampler(sampling_shape,
+                        outer_solver,
+                        Inpainted(rsde, mask, y),
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(sample_rng)
+  plot_samples_1D(q_samples, image_size=image_size, x_max=x_max, fname="samples inpainted")
 
   # Get projection sampler
-  projection_sampler = get_projection_sampler(solver, stack_samples=False)
-  rng, sample_rng = random.split(rng, 2)
-  q_samples, _ = projection_sampler(sample_rng, data, mask, 1e-2)
-  plot_samples_1D(q_samples, image_size=image_size, fname="samples projected")
+  sampler = get_sampler(sampling_shape,
+                        outer_solver,
+                        Projected(rsde, mask, y, coeff=1e-2),
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(sample_rng)
+  plot_samples_1D(q_samples, image_size=image_size, x_max=x_max, fname="samples projected")
+
+  def observation_map(x): return mask * x
+
+  # Get guidance sampler
+  sampler = get_sampler(sampling_shape,
+                        EulerMaruyama(rsde.guide(
+                          get_pseudo_inverse_guidance_mask, observation_map, sampling_shape, y, noise_std=1e-5)),
+                        stack_samples=False,
+                        denoise=True)
+  q_samples, _ = sampler(sample_rng)
+  q_samples = q_samples.reshape(sampling_shape)
+  plot_samples_1D(q_samples, image_size=image_size, x_max=x_max, fname="samples guided")
 
 
 if __name__ == "__main__":

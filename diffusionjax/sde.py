@@ -200,3 +200,56 @@ class VP(SDE):
   def ratio(self, t):
     """Ratio of marginal variance and mean coeff."""
     return self.variance(t) / self.mean_coeff(t)
+
+
+class RVE(RSDE, VE):
+
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(x, t):
+      v_t = self.variance(t)
+      s = self.score(x, t)
+      x_0 = x + batch_mul(v_t, s)
+      return batch_observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
+  def guide(self, get_guidance_score, observation_map, *args, **kwargs):
+    guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
+    return RVE(guidance_score, self.forward_sde, self.sigma_min, self.sigma_max)
+
+  def correct(self, corrector):
+
+    class CVE(RVE):
+
+      def sde(x, t):
+        return corrector(self.score, x, t)
+
+    return CVE(self.score, self.forward_sde, self.sigma_min, self.sigma_max)
+
+
+class RVP(RSDE, VP):
+
+  def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
+
+    def estimate_x_0(x, t):
+      m_t = self.mean_coeff(t)
+      v_t = self.variance(t)
+      s = self.score(x, t)
+      x_0 = batch_mul(x + batch_mul(v_t, s), 1. / m_t)
+      return batch_observation_map(x_0), (s, x_0)
+    return estimate_x_0
+
+  def guide(self, get_guidance_score, observation_map, *args, **kwargs):
+    guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
+    return RVP(guidance_score, self.forward_sde, self.beta_min, self.beta_max)
+
+  def correct(self, corrector):
+
+    class CVP(RVP):
+
+      def sde(x, t):
+        return corrector(self.score, x, t)
+
+    return CVP(self.score, self.forward_sde, self.beta_min, self.beta_max)
