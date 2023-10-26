@@ -50,6 +50,9 @@ setup(
       'jaxtyping',
     ],
     'testing': [
+      "optax",
+      "orbax-checkpoint",
+      "torch",
       "pytest",
       "pytest-xdist",
       "pytest-cov",

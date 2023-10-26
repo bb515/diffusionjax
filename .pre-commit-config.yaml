@@ -1,0 +1,27 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: ruff .
+        language: system
+        always_run: true
+        pass_filenames: false
+      - id: flake8
+        name: flake8
+        entry: flake8 --statistics -j4
+        language: system
+        always_run: true
+        pass_filenames: false
+      - id: mypy
+        name: mypy
+        entry: mypy diffusionjax/
+        language: system
+        always_run: true
+        pass_filenames: false
+      - id: tests
+        name: subset of tests
+        entry: pytest test/test_utils.py
+        language: system
+        always_run: true
+        pass_filenames: false

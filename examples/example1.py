@@ -187,16 +187,6 @@ def main():
   plot_samples_1D(q_samples[:64], image_size=image_size, x_max=x_max, fname="samples trained score")
   plot_heatmap(samples=q_samples[:, [0, 1], 0], area_bounds=[-3., 3.], fname="heatmap trained score")
 
-  if 0:
-    frames = 100
-    fig, ax = plt.subplots()
-    def animate(i, ax):
-      ax.clear()
-      plot_score_ax_sample(
-        ax, q_samples[0], trained_score, t=1 - (i / frames), area_min=-5, area_max=5, fname="trained score")
-    # Plot animation of the trained score over time
-    plot_animation(fig, ax, animate, frames, "trained_score")
-
   # Condition on one of the coordinates
   y = jnp.zeros((image_size, num_channels))
   y = y.at[[0, -1], 0].set([-1., 1.])
