@@ -165,5 +165,5 @@ The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by 
 - Augmented with critically-damped Langevin diffusion.
 
 ## References
-This is the implementation for the paper [TWEEDIE MOMENT PROJECTED DIFFUSIONS FOR INVERSE PROBLEMS](https://arxiv.org/pdf/2310.06721.pdf) by Benjamin Boys, Mark Girolami, Jakiw Pidstrigach, Sebastian Reich, Alan Mosca and O. Deniz Akyildiz.
+This is the implementation for the paper [Tweedie Moment Projected Diffusions for Inverse Problems](https://arxiv.org/pdf/2310.06721.pdf) by Benjamin Boys, Mark Girolami, Jakiw Pidstrigach, Sebastian Reich, Alan Mosca and O. Deniz Akyildiz.
 
