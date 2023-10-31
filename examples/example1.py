@@ -6,7 +6,7 @@ from jax.scipy.special import logsumexp
 from flax import serialization
 from functools import partial
 import matplotlib.pyplot as plt
-from diffusionjax.inverse_problems import get_pseudo_inverse_guidance_mask
+from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.plot import plot_score, plot_heatmap, plot_samples_1D
 from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
@@ -213,10 +213,10 @@ def main():
 
   def observation_map(x): return mask * x
 
-  # Get guidance sampler
+  # Get pseudo-inverse-guidance sampler
   sampler = get_sampler(sampling_shape,
                         EulerMaruyama(rsde.guide(
-                          get_pseudo_inverse_guidance_mask, observation_map, sampling_shape, y, noise_std=1e-5)),
+                          get_pseudo_inverse_guidance, observation_map, y, noise_std=1e-5)),
                         stack_samples=False,
                         denoise=True)
   q_samples, _ = sampler(sample_rng)

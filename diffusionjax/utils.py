@@ -28,6 +28,10 @@ def batch_matmul(A, b):
   return vmap(lambda A, b: A @ b)(A, b)
 
 
+def batch_matmul_A(A, b):
+  return vmap(lambda b: A @ b)(b)
+
+
 def errors(t, sde, score, rng, data, likelihood_weighting=True):
   """
   Args:

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap, plot_samples_1D, plot_samples
 from diffusionjax.utils import get_score, get_loss, get_sampler
 from diffusionjax.solvers import EulerMaruyama, Annealed, Inpainted, Projected
-from diffusionjax.inverse_problems import get_pseudo_inverse_guidance_mask
+from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.models import CNN
 from diffusionjax.sde import VE, udlangevin
 import numpy as np
@@ -210,16 +210,17 @@ def main():
 
   def observation_map(x): return mask * x
 
-  # Get guidance sampler
+  # Get pseudo-inverse-guidance sampler
   sampler = get_sampler(sampling_shape,
                         EulerMaruyama(rsde.guide(
-                          get_pseudo_inverse_guidance_mask, observation_map, sampling_shape, y, noise_std=1e-5)),
+                          get_pseudo_inverse_guidance, observation_map, y, noise_std=1e-5)),
                         stack_samples=False,
                         denoise=True)
   q_samples, _ = sampler(rng)
   q_samples = q_samples.reshape(sampling_shape)
   plot_samples_1D(q_samples[:, 0], image_size=image_size, x_max=x_max, fname="samples guided")
   # plot_samples(q_samples[:64], image_size=image_size, num_channels=num_channels, fname="samples guided")
+
 
 if __name__ == "__main__":
   main()

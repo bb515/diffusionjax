@@ -137,14 +137,24 @@ class VP:
 
 class RVE(RSDE, VE):
 
-  def get_estimate_x_0(self, observation_map):
+  def get_estimate_x_0(self, observation_map, shape=None):
+    """
+    Get a function returning the MMSE estimate of x_0|x_t.
+
+    Args:
+      observation_map: function that operates on unbatched x.
+      shape: optional tuple that reshapes x so that it can be operated on.
+    """
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t):
       v_t = self.variance(t)
       s = self.score(x, t)
       x_0 = x + batch_mul(v_t, s)
-      return batch_observation_map(x_0), (s, x_0)
+      if shape:
+        return batch_observation_map(x_0.reshape(shape)), (s, x_0)
+      else:
+        return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):
@@ -163,7 +173,14 @@ class RVE(RSDE, VE):
 
 class RVP(RSDE, VP):
 
-  def get_estimate_x_0(self, observation_map):
+  def get_estimate_x_0(self, observation_map, shape=None):
+    """
+    Get a function returning the MMSE estimate of x_0|x_t.
+
+    Args:
+      observation_map: function that operates on unbatched x.
+      shape: optional tuple that reshapes x so that it can be operated on.
+    """
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t):
@@ -171,7 +188,10 @@ class RVP(RSDE, VP):
       v_t = self.variance(t)
       s = self.score(x, t)
       x_0 = batch_mul(x + batch_mul(v_t, s), 1. / m_t)
-      return batch_observation_map(x_0), (s, x_0)
+      if shape:
+        return batch_observation_map(x_0.reshape(shape)), (s, x_0)
+      else:
+        return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):

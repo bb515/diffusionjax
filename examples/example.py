@@ -14,7 +14,7 @@ from jax.scipy.special import logsumexp
 from diffusionjax.run_lib import get_model, train
 from diffusionjax.utils import get_score, get_sampler
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
-from diffusionjax.inverse_problems import get_pseudo_inverse_guidance_mask, get_vjp_guidance_mask
+from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.plot import plot_scatter, plot_score, plot_heatmap
 import diffusionjax.sde as sde_lib
 from absl import app, flags
@@ -233,9 +233,10 @@ def main(argv):
   def observation_map(x):
     return mask * x
 
+  # Get pseudo-inverse-guidance sampler
   sampler = get_sampler(sampling_shape,
                         EulerMaruyama(sde.reverse(trained_score).guide(
-                          get_vjp_guidance_mask, observation_map, sampling_shape, y, config.sampling.noise_std)),
+                          get_pseudo_inverse_guidance, observation_map, y, config.sampling.noise_std)),
                         inverse_scaler=inverse_scaler,
                         stack_samples=False,
                         denoise=True)
