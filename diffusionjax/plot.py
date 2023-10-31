@@ -78,11 +78,11 @@ def plot_scatter(samples, index, fname="samples", lims=None):
   plt.close()
 
 
-def plot_samples_1D(samples, image_size, x_max=5.0, fname="samples 1D"):
+def plot_samples_1D(samples, image_size, x_max=5.0, fname="samples 1D", alpha=FG_ALPHA):
   x = np.linspace(-x_max, x_max, image_size)
-  plt.plot(x, samples[..., 0].T)
-  plt.xlim(-5, 5)
-  plt.ylim(-5, 5)
+  plt.plot(x, samples[..., 0].T, alpha=alpha)
+  plt.xlim(-5., 5.)
+  plt.ylim(-5., 5.)
   plt.savefig(fname + '.png')
   plt.close()
 
