@@ -1,9 +1,7 @@
 """Utility functions related to Bayesian inversion."""
 import jax.numpy as jnp
-from jax.lax import scan
 from jax import vmap, vjp, jacfwd, jacrev, grad
-import jax.random as random
-from diffusionjax.utils import batch_mul, batch_matmul_A, batch_linalg_solve, batch_matmul, batch_mul_A
+from diffusionjax.utils import batch_mul, batch_matmul_A, batch_linalg_solve, batch_matmul, batch_mul_A, batch_linalg_solve_A
 
 
 def get_dps(sde, observation_map, y, noise_std, scale=0.4):
