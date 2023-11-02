@@ -20,11 +20,11 @@ from typing import Any
 import logging
 import wandb
 
-# This run library requires optax, https://optax.readthedocs.io/en/latest/
+# This run_library requires optax, https://optax.readthedocs.io/en/latest/
 import optax
-# This run library requires orbax, https://orbax.readthedocs.io/en/latest/
+# This run_library requires orbax, https://orbax.readthedocs.io/en/latest/
 import orbax.checkpoint
-# This run librar requires torch[cpu], https://pytorch.org/get-started/locally/
+# This run_library requires torch[cpu], https://pytorch.org/get-started/locally/
 from torch.utils.data import DataLoader
 
 

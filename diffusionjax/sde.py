@@ -61,9 +61,11 @@ class VE:
   def mean_coeff(self, t):
     return jnp.ones_like(t)
 
+  def std(self, t):
+    return self.sigma_min * (self.sigma_max / self.sigma_min)**t
+
   def variance(self, t):
-    std = self.sigma_min * (self.sigma_max / self.sigma_min)**t
-    return std**2
+    return self.std(t)**2
 
   def prior(self, rng, shape):
     return random.normal(rng, shape) * self.sigma_max
@@ -108,8 +110,14 @@ class VP:
   def mean_coeff(self, t):
     return jnp.exp(self.log_mean_coeff(t))
 
+  def std(self, t):
+    return jnp.sqrt(self.variance(t))
+
   def variance(self, t):
     return 1.0 - jnp.exp(2 * self.log_mean_coeff(t))
+
+  def marginal_prob(self, x, t):
+    return batch_mul(self.mean_coeff(t), x), jnp.sqrt(self.variance(t))
 
   def prior(self, rng, shape):
     return random.normal(rng, shape)
