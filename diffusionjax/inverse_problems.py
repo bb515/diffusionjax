@@ -172,7 +172,7 @@ def get_vjp_guidance_mask(
     def guidance_score(x, t):
         h_x_0, vjp_h_x_0, (s, _) = vjp(
             lambda x: estimate_h_x_0(x, t), x, has_aux=True)
-        diag = batch_observation_map(vjp_h_x_0(batch_observation_map(jnp.ones(x.shape)))[0])
+        diag = batch_observation_map(vjp_h_x_0(batch_observation_map(jnp.ones_like(x)))[0])
         C_yy = sde.ratio(t[0]) * diag + noise_std**2
         innovation = y - h_x_0
         ls = innovation / C_yy
@@ -201,7 +201,6 @@ def get_jacrev_guidance(
 
     def guidance_score(x, t):
         h_x_0, (s, _) = estimate_h_x_0(x, t)  # TODO: in python 3.8 this line can be removed by utilizing has_aux=True
-        grad_H_x_0 = vec_jacrev(x, t[0])
         grad_H_x_0 = jnp.squeeze(vec_jacrev(x, t[0]), axis=(1))
         H_grad_H_x_0 = batch_batch_observation_map(grad_H_x_0)
         C_yy = sde.ratio(t[0]) * H_grad_H_x_0 + noise_std**2 * jnp.eye(y.shape[0])
@@ -255,10 +254,12 @@ def get_diag_jacrev_guidance(
     # axes tuple for correct permutation of grad_H_x_0 array
     axes = ((0,) + tuple(range(len(shape) + 1)[2:]) + (1,))
 
+    def vec_jacrev(x, t):
+        return vmap(jacrev(lambda _x: estimate_h_x_0(jnp.expand_dims(_x, axis=0), t.reshape(1, 1))[0]))(x)
+
     def guidance_score(x, t):
         h_x_0, (s, _) = estimate_h_x_0(x, t)  # TODO: in python 3.8 this line can be removed by utilizing has_aux=True
-        grad_H_x_0 = vmap(lambda x, t: jacrev(lambda _x: estimate_h_x_0(jnp.expand_dims(_x, axis=0), jnp.expand_dims(t, axis=0))[0])(x))(x, t)
-        grad_H_x_0 = jnp.squeeze(grad_H_x_0, axis=1)
+        grad_H_x_0 = jnp.squeeze(vec_jacrev(x, t[0]), axis=1)
         H_grad_H_x_0 = batch_batch_observation_map(grad_H_x_0)
         C_yy = sde.ratio(t[0]) * jnp.diagonal(H_grad_H_x_0, axis1=1, axis2=2) + noise_std**2
         innovation = y - h_x_0
