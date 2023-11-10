@@ -280,12 +280,13 @@ class SMLD(Solver):
     return estimate_x_0
 
   def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
       v = self.discrete_sigmas[timestep]**2
       s = self.score(x, t)
       x_0 = x + batch_mul(v, s)
-      return observation_map(x_0), (s, x_0)
+      return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
   def prior(self, rng, shape):
@@ -429,6 +430,7 @@ class DDIMVE(Solver):
     return estimate_x_0
 
   def get_estimate_x_0(self, observation_map):
+    batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
       std = self.discrete_sigmas[timestep]
@@ -436,7 +438,7 @@ class DDIMVE(Solver):
       epsilon = epsilon.flatten()
       x = x.flatten()
       x_0 = x - batch_mul(std, epsilon)
-      return observation_map(x_0), (epsilon, x_0)
+      return batch_observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
   def prior(self, rng, shape):
