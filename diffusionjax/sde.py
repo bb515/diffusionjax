@@ -145,6 +145,24 @@ class VP:
 
 class RVE(RSDE, VE):
 
+  def get_estimate_x_0_vmap(self, observation_map):
+    """
+    Get a function returning the MMSE estimate of x_0|x_t.
+
+    Args:
+      observation_map: function that operates on unbatched x.
+      shape: optional tuple that reshapes x so that it can be operated on.
+    """
+    def estimate_x_0(x, t):
+      x = jnp.expand_dims(x, axis=0)
+      t = jnp.expand_dims(t, axis=0)
+      v_t = self.variance(t)
+      s = self.score(x, t)
+      x_0 = x + v_t * s
+      return observation_map(x_0), (s, x_0)
+
+    return estimate_x_0
+
   def get_estimate_x_0(self, observation_map, shape=None):
     """
     Get a function returning the MMSE estimate of x_0|x_t.
@@ -180,6 +198,25 @@ class RVE(RSDE, VE):
 
 
 class RVP(RSDE, VP):
+
+  def get_estimate_x_0_vmap(self, observation_map):
+    """
+    Get a function returning the MMSE estimate of x_0|x_t.
+
+    Args:
+      observation_map: function that operates on unbatched x.
+      shape: optional tuple that reshapes x so that it can be operated on.
+    """
+    def estimate_x_0(x, t):
+      x = jnp.expand_dims(x, axis=0)
+      t = jnp.expand_dims(t, axis=0)
+      m_t = self.mean_coeff(t)
+      v_t = self.variance(t)
+      s = self.score(x, t)
+      x_0 = (x + v_t * s) / m_t
+      return observation_map(x_0), (s, x_0)
+
+    return estimate_x_0
 
   def get_estimate_x_0(self, observation_map, shape=None):
     """
