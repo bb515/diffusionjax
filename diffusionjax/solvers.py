@@ -134,7 +134,6 @@ class Inpainted(Solver):
 
   def prior(self, rng, shape):
     x = self.sde.prior(rng, shape)
-    rng, step_rng = random.split(rng)
     x = batch_mul_A((1. - self.mask), x) + self.y * self.mask
     return x
 
@@ -371,12 +370,12 @@ class DDIMVP(Solver):
     m = self.sqrt_alphas_cumprod[timestep]
     sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
     v = sqrt_1m_alpha**2
-    alpha = m**2
+    alpha_cumprod = self.alphas_cumprod[timestep]
+    alpha_cumprod_prev = self.alphas_cumprod_prev[timestep]
     m_prev = self.sqrt_alphas_cumprod_prev[timestep]
     v_prev = self.sqrt_1m_alphas_cumprod_prev[timestep]**2
-    alpha_prev = m_prev**2
     x_0 = batch_mul((x - batch_mul(sqrt_1m_alpha, epsilon)), 1. / m)
-    coeff1 = self.eta * jnp.sqrt((v_prev / v) * (1 - alpha / alpha_prev))
+    coeff1 = self.eta * jnp.sqrt((v_prev / v) * (1 - alpha_cumprod / alpha_cumprod_prev))
     coeff2 = jnp.sqrt(v_prev - coeff1**2)
     x_mean = batch_mul(m_prev, x_0) + batch_mul(coeff2, epsilon)
     std = coeff1
