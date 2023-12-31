@@ -22,31 +22,40 @@ class Solver(abc.ABC):
 
     # Handle four different ways of specifying the discretisation step size, its terminal time and its total time.
     if dt is not None:
-      self.t1 = dt * num_steps
       if epsilon is not None:
+        self.t1 = dt * (num_steps - 1) + epsilon
         # Defined in forward time, t \in [epsilon, t1], 0 < epsilon << t1
         ts, step = jnp.linspace(epsilon, self.t1, num_steps, retstep=True)
         self.ts = ts.reshape(-1, 1)
-        assert step == (self.t1 - epsilon) / num_steps
+        assert jnp.isclose(step, (self.t1 - epsilon) / (num_steps - 1))
+        assert jnp.isclose(step, dt)
         self.dt = step
+        assert epsilon == self.ts[0]
+        self.epsilon = epsilon
       else:
+        self.t1 = dt * num_steps
         # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
-        ts, step = jnp.linspace(0, self.t1, num_steps + 1, retstep=True)
+        ts, step = jnp.linspace(0., self.t1, num_steps + 1, retstep=True)
         self.ts = ts[1:].reshape(-1, 1)
-        assert step == dt
+        assert jnp.isclose(step, dt)
         self.dt = step
+        self.epsilon = self.ts[0]
     else:
       self.t1 = 1.0
       if epsilon is not None:
-        self.ts, step = jnp.linspace(epsilon, 1, num_steps, retstep=True)
-        assert step == (1. - epsilon) / num_steps
+        ts, step = jnp.linspace(epsilon, 1., num_steps, retstep=True)
+        self.ts = ts.reshape(-1, 1)
+        assert jnp.isclose(step, (1. - epsilon) / (num_steps - 1))
         self.dt = step
+        assert epsilon == self.ts[0]
+        self.epsilon = epsilon
       else:
         # Defined in forward time, t \in [dt, 1.0], 0 < dt << 1
-        ts, step = jnp.linspace(0, 1, num_steps + 1, retstep=True)
+        ts, step = jnp.linspace(0., 1., num_steps + 1, retstep=True)
         self.ts = ts[1:].reshape(-1, 1)
-        assert step == 1. / num_steps
+        assert jnp.isclose(step, 1. / num_steps)
         self.dt = step
+        self.epsilon = self.ts[0]
 
   @abc.abstractmethod
   def update(self, rng, x, t):
