@@ -88,8 +88,8 @@ def get_pseudo_inverse_guidance(
         h_x_0, vjp_estimate_h_x_0, (s, _) = vjp(
             lambda x: estimate_h_x_0(x, t), x, has_aux=True)
         innovation = y - h_x_0
-        if HHT.shape == (y.shape[0], y.shape[0]):
-            C_yy = sde.r2(t[0], data_variance=1.) * HHT + noise_std**2 * jnp.eye(y.shape[0])
+        if HHT.shape == (y.shape[1], y.shape[1]):
+            C_yy = sde.r2(t[0], data_variance=1.) * HHT + noise_std**2 * jnp.eye(y.shape[1])
             f = batch_linalg_solve_A(C_yy, innovation)
         elif HHT.shape == (1,):
             C_yy = sde.r2(t[0], data_variance=1.) * HHT + noise_std**2
@@ -121,7 +121,7 @@ def get_vjp_guidance_alt(
         vec_vjp_x_0 = vmap(vjp_x_0)
         H_grad_x_0 = vec_vjp_x_0(batch_H)[0]
         H_grad_x_0 = H_grad_x_0.reshape(H.shape[0], shape[0], H.shape[1])
-        C_yy = sde.ratio(t[0]) * batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0)) + noise_std**2 * jnp.eye(y.shape[0])
+        C_yy = sde.ratio(t[0]) * batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0)) + noise_std**2 * jnp.eye(y.shape[1])
         innovation = y - batch_matmul_A(H, x_0.reshape(shape[0], -1))
         f = batch_linalg_solve(C_yy, innovation)
         ls = vjp_x_0(batch_matmul_A(H.T, f).reshape(shape))[0]
@@ -148,7 +148,8 @@ def get_vjp_guidance(
         vec_vjp_x_0 = vmap(vjp_x_0)
         H_grad_x_0 = vec_vjp_x_0(batch_H)[0]
         H_grad_x_0 = H_grad_x_0.reshape(H.shape[0], shape[0], H.shape[1])
-        C_yy = sde.ratio(t[0]) * batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0)) + noise_std**2 * jnp.eye(y.shape[0])
+        test = batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0))
+        C_yy = sde.ratio(t[0]) * batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0)) + noise_std**2 * jnp.eye(y.shape[1])
         innovation = y - batch_matmul_A(H, x_0)
         f = batch_linalg_solve(C_yy, innovation)
         # NOTE: in some early tests it's faster to calculate via H_grad_x_0, instead of another vjp
@@ -203,7 +204,7 @@ def get_jacrev_guidance(
         h_x_0, (s, _) = estimate_h_x_0(x, t)  # TODO: in python 3.8 this line can be removed by utilizing has_aux=True
         grad_H_x_0 = jacrev_vmap(x, t)
         H_grad_H_x_0 = batch_batch_observation_map(grad_H_x_0)
-        C_yy = sde.ratio(t[0]) * H_grad_H_x_0 + noise_std**2 * jnp.eye(y.shape[0])
+        C_yy = sde.ratio(t[0]) * H_grad_H_x_0 + noise_std**2 * jnp.eye(y.shape[1])
         innovation = y - h_x_0
         f = batch_linalg_solve(C_yy, innovation)
         ls = batch_matmul(jnp.transpose(grad_H_x_0, axes), f).reshape(s.shape)
@@ -232,7 +233,7 @@ def get_jacfwd_guidance(
         h_x_0, (s, _) = estimate_h_x_0(x, t)  # TODO: in python 3.8 this line can be removed by utilizing has_aux=True
         H_grad_x_0 = jacfwd_vmap(x, t)
         H_grad_H_x_0 = batch_batch_observation_map(H_grad_x_0)
-        C_yy = sde.ratio(t[0]) * H_grad_H_x_0 + noise_std**2 * jnp.eye(y.shape[0])
+        C_yy = sde.ratio(t[0]) * H_grad_H_x_0 + noise_std**2 * jnp.eye(y.shape[1])
         innovation = y - h_x_0
         f = batch_linalg_solve(C_yy, innovation)
         ls = batch_matmul(jnp.transpose(H_grad_x_0, axes), f).reshape(s.shape)
