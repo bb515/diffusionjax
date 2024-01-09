@@ -233,6 +233,7 @@ def main(argv):
   def observation_map(x):
     return mask * x
 
+  y = jnp.tile(y, (sampling_shape[0], 1))
   # Get pseudo-inverse-guidance sampler
   sampler = get_sampler(sampling_shape,
                         EulerMaruyama(sde.reverse(trained_score).guide(

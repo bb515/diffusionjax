@@ -10,7 +10,7 @@ from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, 
 import numpy as np
 from functools import partial
 import flax
-# import flax.training.orbax_utils as orbax_utils
+import flax.training.orbax_utils as orbax_utils
 import flax.jax_utils as flax_utils
 from absl import flags
 from tqdm import tqdm, trange
@@ -21,11 +21,11 @@ import logging
 # import wandb
 
 # This run_library requires optax, https://optax.readthedocs.io/en/latest/
-# import optax
+import optax
 # This run_library requires orbax, https://orbax.readthedocs.io/en/latest/
-# import orbax.checkpoint
+import orbax.checkpoint
 # This run_library requires torch[cpu], https://pytorch.org/get-started/locally/
-# from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader
 
 
 FLAGS = flags.FLAGS
@@ -199,39 +199,39 @@ def pmap_collate(num_devices, per_device_batch_size, batch):
   return np.reshape(batch, (num_devices, per_device_batch_size, -1))
 
 
-# class NumpyLoader(DataLoader):
-#   def __init__(self, config, dataset,
-#                shuffle=False, sampler=None,
-#                batch_sampler=None, num_workers=0,
-#                pin_memory=False, drop_last=False,
-#                timeout=0, worker_init_fn=None):
-#     prod_batch_dims = config.training.batch_size * config.training.n_jitted_steps
-#     if config.training.pmap and config.training.n_jitted_steps != 1:
-#       collate_fn = partial(
-#         pmap_and_jit_collate, jax.local_device_count(),
-#         config.training.n_jitted_steps,
-#         config.training.batch_size // jax.local_device_count())
-#     elif config.training.pmap and config.training.n_jitted_steps==1:
-#       collate_fn = partial(
-#         pmap_collate, jax.local_device_count(),
-#         config.training.batch_size // jax.local_device_count())
-#     elif config.training.n_jitted_steps != 1:
-#       collate_fn = partial(
-#         jit_collate, config.training.n_jitted_steps, config.training.batch_size)
-#     else:
-#       collate_fn = numpy_collate  # type: ignore
+class NumpyLoader(DataLoader):
+  def __init__(self, config, dataset,
+               shuffle=False, sampler=None,
+               batch_sampler=None, num_workers=0,
+               pin_memory=False, drop_last=False,
+               timeout=0, worker_init_fn=None):
+    prod_batch_dims = config.training.batch_size * config.training.n_jitted_steps
+    if config.training.pmap and config.training.n_jitted_steps != 1:
+      collate_fn = partial(
+        pmap_and_jit_collate, jax.local_device_count(),
+        config.training.n_jitted_steps,
+        config.training.batch_size // jax.local_device_count())
+    elif config.training.pmap and config.training.n_jitted_steps==1:
+      collate_fn = partial(
+        pmap_collate, jax.local_device_count(),
+        config.training.batch_size // jax.local_device_count())
+    elif config.training.n_jitted_steps != 1:
+      collate_fn = partial(
+        jit_collate, config.training.n_jitted_steps, config.training.batch_size)
+    else:
+      collate_fn = numpy_collate  # type: ignore
 
-#     super().__init__(dataset,
-#                      batch_size=prod_batch_dims,
-#                      shuffle=shuffle,
-#                      sampler=sampler,
-#                      batch_sampler=batch_sampler,
-#                      num_workers=num_workers,
-#                      collate_fn=collate_fn,
-#                      pin_memory=pin_memory,
-#                      drop_last=drop_last,
-#                      timeout=timeout,
-#                      worker_init_fn=worker_init_fn)
+    super().__init__(dataset,
+                     batch_size=prod_batch_dims,
+                     shuffle=shuffle,
+                     sampler=sampler,
+                     batch_sampler=batch_sampler,
+                     num_workers=num_workers,
+                     collate_fn=collate_fn,
+                     pin_memory=pin_memory,
+                     drop_last=drop_last,
+                     timeout=timeout,
+                     worker_init_fn=worker_init_fn)
 
 
 def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
