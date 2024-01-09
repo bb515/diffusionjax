@@ -97,7 +97,11 @@ class EulerMaruyama(Solver):
 
 class Annealed(Solver):
   """Annealed Langevin numerical solver of an SDE.
-  Functions are designed for a mini-batch of inputs."""
+  Functions are designed for a mini-batch of inputs.
+  Sampler must be `pmap` over "batch" axis as
+  suggested by https://arxiv.org/abs/2011.13456 Song
+  et al.
+  """
 
   def __init__(self, sde, snr=1e-2, num_steps=2, dt=None, epsilon=None):
     """Constructs an Annealed Langevin Solver.

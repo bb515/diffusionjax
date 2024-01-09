@@ -23,26 +23,6 @@ class RSDE:
     return drift, diffusion
 
 
-class ODLangevin:
-  """Overdamped langevin SDE."""
-  def __init__(self, score, damping=2e0, L=1.0):
-    self.score = score
-    self.damping = damping
-    self.L = L
-
-  def sde(self, x, t):
-    drift = -self.score(x, t)
-    diffusion = jnp.ones(x.shape) * jnp.sqrt(2 * self.damping / self.L)
-    return drift, diffusion
-
-
-class UDLangevin:
-  """Underdamped Langevin SDE."""
-  def __init__(self, score):
-    self.score = score
-    self.sde = lambda x, t: udlangevin(self.score, x, t)
-
-
 class VE:
   """Variance exploding (VE) SDE, a.k.a. diffusion process with a time dependent diffusion coefficient."""
   def __init__(self, sigma_min=0.01, sigma_max=378.):
