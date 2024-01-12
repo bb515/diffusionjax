@@ -25,14 +25,20 @@ class RSDE:
 
 class VE:
   """Variance exploding (VE) SDE, a.k.a. diffusion process with a time dependent diffusion coefficient."""
-  def __init__(self, sigma_min=0.01, sigma_max=378.):
-    self.sigma_min = sigma_min
-    self.sigma_max = sigma_max
+  def __init__(self, sigma=None):
+    if sigma is None:
+      self.sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
+    else:
+      self.sigma = sigma
+    self.sigma_min = self.sigma(0.)
+    self.sigma_max = self.sigma(1.)
+    self.std = sigma
 
   def sde(self, x, t):
-    sigma = self.sigma_min * (self.sigma_max / self.sigma_min)**t
+    sigma_t = self.sigma(t)
     drift = jnp.zeros_like(x)
-    diffusion = sigma * jnp.sqrt(2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min)))
+    diffusion = sigma_t * jnp.sqrt(2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min)))
+
     return drift, diffusion
 
   def log_mean_coeff(self, t):
@@ -40,9 +46,6 @@ class VE:
 
   def mean_coeff(self, t):
     return jnp.ones_like(t)
-
-  def std(self, t):
-    return self.sigma_min * (self.sigma_max / self.sigma_min)**t
 
   def variance(self, t):
     return self.std(t)**2
@@ -52,10 +55,9 @@ class VE:
 
   def reverse(self, score):
     forward_sde = self.sde
-    sigma_min = self.sigma_min
-    sigma_max = self.sigma_max
+    sigma = self.sigma
 
-    return RVE(score, forward_sde, sigma_min, sigma_max)
+    return RVE(score, forward_sde, sigma)
 
   def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
@@ -74,18 +76,21 @@ class VE:
 
 class VP:
   """Variance preserving (VP) SDE, a.k.a. time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
-  def __init__(self, beta_min=0.1, beta_max=20.):
-    self.beta_min = beta_min
-    self.beta_max = beta_max
+  def __init__(self, beta=None, log_mean_coeff=None):
+    if beta is None:
+      self.beta, self.log_mean_coeff = get_beta_function(
+        beta_min=0.1, beta_max=20.)
+    else:
+      self.beta = beta
+      self.log_mean_coeff = log_mean_coeff
+    self.beta_min = self.beta(0.)
+    self.beta_max = self.beta(1.)
 
   def sde(self, x, t):
-    beta_t = self.beta_min + t * (self.beta_max - self.beta_min)
+    beta_t = self.beta(t)
     drift = -0.5 * batch_mul(beta_t, x)
     diffusion = jnp.sqrt(beta_t)
     return drift, diffusion
-
-  def log_mean_coeff(self, t):
-    return -0.5 * t * self.beta_min - 0.25 * t**2 * (self.beta_max - self.beta_min)
 
   def mean_coeff(self, t):
     return jnp.exp(self.log_mean_coeff(t))
@@ -104,9 +109,9 @@ class VP:
 
   def reverse(self, score):
     fwd_sde = self.sde
-    beta_min = self.beta_min
-    beta_max = self.beta_max
-    return RVP(score, fwd_sde, beta_min, beta_max)
+    beta = self.beta
+    log_mean_coeff = self.log_mean_coeff
+    return RVP(score, fwd_sde, beta, log_mean_coeff)
 
   def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
@@ -165,7 +170,7 @@ class RVE(RSDE, VE):
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):
     guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
-    return RVE(guidance_score, self.forward_sde, self.sigma_min, self.sigma_max)
+    return RVE(guidance_score, self.forward_sde, self.sigma)
 
   def correct(self, corrector):
 
@@ -174,7 +179,7 @@ class RVE(RSDE, VE):
       def sde(x, t):
         return corrector(self.score, x, t)
 
-    return CVE(self.score, self.forward_sde, self.sigma_min, self.sigma_max)
+    return CVE(self.score, self.forward_sde, self.sigma)
 
 
 class RVP(RSDE, VP):
@@ -221,7 +226,7 @@ class RVP(RSDE, VP):
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):
     guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
-    return RVP(guidance_score, self.forward_sde, self.beta_min, self.beta_max)
+    return RVP(guidance_score, self.forward_sde, self.beta, self.log_mean_coeff)
 
   def correct(self, corrector):
 

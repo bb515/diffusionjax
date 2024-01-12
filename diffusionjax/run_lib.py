@@ -3,7 +3,7 @@ import jax
 from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
-from diffusionjax.utils import get_loss, get_score, get_sampler
+from diffusionjax.utils import get_loss, get_score, get_sampler, get_timesteps
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
@@ -76,9 +76,13 @@ class State:
 def get_sde(config):
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
-    return sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    from diffusionjax.utils import get_linear_beta_function
+    beta, log_mean_coeff = get_linear_beta_function(config.model.beta_min, config.model.beta_max)
+    return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower()=='vesde':
-    return sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    from diffusionjax.utils import get_sigma_function
+    sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
+    return sde_lib.VE(sigma=sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
 
@@ -125,15 +129,16 @@ def get_model(config):
 
 def get_solver(config, sde, score):
   if config.solver.outer_solver.lower()=="eulermaruyama":
-    outer_solver = EulerMaruyama(sde.reverse(score),
-                                 num_steps=config.solver.num_outer_steps,
-                                 dt=config.solver.dt, epsilon=config.solver.epsilon)
+    ts, _ = get_timesteps(num_steps=config.solver.num_outer_steps,
+                       dt=config.solver.dt, t0=config.solver.epsilon)
+    outer_solver = EulerMaruyama(sde.reverse(score), ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.outer_solver} unknown.")
   if config.solver.inner_solver is None:
     inner_solver = None
   elif config.solver.inner_solver.lower()=="annealed":
-    inner_solver = Annealed(sde.corrector(sde_lib.UDLangevin, score), num_steps=config.solver.num_inner_steps, snr=config.solver.snr)
+    ts, _ = get_timesteps(num_steps=config.solver.num_inner_steps)
+    inner_solver = Annealed(sde.corrector(sde_lib.UDLangevin, score), snr=config.solver.snr, ts=ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
   return outer_solver, inner_solver
