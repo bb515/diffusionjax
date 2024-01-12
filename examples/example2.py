@@ -77,15 +77,6 @@ def retrain_nn(
   return params, opt_state, mean_losses
 
 
-# def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
-#   img = image_grid(x, image_size, num_channels)
-#   plt.figure(figsize=(8,8))
-#   plt.axis('off')
-#   plt.imshow(img)
-#   plt.savefig(fname)
-#   plt.close()
-
-
 def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
   """Samples from a GMRF."""
   x = np.linspace(-x_max, x_max, image_size)
