@@ -3,7 +3,7 @@ import jax
 from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
-from diffusionjax.utils import get_loss, get_score, get_sampler, get_timesteps
+from diffusionjax.utils import get_loss, get_score, get_sampler, get_times
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
@@ -129,7 +129,7 @@ def get_model(config):
 
 def get_solver(config, sde, score):
   if config.solver.outer_solver.lower()=="eulermaruyama":
-    ts, _ = get_timesteps(num_steps=config.solver.num_outer_steps,
+    ts, _ = get_times(num_steps=config.solver.num_outer_steps,
                        dt=config.solver.dt, t0=config.solver.epsilon)
     outer_solver = EulerMaruyama(sde.reverse(score), ts)
   else:
@@ -137,7 +137,7 @@ def get_solver(config, sde, score):
   if config.solver.inner_solver is None:
     inner_solver = None
   elif config.solver.inner_solver.lower()=="annealed":
-    ts, _ = get_timesteps(num_steps=config.solver.num_inner_steps)
+    ts, _ = get_times(num_steps=config.solver.num_inner_steps)
     inner_solver = Annealed(sde.corrector(sde_lib.UDLangevin, score), snr=config.solver.snr, ts=ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
