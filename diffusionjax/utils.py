@@ -23,6 +23,7 @@ def get_sigma_function(sigma_min, sigma_max):
   def sigma(t):
     # return sigma_min * (sigma_max / sigma_min)**t  # Has large relative error close to zero compared to alternative, below
     return jnp.exp(log_sigma_min + t * (log_sigma_max - log_sigma_min))
+
   return sigma
 
 
@@ -37,10 +38,11 @@ def get_linear_beta_function(beta_min, beta_max):
   def log_mean_coeff(t):
     """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
     return -0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min)
+
   return beta, log_mean_coeff
 
 
-def get_cosine_beta_function(offset):
+def get_cosine_beta_function(offset=0.08):
   """Returns:
       Squared cosine beta (cooling rate parameter) as a function of time,
       It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
@@ -52,8 +54,8 @@ def get_cosine_beta_function(offset):
 
   def log_mean_coeff(t):
     """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
-    return - t / 4  - jnp.sin(2. * t) / 8
-    return -0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min)
+    return - 1. / 4 * (t - (1. + offset) * jnp.sin( jnp.pi * t / (1. + offset)) / jnp.pi)
+
   return beta, log_mean_coeff
 
 
@@ -307,4 +309,3 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
       return inverse_scaler(xs), num_function_evaluations
   # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
   return sampler
-
