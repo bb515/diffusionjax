@@ -9,7 +9,7 @@ from functools import partial
 
 
 def get_timestep(t, t0, t1, num_steps):
-  return ((t - t0) * (num_steps - 1) / (t1 - t0)).astype(jnp.int32)
+  return (jnp.rint((t - t0) * (num_steps - 1) / (t1 - t0))).astype(jnp.int32)
 
 
 def continuous_to_discrete(betas, dt):

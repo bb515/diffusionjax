@@ -94,7 +94,6 @@ def test_get_timestep_continuous():
   assert ts[-1] == 1.0
   unit(ts)
 
-
   ts, dt = get_times(dt=0.1, t0=0.01)
   ts = ts.flatten()
   assert jnp.size(ts) == 1000
@@ -103,7 +102,6 @@ def test_get_timestep_continuous():
   assert ts[0] == 0.01
   assert ts[-1] == 0.1 * (1000 - 1) + 0.01
   unit(ts)
-
 
   ts, dt = get_times(num_steps=100, dt=0.1, t0=0.01)
   ts = ts.flatten()
@@ -151,4 +149,5 @@ def test_get_timestep_continuous():
   assert ts[0] == 0.01
   assert ts[-1] == 0.1 * (10 - 1) + 0.01
   unit(ts)
+
 
