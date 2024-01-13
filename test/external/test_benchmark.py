@@ -81,9 +81,13 @@ def main(argv):
 
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
-    sde = sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    from diffusionjax.utils import get_linear_beta_function
+    beta, log_mean_coeff = get_linear_beta_function(config.model.beta_min, config.model.beta_max)
+    sde = sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower()=='vesde':
-    sde = sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    from diffusionjax.utils import get_sigma_function
+    sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
+    sde = sde_lib.VE(sigma=sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
 

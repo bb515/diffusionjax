@@ -8,7 +8,7 @@ from functools import partial
 import matplotlib.pyplot as plt
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.plot import plot_score, plot_heatmap, plot_samples_1D
-from diffusionjax.utils import get_score, get_loss, get_sampler
+from diffusionjax.utils import get_score, get_loss, get_sampler, get_sigma_function
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
 from diffusionjax.models import MLP
 from diffusionjax.sde import VE
@@ -116,7 +116,8 @@ def main():
   plot_samples_1D(samples[:64], image_size, x_max=x_max, fname="samples")
 
   # Get sde model
-  sde = VE(sigma_min=0.01, sigma_max=3.0)
+  sigma = get_sigma_function(sigma_min=0.01, sigma_max=3.0)
+  sde = VE(sigma)
 
   def nabla_log_pt(x, t):
     """Score.

@@ -3,59 +3,38 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 from jax import vmap
-from diffusionjax.utils import batch_mul, batch_mul_A
+from diffusionjax.utils import (
+  batch_mul, batch_mul_A, get_times, get_timestep,
+  get_sigma_function, get_linear_beta_function, continuous_to_discrete)
 import abc
 
 
 class Solver(abc.ABC):
-  """Solver abstract class. Functions are designed for a mini-batch of inputs."""
-
-  def __init__(self, num_steps=1000, dt=None, epsilon=None):
-    """Construct a Solver.
+  """SDE solver abstract class. Functions are designed for a mini-batch of inputs."""
+  def __init__(self, ts=None):
+    """Construct a Solver. Note that for continuous time we choose to control for numerical
+    error by using a beta schedule instead of an adaptive time step schedule, since adaptive
+    time steps are equivalent to a beta schedule, and beta schedule hyperparameters have
+    been explored extensively in the literature. Therefore, the timesteps must be equally
+    spaced by dt.
     Args:
-      num_steps: number of discretization time steps.
-      dt: time step duration, float or `None`.
-        Optional, if provided then final time, t1 = dt * num_steps.
-      epsilon: A small float 0. < `epsilon` << 1. The SDE or ODE are integrated to `epsilon` to avoid numerical issues.
+      ts: JAX array of equally spaced, monotonically increasing values t \in [t0, t1].
     """
-    self.num_steps = num_steps
+    if ts is None: ts, _ = get_times(num_steps=1000)
+    self.ts = ts
+    self.t1 = ts[-1]
+    self.t0 = ts[0]
+    self.dt = ts[1] - ts[0]
+    self.num_steps = ts.size
+    # print("t \in [{}, {}] with step size dt={} and num_steps={}".format(
+    #   self.t0, self.t1, self.dt, self.num_steps))
+    dts = jnp.diff(ts)
+    if not jnp.all(dts > 0.):
+      raise ValueError("ts must be monotonically increasing, got ts={}".format(ts))
+    if not jnp.all(dts == self.dt):
+      raise ValueError("stepsize dt must be constant; ts must be equally \
+      spaced, got diff(ts)={}".format(dts))
 
-    # Handle four different ways of specifying the discretisation step size, its terminal time and its total time.
-    if dt is not None:
-      if epsilon is not None:
-        self.t1 = dt * (num_steps - 1) + epsilon
-        # Defined in forward time, t \in [epsilon, t1], 0 < epsilon << t1
-        ts, step = jnp.linspace(epsilon, self.t1, num_steps, retstep=True)
-        self.ts = ts.reshape(-1, 1)
-        assert jnp.isclose(step, (self.t1 - epsilon) / (num_steps - 1))
-        assert jnp.isclose(step, dt)
-        self.dt = step
-        assert epsilon == self.ts[0]
-        self.epsilon = epsilon
-      else:
-        self.t1 = dt * num_steps
-        # Defined in forward time, t \in [dt , t1], 0 < \epsilon << t1
-        ts, step = jnp.linspace(0., self.t1, num_steps + 1, retstep=True)
-        self.ts = ts[1:].reshape(-1, 1)
-        assert jnp.isclose(step, dt)
-        self.dt = step
-        self.epsilon = self.ts[0]
-    else:
-      self.t1 = 1.0
-      if epsilon is not None:
-        ts, step = jnp.linspace(epsilon, 1., num_steps, retstep=True)
-        self.ts = ts.reshape(-1, 1)
-        assert jnp.isclose(step, (1. - epsilon) / (num_steps - 1))
-        self.dt = step
-        assert epsilon == self.ts[0]
-        self.epsilon = epsilon
-      else:
-        # Defined in forward time, t \in [dt, 1.0], 0 < dt << 1
-        ts, step = jnp.linspace(0., 1., num_steps + 1, retstep=True)
-        self.ts = ts[1:].reshape(-1, 1)
-        assert jnp.isclose(step, 1. / num_steps)
-        self.dt = step
-        self.epsilon = self.ts[0]
 
   @abc.abstractmethod
   def update(self, rng, x, t):
@@ -76,12 +55,12 @@ class EulerMaruyama(Solver):
   """Euler Maruyama numerical solver of an SDE.
   Functions are designed for a mini-batch of inputs."""
 
-  def __init__(self, sde, num_steps=1000, dt=None, epsilon=None):
+  def __init__(self, sde, ts=None):
     """Constructs an Euler-Maruyama Solver.
     Args:
       sde: A valid SDE class.
     """
-    super().__init__(num_steps=num_steps, dt=dt, epsilon=epsilon)
+    super().__init__(ts)
     self.sde = sde
     self.prior = sde.prior
 
@@ -103,13 +82,15 @@ class Annealed(Solver):
   et al.
   """
 
-  def __init__(self, sde, snr=1e-2, num_steps=2, dt=None, epsilon=None):
+  def __init__(self, sde, snr=1e-2, ts=jnp.empty((2, 1))):
     """Constructs an Annealed Langevin Solver.
     Args:
       sde: A valid SDE class.
       snr: A hyperparameter representing a signal-to-noise ratio.
+      ts: For a corrector, just need a placeholder JAX array with length
+        number of timesteps of the inner solver.
     """
-    super().__init__(num_steps, dt=dt, epsilon=epsilon)
+    super().__init__(ts)
     self.sde = sde
     self.snr = snr
     self.prior = sde.prior
@@ -134,13 +115,13 @@ class Inpainted(Solver):
   """Inpainting constraint for numerical solver of an SDE.
   Functions are designed for a mini-batch of inputs."""
 
-  def __init__(self, sde, mask, y, num_steps=1):
+  def __init__(self, sde, mask, y, ts=jnp.empty((1, 1))):
     """Constructs an Annealed Langevin Solver.
     Args:
       sde: A valid SDE class.
       snr: A hyperparameter representing a signal-to-noise ratio.
     """
-    super().__init__(num_steps)
+    super().__init__(ts)
     self.sde = sde
     self.mask = mask
     self.y = y
@@ -164,13 +145,13 @@ class Projected(Solver):
   """Inpainting constraint for numerical solver of an SDE.
   Functions are designed for a mini-batch of inputs."""
 
-  def __init__(self, sde, mask, y, coeff=1., num_steps=1):
+  def __init__(self, sde, mask, y, coeff=1., ts=jnp.empty((1, 1))):
     """Constructs an Annealed Langevin Solver.
     Args:
       sde: A valid SDE class.
       snr: A hyperparameter representing a signal-to-noise ratio.
     """
-    super().__init__(num_steps)
+    super().__init__(ts)
     self.sde = sde
     self.mask = mask
     self.y = y
@@ -192,11 +173,13 @@ class Projected(Solver):
 
 class DDPM(Solver):
   """DDPM Markov chain using Ancestral sampling."""
-  def __init__(self, score, num_steps=1000, dt=None, epsilon=None, beta_min=0.1, beta_max=20.0):
-    super().__init__(num_steps, dt, epsilon)
+  def __init__(self, score, beta=None, ts=None):
+    super().__init__(ts)
+    if beta is None:
+      beta, _ = get_linear_beta_function(
+        beta_min=0.1, beta_max=20.)
+    self.discrete_betas = continuous_to_discrete(vmap(beta)(self.ts.flatten()), self.dt)
     self.score = score
-    self.discrete_betas = jnp.linspace(
-      beta_min / num_steps, beta_max / num_steps, num_steps)
     self.alphas = 1. - self.discrete_betas
     self.alphas_cumprod = jnp.cumprod(self.alphas, axis=0)
     self.sqrt_alphas_cumprod = jnp.sqrt(self.alphas_cumprod)
@@ -253,7 +236,7 @@ class DDPM(Solver):
 
   def update(self, rng, x, t):
     score = self.score(x, t)
-    timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     x_mean, std = self.posterior(score, x, timestep)
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
@@ -262,17 +245,15 @@ class DDPM(Solver):
 
 class SMLD(Solver):
   """SMLD(NCSN) Markov Chain using Ancestral sampling."""
-
-  def __init__(self, score, num_steps=1000, dt=None, epsilon=None, sigma_min=0.01, sigma_max=378.):
-    super().__init__(num_steps, dt, epsilon)
-    self.score = score
-    self.sigma_min = sigma_min
-    self.sigma_max = sigma_max
-    self.discrete_sigmas = jnp.exp(
-        jnp.linspace(jnp.log(self.sigma_min),
-                     jnp.log(self.sigma_max),
-                     self.num_steps))
+  def __init__(self, score, sigma=None, ts=None):
+    super().__init__(ts)
+    if sigma is None:
+      sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
+    sigmas = vmap(sigma)(ts.flatten())
+    self.sigma_max = sigmas[-1]
+    self.discrete_sigmas = jnp.log(sigmas)
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
+    self.score = score
 
   def get_estimate_x_0_vmap(self, observation_map):
 
@@ -289,9 +270,6 @@ class SMLD(Solver):
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
-      print("x", x.shape)
-      print("t", t.shape)
-      print("timestep", timestep.shape)
       v = self.discrete_sigmas[timestep]**2
       s = self.score(x, t)
       x_0 = x + batch_mul(v, s)
@@ -316,7 +294,7 @@ class SMLD(Solver):
     return x_mean, std
 
   def update(self, rng, x, t):
-    timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     score = self.score(x, t)
     x_mean, std = self.posterior(score, x, timestep)
     z = random.normal(rng, x.shape)
@@ -327,19 +305,19 @@ class SMLD(Solver):
 class DDIMVP(Solver):
   """DDIM Markov chain. For the DDPM Markov Chain or VP SDE."""
 
-  def __init__(self, model, eta=0.0, num_steps=1000, dt=None, epsilon=None, beta_min=0.1, beta_max=20.0):
+  def __init__(self, model, eta=0., beta=None, ts=None):
     """
     Args:
         model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
         eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVP.
     """
-    super().__init__(num_steps, dt, epsilon)
+    super().__init__(ts)
+    if beta is None:
+      beta, _ = get_linear_beta_function(
+        beta_min=0.1, beta_max=20.)
+    self.discrete_betas = continuous_to_discrete(vmap(beta)(self.ts.flatten()), self.dt)
     self.eta = eta
     self.model = model
-    self.beta_min = beta_min
-    self.beta_max = beta_max
-    self.discrete_betas = jnp.linspace(
-      beta_min / num_steps, beta_max / num_steps, num_steps)
     self.alphas = 1. - self.discrete_betas
     self.alphas_cumprod = jnp.cumprod(self.alphas, axis=0)
     self.sqrt_alphas_cumprod = jnp.sqrt(self.alphas_cumprod)
@@ -379,7 +357,7 @@ class DDIMVP(Solver):
     # https://github.com/DPS2022/diffusion-posterior-sampling/blob/effbde7325b22ce8dc3e2c06c160c021e743a12d/guided_diffusion/gaussian_diffusion.py#L373
     # and as written in https://arxiv.org/pdf/2010.02502.pdf
     epsilon = self.model(x, t)
-    timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     m = self.sqrt_alphas_cumprod[timestep]
     sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
     v = sqrt_1m_alpha**2
@@ -402,24 +380,22 @@ class DDIMVP(Solver):
 
 
 class DDIMVE(Solver):
-  """DDIM Markov chain. For the SMLD Markov Chain or VE SDE."""
-
-  def __init__(self, model, eta=0.0, num_steps=1000, dt=None, epsilon=None, sigma_min=0.01, sigma_max=378.):
-    """
+  """DDIM Markov chain. For the SMLD Markov Chain or VE SDE.
     Args:
         model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
         eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVE.
     """
-    super().__init__(num_steps, dt, epsilon)
+
+  def __init__(self, model, eta=0., sigma=None, ts=None):
+    super().__init__(ts)
+    if sigma is None:
+      sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
+    sigmas = vmap(sigma)(ts.flatten())
+    self.sigma_max = sigmas[-1]
+    self.discrete_sigmas = jnp.log(sigmas)
+    self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.eta = eta
     self.model = model
-    self.sigma_min = sigma_min
-    self.sigma_max = sigma_max
-    self.discrete_sigmas = jnp.exp(
-        jnp.linspace(jnp.log(self.sigma_min),
-                    jnp.log(self.sigma_max),
-                    self.num_steps))
-    self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
 
   def get_estimate_x_0_vmap(self, observation_map):
 
@@ -446,7 +422,7 @@ class DDIMVE(Solver):
     return random.normal(rng, shape) * self.sigma_max
 
   def posterior(self, x, t):
-    timestep = (t * (self.num_steps - 1) / self.t1).astype(jnp.int32)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     epsilon = self.model(x, t)
     sigma = self.discrete_sigmas[timestep]
     sigma_prev = self.discrete_sigmas_prev[timestep]

@@ -12,7 +12,7 @@ import jax.random as random
 import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from diffusionjax.run_lib import get_model, train
-from diffusionjax.utils import get_score, get_sampler
+from diffusionjax.utils import get_score, get_sampler, get_times
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.plot import plot_scatter, plot_score, plot_heatmap
@@ -92,9 +92,15 @@ def main(argv):
 
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
-    sde = sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    from diffusionjax.utils import get_linear_beta_function
+    beta, log_mean_coeff = get_linear_beta_function(
+      beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    sde = sde_lib.VP(beta, log_mean_coeff)
   elif config.training.sde.lower()=='vesde':
-    sde = sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    from diffusionjax.utils import get_sigma_function
+    sigma = get_sigma_function(
+      sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    sde = sde_lib.VE(sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
 
@@ -128,9 +134,8 @@ def main(argv):
 
   # Running the reverse SDE with the empirical drift
   plot_score(score=nabla_log_hat_pt, scaler=scaler, t=0.01, area_bounds=[-3., 3], fname="empirical score")
-  outer_solver = EulerMaruyama(sde.reverse(nabla_log_hat_pt),
-                                num_steps=config.solver.num_outer_steps,
-                                dt=config.solver.dt, epsilon=config.solver.epsilon)
+  ts, _ = get_times(num_steps=config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+  outer_solver = EulerMaruyama(sde.reverse(nabla_log_hat_pt), ts)
   sampler = get_sampler((5760, config.data.image_size),
                         outer_solver,
                         denoise=config.sampling.denoise,
@@ -142,9 +147,7 @@ def main(argv):
 
   # What happens when I perturb the score with a constant?
   perturbed_score = lambda x, t: nabla_log_hat_pt(x, t) + 1.
-  outer_solver = EulerMaruyama(sde.reverse(perturbed_score),
-                                num_steps=config.solver.num_outer_steps,
-                                dt=config.solver.dt, epsilon=config.solver.epsilon)
+  outer_solver = EulerMaruyama(sde.reverse(perturbed_score), ts)
   sampler = get_sampler((5760, config.data.image_size),
                         outer_solver,
                         denoise=config.sampling.denoise,
@@ -179,9 +182,7 @@ def main(argv):
   # Get trained score
   trained_score = get_score(sde, get_model(config), params, score_scaling=config.training.score_scaling)
   plot_score(score=trained_score, scaler=scaler, t=0.01, area_bounds=[-3., 3.], fname="trained score")
-  outer_solver = EulerMaruyama(sde.reverse(trained_score),
-                                num_steps=config.solver.num_outer_steps,
-                                dt=config.solver.dt, epsilon=config.solver.epsilon)
+  outer_solver = EulerMaruyama(sde.reverse(trained_score), ts)
   sampler = get_sampler(
     (config.eval.batch_size // num_devices, config.data.image_size),
     outer_solver,
