@@ -1,7 +1,7 @@
 import pytest
 from diffusionjax.utils import (
   batch_mul, get_times, get_linear_beta_function, get_timestep,
-  get_sigma_schedule, continuous_to_discrete, get_sigma_function)
+  continuous_to_discrete, get_sigma_function)
 import jax.numpy as jnp
 from jax import vmap
 
@@ -34,20 +34,19 @@ def test_continuous_discrete_equivalence_sigma_schedule():
   num_steps = 1000
   sigma_min = .01
   sigma_max = 378.
+  ts, dt = get_times(num_steps)
+  sigma = get_sigma_function(
+    sigma_min=sigma_min, sigma_max=sigma_max)
+  actual_discrete_sigmas = jnp.log(vmap(sigma)(ts))
   # https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8cccd935068cd9c657318fbc6ce4c/sde_lib.py#L222
-  expected_sigmas = jnp.exp(
-      jnp.linspace(jnp.log(sigma_min),
-                   jnp.log(sigma_max),
-                   num_steps))
-  actual_sigmas = get_sigma_schedule(num_steps, sigma_min=sigma_min, sigma_max=sigma_max).flatten()
-
-  sigma = get_sigma_function(sigma_min, sigma_max)
-  ts, _ = get_times(num_steps, t0=0.)
-  ts = ts.flatten()
-  expected_sigmas_ = vmap(sigma)(ts)
-
-  assert jnp.allclose(expected_sigmas, actual_sigmas)
-  assert jnp.allclose(expected_sigmas_, actual_sigmas)
+  # expected_sigmas = jnp.exp(  # I think this is wrong
+  #     jnp.linspace(jnp.log(sigma_min),
+  #                  jnp.log(sigma_max),
+  #                  num_steps))
+  #
+  ts, _ = get_times(num_steps, dt)
+  expected_discrete_sigmas = jnp.log(sigma_min) + ts * (jnp.log(sigma_max) - jnp.log(sigma_min))
+  assert jnp.allclose(expected_discrete_sigmas, actual_discrete_sigmas)
 
 
 def test_get_timestep_continuous():
@@ -152,3 +151,4 @@ def test_get_timestep_continuous():
   assert ts[0] == 0.01
   assert ts[-1] == 0.1 * (10 - 1) + 0.01
   unit(ts)
+

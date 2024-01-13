@@ -150,15 +150,15 @@ def get_ddim_chain(config, model):
       model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
   """
   if config.solver.outer_solver.lower()=="ddimvp":
-    return DDIMVP(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
-                          dt=config.solver.dt, epsilon=config.solver.epsilon,
-                          beta_min=config.model.beta_min,
-                          beta_max=config.model.beta_max)
+    from diffusionjax.utils import get_linear_beta_function
+    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+    beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    return DDIMVP(model, eta=config.solver.eta, beta=beta, ts=ts)
   elif config.solver.outer_solver.lower()=="ddimve":
-    return DDIMVE(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
-                          dt=config.solver.dt, epsilon=config.solver.epsilon,
-                          sigma_min=config.model.sigma_min,
-                          sigma_max=config.model.sigma_max)
+    from diffusionjax.utils import get_sigma_function
+    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+    sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    return DDIMVE(model, eta=config.solver.eta, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"DDIM Chain {config.solver.outer_solver} unknown.")
 
@@ -169,15 +169,16 @@ def get_markov_chain(config, score):
     score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
   """
   if config.solver.outer_solver.lower()=="ddpm":
-    return DDPM(score, num_steps=config.solver.num_outer_steps,
-                        dt=config.solver.dt, epsilon=config.solver.epsilon,
-                        beta_min=config.model.beta_min,
-                        beta_max=config.model.beta_max)
+    from diffusionjax.utils import get_linear_beta_function
+    ts, _ = get_times(num_steps=config.solver.num_outer_steps,
+                   dt=config.solver.dt, epsilon=config.solver.epsilon)
+    beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    return DDPM(score, beta=beta, ts=ts)
   elif config.solver.outer_solver.lower()=="smld":
-    return SMLD(score, num_steps=config.solver.num_outer_steps,
-                        dt=config.solver.dt, epsilon=config.solver.epsilon,
-                        sigma_min=config.model.sigma_min,
-                        sigma_max=config.model.sigma_max)
+    from diffusionjax.utils import get_sigma_function
+    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+    sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    return SMLD(model, eta=config.solver.eta, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
 

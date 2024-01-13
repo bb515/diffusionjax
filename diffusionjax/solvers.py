@@ -5,7 +5,7 @@ import jax.random as random
 from jax import vmap
 from diffusionjax.utils import (
   batch_mul, batch_mul_A, get_times, get_timestep,
-  get_sigma_schedule, continuous_to_discrete)
+  get_sigma_function, get_linear_beta_function, continuous_to_discrete)
 import abc
 
 
@@ -236,7 +236,7 @@ class DDPM(Solver):
 
   def update(self, rng, x, t):
     score = self.score(x, t)
-    timestep = get_timestep(t)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     x_mean, std = self.posterior(score, x, timestep)
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
@@ -294,7 +294,7 @@ class SMLD(Solver):
     return x_mean, std
 
   def update(self, rng, x, t):
-    timestep = get_timestep(t)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     score = self.score(x, t)
     x_mean, std = self.posterior(score, x, timestep)
     z = random.normal(rng, x.shape)
@@ -357,7 +357,7 @@ class DDIMVP(Solver):
     # https://github.com/DPS2022/diffusion-posterior-sampling/blob/effbde7325b22ce8dc3e2c06c160c021e743a12d/guided_diffusion/gaussian_diffusion.py#L373
     # and as written in https://arxiv.org/pdf/2010.02502.pdf
     epsilon = self.model(x, t)
-    timestep = get_timestep(t)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     m = self.sqrt_alphas_cumprod[timestep]
     sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
     v = sqrt_1m_alpha**2
@@ -422,7 +422,7 @@ class DDIMVE(Solver):
     return random.normal(rng, shape) * self.sigma_max
 
   def posterior(self, x, t):
-    timestep = get_timestep(t)
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     epsilon = self.model(x, t)
     sigma = self.discrete_sigmas[timestep]
     sigma_prev = self.discrete_sigmas_prev[timestep]

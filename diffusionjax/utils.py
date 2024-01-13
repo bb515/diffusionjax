@@ -17,16 +17,12 @@ def continuous_to_discrete(betas, dt):
   return discrete_betas
 
 
-def get_sigma_schedule(num_steps=1000, dt=None, t0=0., sigma_min=0.01, sigma_max=378.):
-  ts, _ = get_times(num_steps, dt, t0)
-  log_sigmas = jnp.log(sigma_min) + ts * (jnp.log(sigma_max) - jnp.log(sigma_min))
-  sigmas = jnp.exp(log_sigmas)
-  return sigmas
-
-
 def get_sigma_function(sigma_min, sigma_max):
+  log_sigma_min = jnp.log(sigma_min)
+  log_sigma_max = jnp.log(sigma_max)
   def sigma(t):
-    return sigma_min * (sigma_max / sigma_min)**t
+    # return sigma_min * (sigma_max / sigma_min)**t  # Has large relative error close to zero compared to alternative, below
+    return jnp.exp(log_sigma_min + t * (log_sigma_max - log_sigma_min))
   return sigma
 
 
@@ -59,35 +55,6 @@ def get_cosine_beta_function(offset):
     return - t / 4  - jnp.sin(2. * t) / 8
     return -0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min)
   return beta, log_mean_coeff
-
-
-def get_cosine_beta_schedule(num_steps, dt, t0, beta_min, beta_max, offset=0.08):
-  """
-  # TODO: cosine schedule should be defined in beta space
-  # But should just define this functionally, which also allows to get discrete betas.
-
-  Get a smooth (squared cosine), monotonically increasing time schedule.
-  Args:
-      num_steps: number of discretization time steps.
-      dt: time step duration, float or `None`.
-        Optional, if provided then final time, t1 = dt * num_steps.
-      epsilon: A small float 0. < `epsilon` << 1. The SDE or ODE are integrated to `epsilon` to avoid numerical issues.
-  Return:
-      ts: JAX array of monotonically increasing values t \in [t0, t1].
-  """
-  phases, dt, t0, t1 = get_linear_beta_schedule(num_steps, None, t0)
-
-
-  decay = jnp.cos((1. - phases + offset) / (1 + offset) * 0.5 * jnp.pi)**2
-  t1 = dt * num_steps
-  betas = t1 * decay
-  # TODO: don't expect these to work
-  assert ts[0, 0]==t0
-  assert ts[-1, 0]==t1
-  dts = jnp.diff(ts)
-  assert jnp.all(dts > 0.)
-  assert jnp.all(dts==dt)
-  return ts, dt, t0, t1
 
 
 def get_times(num_steps=1000, dt=None, t0=None):
