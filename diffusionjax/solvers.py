@@ -18,7 +18,7 @@ class Solver(abc.ABC):
     been explored extensively in the literature. Therefore, the timesteps must be equally
     spaced by dt.
     Args:
-      ts: JAX array of equally spaced, monotonically increasing values t \in [t0, t1].
+      ts: JAX array of equally spaced, monotonically increasing values t in [t0, t1].
     """
     if ts is None: ts, _ = get_times(num_steps=1000)
     self.ts = ts

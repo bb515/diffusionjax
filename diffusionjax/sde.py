@@ -1,13 +1,21 @@
 """SDE class."""
 import jax.numpy as jnp
 from jax import random, vmap
-from diffusionjax.utils import batch_mul
+from diffusionjax.utils import (
+  batch_mul, get_sigma_function, get_linear_beta_function)
 
 
-def udlangevin(score, x, t):
+def ulangevin(score, x, t):
   drift = -score(x, t)
   diffusion = jnp.ones(x.shape) * jnp.sqrt(2)
   return drift, diffusion
+
+
+class ULangevin:
+  """Unadjusted Langevin SDE."""
+  def __init__(self, score):
+    self.score = score
+    self.sde = lambda x, t: ulangevin(self.score, x, t)
 
 
 class RSDE:
@@ -78,7 +86,7 @@ class VP:
   """Variance preserving (VP) SDE, a.k.a. time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
   def __init__(self, beta=None, log_mean_coeff=None):
     if beta is None:
-      self.beta, self.log_mean_coeff = get_beta_function(
+      self.beta, self.log_mean_coeff = get_linear_beta_function(
         beta_min=0.1, beta_max=20.)
     else:
       self.beta = beta
