@@ -8,7 +8,7 @@ from flax import serialization
 from functools import partial
 import matplotlib.pyplot as plt
 from diffusionjax.plot import plot_samples, plot_heatmap, plot_samples_1D, plot_samples
-from diffusionjax.utils import get_score, get_loss, get_sampler
+from diffusionjax.utils import get_score, get_loss, get_sampler, get_times, get_sigma_function
 from diffusionjax.solvers import EulerMaruyama, Annealed, Inpainted, Projected
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.models import CNN
@@ -77,15 +77,6 @@ def retrain_nn(
   return params, opt_state, mean_losses
 
 
-# def plot_samples(x, image_size=32, num_channels=3, fname="samples"):
-#   img = image_grid(x, image_size, num_channels)
-#   plt.figure(figsize=(8,8))
-#   plt.axis('off')
-#   plt.imshow(img)
-#   plt.savefig(fname)
-#   plt.close()
-
-
 def sample_image_rgb(rng, num_samples, image_size, kernel, num_channels):
   """Samples from a GMRF."""
   x = np.linspace(-x_max, x_max, image_size)
@@ -116,7 +107,8 @@ def main():
   plot_samples_1D(samples[:64, 0], image_size, x_max=x_max, fname="samples 1D")
 
   # Get sde model
-  sde = VE(sigma_min=0.001, sigma_max=3.0)
+  sigma = get_sigma_function(sigma_min=0.001, sigma_max=3.0)
+  sde = VE(sigma)
 
   # Neural network training via score matching
   batch_size = 16
@@ -160,10 +152,11 @@ def main():
 
   # Get the outer loop of a numerical solver, also known as "predictor"
   rsde = sde.reverse(trained_score)
-  outer_solver = EulerMaruyama(rsde, num_steps=num_steps)
+  ts, _ = get_times(num_steps=num_steps)
+  outer_solver = EulerMaruyama(rsde, ts)
 
   # Get the inner loop of a numerical solver, also known as "corrector"
-  inner_solver = Annealed(rsde.correct(udlangevin), num_steps=2, snr=0.01)
+  inner_solver = Annealed(rsde.correct(udlangevin), snr=0.01, ts=jnp.empty((2, 1)))
 
   # pmap across devices. pmap assumes devices are identical model. If this is not the case,
   # use the devices argument in pmap

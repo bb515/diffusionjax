@@ -3,7 +3,9 @@ import jax
 from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
-from diffusionjax.utils import get_loss, get_score, get_sampler
+from diffusionjax.utils import (
+  get_loss, get_score, get_sampler, get_times,
+  get_sigma_function, get_linear_beta_function)
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
@@ -20,11 +22,11 @@ from typing import Any
 import logging
 import wandb
 
-# This run library requires optax, https://optax.readthedocs.io/en/latest/
+# This run_library requires optax, https://optax.readthedocs.io/en/latest/
 import optax
-# This run library requires orbax, https://orbax.readthedocs.io/en/latest/
+# This run_library requires orbax, https://orbax.readthedocs.io/en/latest/
 import orbax.checkpoint
-# This run librar requires torch[cpu], https://pytorch.org/get-started/locally/
+# This run_library requires torch[cpu], https://pytorch.org/get-started/locally/
 from torch.utils.data import DataLoader
 
 
@@ -76,9 +78,11 @@ class State:
 def get_sde(config):
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
-    return sde_lib.VP(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    beta, log_mean_coeff = get_linear_beta_function(config.model.beta_min, config.model.beta_max)
+    return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower()=='vesde':
-    return sde_lib.VE(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
+    return sde_lib.VE(sigma=sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
 
@@ -125,15 +129,16 @@ def get_model(config):
 
 def get_solver(config, sde, score):
   if config.solver.outer_solver.lower()=="eulermaruyama":
-    outer_solver = EulerMaruyama(sde.reverse(score),
-                                 num_steps=config.solver.num_outer_steps,
-                                 dt=config.solver.dt, epsilon=config.solver.epsilon)
+    ts, _ = get_times(num_steps=config.solver.num_outer_steps,
+                       dt=config.solver.dt, t0=config.solver.epsilon)
+    outer_solver = EulerMaruyama(sde.reverse(score), ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.outer_solver} unknown.")
   if config.solver.inner_solver is None:
     inner_solver = None
   elif config.solver.inner_solver.lower()=="annealed":
-    inner_solver = Annealed(sde.corrector(sde_lib.UDLangevin, score), num_steps=config.solver.num_inner_steps, snr=config.solver.snr)
+    ts, _ = get_times(num_steps=config.solver.num_inner_steps)
+    inner_solver = Annealed(sde.corrector(sde_lib.ULangevin, score), snr=config.solver.snr, ts=ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
   return outer_solver, inner_solver
@@ -145,15 +150,13 @@ def get_ddim_chain(config, model):
       model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
   """
   if config.solver.outer_solver.lower()=="ddimvp":
-    return DDIMVP(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
-                          dt=config.solver.dt, epsilon=config.solver.epsilon,
-                          beta_min=config.model.beta_min,
-                          beta_max=config.model.beta_max)
+    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+    beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    return DDIMVP(model, eta=config.solver.eta, beta=beta, ts=ts)
   elif config.solver.outer_solver.lower()=="ddimve":
-    return DDIMVE(model, eta=config.solver.eta, num_steps=config.solver.num_outer_steps,
-                          dt=config.solver.dt, epsilon=config.solver.epsilon,
-                          sigma_min=config.model.sigma_min,
-                          sigma_max=config.model.sigma_max)
+    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+    sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    return DDIMVE(model, eta=config.solver.eta, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"DDIM Chain {config.solver.outer_solver} unknown.")
 
@@ -164,15 +167,14 @@ def get_markov_chain(config, score):
     score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
   """
   if config.solver.outer_solver.lower()=="ddpm":
-    return DDPM(score, num_steps=config.solver.num_outer_steps,
-                        dt=config.solver.dt, epsilon=config.solver.epsilon,
-                        beta_min=config.model.beta_min,
-                        beta_max=config.model.beta_max)
+    ts, _ = get_times(num_steps=config.solver.num_outer_steps,
+                   dt=config.solver.dt, t0=config.solver.epsilon)
+    beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+    return DDPM(score, beta=beta, ts=ts)
   elif config.solver.outer_solver.lower()=="smld":
-    return SMLD(score, num_steps=config.solver.num_outer_steps,
-                        dt=config.solver.dt, epsilon=config.solver.epsilon,
-                        sigma_min=config.model.sigma_min,
-                        sigma_max=config.model.sigma_max)
+    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
+    sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+    return SMLD(score, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
 

@@ -8,6 +8,108 @@ import jax.random as random
 from functools import partial
 
 
+def get_timestep(t, t0, t1, num_steps):
+  return (jnp.rint((t - t0) * (num_steps - 1) / (t1 - t0))).astype(jnp.int32)
+
+
+def continuous_to_discrete(betas, dt):
+  discrete_betas = betas * dt
+  return discrete_betas
+
+
+def get_sigma_function(sigma_min, sigma_max):
+  log_sigma_min = jnp.log(sigma_min)
+  log_sigma_max = jnp.log(sigma_max)
+  def sigma(t):
+    # return sigma_min * (sigma_max / sigma_min)**t  # Has large relative error close to zero compared to alternative, below
+    return jnp.exp(log_sigma_min + t * (log_sigma_max - log_sigma_min))
+
+  return sigma
+
+
+def get_linear_beta_function(beta_min, beta_max):
+  """Returns:
+      Linear beta (cooling rate parameter) as a function of time,
+      It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
+  """
+  def beta(t):
+    return beta_min + t * (beta_max - beta_min)
+
+  def log_mean_coeff(t):
+    """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
+    return -0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min)
+
+  return beta, log_mean_coeff
+
+
+def get_cosine_beta_function(offset=0.08):
+  """Returns:
+      Squared cosine beta (cooling rate parameter) as a function of time,
+      It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
+  """
+  def beta(t):
+    # return jnp.cos((1. - t + offset) / (1 + offset) * 0.5 * jnp.pi)**2
+    # Use double angle formula here, instead
+    return 0.5 * (jnp.cos((1. - t + offset) / (1. + offset) * jnp.pi) + 1.)
+
+  def log_mean_coeff(t):
+    """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
+    return - 1. / 4 * (t - (1. + offset) * jnp.sin( jnp.pi * t / (1. + offset)) / jnp.pi)
+
+  return beta, log_mean_coeff
+
+
+def get_times(num_steps=1000, dt=None, t0=None):
+  """
+  Get linear, monotonically increasing time schedule.
+  Args:
+      num_steps: number of discretization time steps.
+      dt: time step duration, float or `None`.
+        Optional, if provided then final time, t1 = dt * num_steps.
+      t0: A small float 0. < t0 << 1. The SDE or ODE are integrated to
+          t0 to avoid numerical issues.
+  Return:
+      ts: JAX array of monotonically increasing values t \in [t0, t1].
+  """
+  if dt is not None:
+    if t0 is not None:
+      t1 = dt * (num_steps - 1) + t0
+      # Defined in forward time, t \in [t0, t1], 0 < t0 << t1
+      ts, step = jnp.linspace(t0, t1, num_steps, retstep=True)
+      ts = ts.reshape(-1, 1)
+      assert jnp.isclose(step, (t1 - t0) / (num_steps - 1))
+      assert jnp.isclose(step, dt)
+      dt = step
+      assert t0 == ts[0]
+    else:
+      t1 = dt * num_steps
+      # Defined in forward time, t \in [dt , t1], 0 < \t0 << t1
+      ts, step = jnp.linspace(0., t1, num_steps + 1, retstep=True)
+      ts = ts[1:].reshape(-1, 1)
+      assert jnp.isclose(step, dt)
+      dt = step
+      t0 = ts[0]
+  else:
+    t1 = 1.0
+    if t0 is not None:
+      ts, dt = jnp.linspace(t0, 1., num_steps, retstep=True)
+      ts = ts.reshape(-1, 1)
+      assert jnp.isclose(dt, (1. - t0) / (num_steps - 1))
+      assert t0 == ts[0]
+    else:
+      # Defined in forward time, t \in [dt, 1.0], 0 < dt << 1
+      ts, dt = jnp.linspace(0., 1., num_steps + 1, retstep=True)
+      ts = ts[1:].reshape(-1, 1)
+      assert jnp.isclose(dt, 1. / num_steps)
+      t0 = ts[0]
+  assert ts[0, 0]==t0
+  assert ts[-1, 0]==t1
+  dts = jnp.diff(ts)
+  assert jnp.all(dts > 0.)
+  assert jnp.all(dts==dt)
+  return ts, dt
+
+
 def batch_linalg_solve_A(A, b):
   return vmap(lambda b: jnp.linalg.solve(A, b))(b)
 
