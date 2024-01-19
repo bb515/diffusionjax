@@ -3,7 +3,9 @@ import jax
 from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
-from diffusionjax.utils import get_loss, get_score, get_sampler, get_times
+from diffusionjax.utils import (
+  get_loss, get_score, get_sampler, get_times,
+  get_sigma_function, get_linear_beta_function)
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
@@ -18,7 +20,7 @@ import os
 import time
 from typing import Any
 import logging
-# import wandb
+import wandb
 
 # This run_library requires optax, https://optax.readthedocs.io/en/latest/
 import optax
@@ -76,11 +78,9 @@ class State:
 def get_sde(config):
   # Setup SDE
   if config.training.sde.lower()=='vpsde':
-    from diffusionjax.utils import get_linear_beta_function
     beta, log_mean_coeff = get_linear_beta_function(config.model.beta_min, config.model.beta_max)
     return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower()=='vesde':
-    from diffusionjax.utils import get_sigma_function
     sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
     return sde_lib.VE(sigma=sigma)
   else:
@@ -138,7 +138,7 @@ def get_solver(config, sde, score):
     inner_solver = None
   elif config.solver.inner_solver.lower()=="annealed":
     ts, _ = get_times(num_steps=config.solver.num_inner_steps)
-    inner_solver = Annealed(sde.corrector(sde_lib.UDLangevin, score), snr=config.solver.snr, ts=ts)
+    inner_solver = Annealed(sde.corrector(sde_lib.ULangevin, score), snr=config.solver.snr, ts=ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
   return outer_solver, inner_solver
@@ -150,12 +150,10 @@ def get_ddim_chain(config, model):
       model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
   """
   if config.solver.outer_solver.lower()=="ddimvp":
-    from diffusionjax.utils import get_linear_beta_function
     ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
     beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
     return DDIMVP(model, eta=config.solver.eta, beta=beta, ts=ts)
   elif config.solver.outer_solver.lower()=="ddimve":
-    from diffusionjax.utils import get_sigma_function
     ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
     sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
     return DDIMVE(model, eta=config.solver.eta, sigma=sigma, ts=ts)
@@ -169,16 +167,14 @@ def get_markov_chain(config, score):
     score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
   """
   if config.solver.outer_solver.lower()=="ddpm":
-    from diffusionjax.utils import get_linear_beta_function
     ts, _ = get_times(num_steps=config.solver.num_outer_steps,
-                   dt=config.solver.dt, epsilon=config.solver.epsilon)
+                   dt=config.solver.dt, t0=config.solver.epsilon)
     beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
     return DDPM(score, beta=beta, ts=ts)
   elif config.solver.outer_solver.lower()=="smld":
-    from diffusionjax.utils import get_sigma_function
     ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
     sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
-    return SMLD(model, eta=config.solver.eta, sigma=sigma, ts=ts)
+    return SMLD(score, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
 

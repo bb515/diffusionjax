@@ -148,7 +148,6 @@ def get_vjp_guidance(
         vec_vjp_x_0 = vmap(vjp_x_0)
         H_grad_x_0 = vec_vjp_x_0(batch_H)[0]
         H_grad_x_0 = H_grad_x_0.reshape(H.shape[0], shape[0], H.shape[1])
-        test = batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0))
         C_yy = sde.ratio(t[0]) * batch_matmul_A(H, H_grad_x_0.transpose(1, 2, 0)) + noise_std**2 * jnp.eye(y.shape[1])
         innovation = y - batch_matmul_A(H, x_0)
         f = batch_linalg_solve(C_yy, innovation)
