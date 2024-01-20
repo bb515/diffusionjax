@@ -4,7 +4,7 @@ from jax import vmap, vjp, jacfwd, jacrev, grad
 from diffusionjax.utils import batch_mul, batch_matmul_A, batch_linalg_solve, batch_matmul, batch_mul_A, batch_linalg_solve_A
 
 
-def get_dps(sde, observation_map, y, noise_std, scale=0.4):
+def get_dps(sde, observation_map, y, noise_std, scale=.4):
     """
     Implementation of score guidance suggested in
     `Diffusion Posterior Sampling for general noisy inverse problems'
@@ -13,7 +13,8 @@ def get_dps(sde, observation_map, y, noise_std, scale=0.4):
 
     Computes a single (batched) gradient.
 
-    NOTE: This is how Chung et al. 2022 implemented their method.
+    NOTE: This is not how Chung et al. 2022 implemented their method, but is a related
+    continuous time method.
 
     Args:
         scale: Hyperparameter of the method.
@@ -62,7 +63,7 @@ def get_diffusion_posterior_sampling(
         h_x_0, vjp_estimate_h_x_0, (s, _) = vjp(
             lambda x: estimate_h_x_0(x, t), x, has_aux=True)
         innovation = y - h_x_0
-        C_yy = noise_std**2
+        C_yy = noise_std**2  # TODO: could investigate replacing with jnp.linalg.norm(innovation**2)
         ls = innovation / C_yy
         ls = vjp_estimate_h_x_0(ls)[0]
         gs = s + ls

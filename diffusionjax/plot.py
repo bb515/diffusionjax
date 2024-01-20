@@ -172,5 +172,3 @@ def plot_temperature_schedule(sde, solver):
   plt.legend()
   plt.savefig("plot_temperature_schedule.png")
   plt.close()
-
-

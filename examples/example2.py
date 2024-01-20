@@ -12,7 +12,7 @@ from diffusionjax.utils import get_score, get_loss, get_sampler, get_times, get_
 from diffusionjax.solvers import EulerMaruyama, Annealed, Inpainted, Projected
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.models import CNN
-from diffusionjax.sde import VE, udlangevin
+from diffusionjax.sde import VE, ulangevin
 import numpy as np
 import os
 
@@ -122,7 +122,8 @@ def main():
 
   if not os.path.exists('/tmp/output2'):
     # Get loss function
-    solver = EulerMaruyama(sde, num_steps=num_steps)
+    ts, _ = get_times(num_steps=num_steps)
+    solver = EulerMaruyama(sde, ts=ts)
     loss = get_loss(
       sde, solver, score_model, score_scaling=True, likelihood_weighting=False,
       reduce_mean=True, pointwise_t=False)
@@ -156,7 +157,7 @@ def main():
   outer_solver = EulerMaruyama(rsde, ts)
 
   # Get the inner loop of a numerical solver, also known as "corrector"
-  inner_solver = Annealed(rsde.correct(udlangevin), snr=0.01, ts=jnp.empty((2, 1)))
+  inner_solver = Annealed(rsde.correct(ulangevin), snr=0.01, ts=jnp.empty((2, 1)))
 
   # pmap across devices. pmap assumes devices are identical model. If this is not the case,
   # use the devices argument in pmap
