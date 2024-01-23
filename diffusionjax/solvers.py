@@ -177,14 +177,14 @@ class DDPM(Solver):
     super().__init__(ts)
     if beta is None:
       beta, _ = get_linear_beta_function(
-        beta_min=0.1, beta_max=20.)
+        beta_min=.1, beta_max=20.)
     self.discrete_betas = continuous_to_discrete(vmap(beta)(self.ts.flatten()), self.dt)
     self.score = score
     self.alphas = 1. - self.discrete_betas
     self.alphas_cumprod = jnp.cumprod(self.alphas, axis=0)
     self.sqrt_alphas_cumprod = jnp.sqrt(self.alphas_cumprod)
     self.sqrt_1m_alphas_cumprod = jnp.sqrt(1. - self.alphas_cumprod)
-    self.alphas_cumprod_prev = jnp.append(1.0, self.alphas_cumprod[:-1])
+    self.alphas_cumprod_prev = jnp.append(1., self.alphas_cumprod[:-1])
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
@@ -251,7 +251,7 @@ class SMLD(Solver):
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
     sigmas = vmap(sigma)(self.ts.flatten())
     self.sigma_max = sigmas[-1]
-    self.discrete_sigmas = jnp.log(sigmas)
+    self.discrete_sigmas = sigmas
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.score = score
 
@@ -309,12 +309,12 @@ class DDIMVP(Solver):
     """
     Args:
         model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
-        eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVP.
+        eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.` is DDPMVP.
     """
     super().__init__(ts)
     if beta is None:
       beta, _ = get_linear_beta_function(
-        beta_min=0.1, beta_max=20.)
+        beta_min=.1, beta_max=20.)
     self.discrete_betas = continuous_to_discrete(vmap(beta)(self.ts.flatten()), self.dt)
     self.eta = eta
     self.model = model
@@ -322,7 +322,7 @@ class DDIMVP(Solver):
     self.alphas_cumprod = jnp.cumprod(self.alphas, axis=0)
     self.sqrt_alphas_cumprod = jnp.sqrt(self.alphas_cumprod)
     self.sqrt_1m_alphas_cumprod = jnp.sqrt(1. - self.alphas_cumprod)
-    self.alphas_cumprod_prev = jnp.append(1.0, self.alphas_cumprod[:-1])
+    self.alphas_cumprod_prev = jnp.append(1., self.alphas_cumprod[:-1])
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
@@ -383,7 +383,7 @@ class DDIMVE(Solver):
   """DDIM Markov chain. For the SMLD Markov Chain or VE SDE.
     Args:
         model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
-        eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVE.
+        eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.` is DDPMVE.
     """
 
   def __init__(self, model, eta=0., sigma=None, ts=None):
@@ -392,7 +392,7 @@ class DDIMVE(Solver):
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
     sigmas = vmap(sigma)(self.ts.flatten())
     self.sigma_max = sigmas[-1]
-    self.discrete_sigmas = jnp.log(sigmas)
+    self.discrete_sigmas = sigmas
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.eta = eta
     self.model = model
