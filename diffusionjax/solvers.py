@@ -249,7 +249,7 @@ class SMLD(Solver):
     super().__init__(ts)
     if sigma is None:
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
-    sigmas = vmap(sigma)(ts.flatten())
+    sigmas = vmap(sigma)(self.ts.flatten())
     self.sigma_max = sigmas[-1]
     self.discrete_sigmas = jnp.log(sigmas)
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
@@ -390,7 +390,7 @@ class DDIMVE(Solver):
     super().__init__(ts)
     if sigma is None:
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
-    sigmas = vmap(sigma)(ts.flatten())
+    sigmas = vmap(sigma)(self.ts.flatten())
     self.sigma_max = sigmas[-1]
     self.discrete_sigmas = jnp.log(sigmas)
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
