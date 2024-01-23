@@ -7,13 +7,13 @@ from jax import vmap
 
 
 def test_batch_mul():
-    """Placeholder test for `:meth:batch_mul` to test CI"""
-    a = jnp.ones((2,)) * 2.
-    bs = [jnp.zeros((2,)), jnp.ones((2,)), jnp.ones((2,)) * jnp.pi]
-    c_expecteds = [jnp.zeros((2,)), 2. * jnp.ones((2,)), 2. * jnp.ones((2,)) * jnp.pi]
-    for i, b in enumerate(bs):
-        c = batch_mul(a, b)
-        assert jnp.allclose(c, c_expecteds[i])
+  """Placeholder test for `:meth:batch_mul` to test CI"""
+  a = jnp.ones((2,)) * 2.
+  bs = [jnp.zeros((2,)), jnp.ones((2,)), jnp.ones((2,)) * jnp.pi]
+  c_expecteds = [jnp.zeros((2,)), 2. * jnp.ones((2,)), 2. * jnp.ones((2,)) * jnp.pi]
+  for i, b in enumerate(bs):
+    c = batch_mul(a, b)
+    assert jnp.allclose(c, c_expecteds[i])
 
 
 def test_continuous_discrete_equivalence_linear_beta_schedule():
@@ -37,7 +37,7 @@ def test_continuous_discrete_equivalence_sigma_schedule():
   ts, dt = get_times(num_steps)
   sigma = get_sigma_function(
     sigma_min=sigma_min, sigma_max=sigma_max)
-  actual_discrete_sigmas = jnp.log(vmap(sigma)(ts))
+  actual_discrete_sigmas = vmap(sigma)(ts)
   # https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8cccd935068cd9c657318fbc6ce4c/sde_lib.py#L222
   # expected_sigmas = jnp.exp(  # I think this is wrong
   #     jnp.linspace(jnp.log(sigma_min),
@@ -45,7 +45,7 @@ def test_continuous_discrete_equivalence_sigma_schedule():
   #                  num_steps))
   #
   ts, _ = get_times(num_steps, dt)
-  expected_discrete_sigmas = jnp.log(sigma_min) + ts * (jnp.log(sigma_max) - jnp.log(sigma_min))
+  expected_discrete_sigmas = jnp.exp(jnp.log(sigma_min) + ts * (jnp.log(sigma_max) - jnp.log(sigma_min)))
   assert jnp.allclose(expected_discrete_sigmas, actual_discrete_sigmas)
 
 

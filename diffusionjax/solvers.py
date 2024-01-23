@@ -251,7 +251,7 @@ class SMLD(Solver):
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
     sigmas = vmap(sigma)(ts.flatten())
     self.sigma_max = sigmas[-1]
-    self.discrete_sigmas = jnp.log(sigmas)
+    self.discrete_sigmas = sigmas
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.score = score
 
@@ -392,7 +392,7 @@ class DDIMVE(Solver):
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
     sigmas = vmap(sigma)(ts.flatten())
     self.sigma_max = sigmas[-1]
-    self.discrete_sigmas = jnp.log(sigmas)
+    self.discrete_sigmas = sigmas
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.eta = eta
     self.model = model
