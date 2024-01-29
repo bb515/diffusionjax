@@ -188,7 +188,8 @@ class DDPM(Solver):
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-  def get_estimate_x_0_vmap(self, observation_map, clip=False):
+  def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=True):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -197,11 +198,12 @@ class DDPM(Solver):
       v = self.sqrt_1m_alphas_cumprod[timestep]**2
       s = self.score(x, t)
       x_0 = (x + v * s) / m
-      if clip: x_0 = jnp.clip(x_0, a_min=0., a_max=1.)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return observation_map(x_0), (s, x_0)
     return estimate_x_0
 
-  def get_estimate_x_0(self, observation_map, clip=False):
+  def get_estimate_x_0(self, observation_map, clip=False, centered=True):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
@@ -209,7 +211,7 @@ class DDPM(Solver):
       v = self.sqrt_1m_alphas_cumprod[timestep]**2
       s = self.score(x, t)
       x_0 = batch_mul(x + batch_mul(v, s), 1. / m)
-      if clip: x_0 = jnp.clip(x_0, a_min=0., a_max=1.)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
@@ -257,7 +259,8 @@ class SMLD(Solver):
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.score = score
 
-  def get_estimate_x_0_vmap(self, observation_map, clip=False):
+  def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=False):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -265,18 +268,19 @@ class SMLD(Solver):
       v = self.discrete_sigmas[timestep]**2
       s = self.score(x, t)
       x_0 = x + v * s
-      if clip: x_0 = jnp.clip(x_0, a_min=0., a_max=1.)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return observation_map(x_0), (s, x_0)
     return estimate_x_0
 
-  def get_estimate_x_0(self, observation_map, clip=False):
+  def get_estimate_x_0(self, observation_map, clip=False, centered=False):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
       v = self.discrete_sigmas[timestep]**2
       s = self.score(x, t)
       x_0 = x + batch_mul(v, s)
-      if clip: x_0 = jnp.clip(x_0, a_min=0., a_max=1.)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return batch_observation_map(x_0), (s, x_0)
     return estimate_x_0
 
@@ -330,7 +334,8 @@ class DDIMVP(Solver):
     self.sqrt_alphas_cumprod_prev = jnp.sqrt(self.alphas_cumprod_prev)
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1. - self.alphas_cumprod_prev)
 
-  def get_estimate_x_0_vmap(self, observation_map, clip=False):
+  def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=True):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -339,11 +344,12 @@ class DDIMVP(Solver):
       sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
       epsilon = self.model(x, t)
       x_0 = (x - sqrt_1m_alpha * epsilon) / m
-      if clip: x_0 = jnp.clip(x_0, a_min=0., a_max=1.)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
-  def get_estimate_x_0(self, observation_map):
+  def get_estimate_x_0(self, observation_map, clip=False, centered=True):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
@@ -351,6 +357,7 @@ class DDIMVP(Solver):
       sqrt_1m_alpha = self.sqrt_1m_alphas_cumprod[timestep]
       epsilon = self.model(x, t)
       x_0 = batch_mul(x - batch_mul(sqrt_1m_alpha, epsilon), 1. / m)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return batch_observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
@@ -402,7 +409,8 @@ class DDIMVE(Solver):
     self.eta = eta
     self.model = model
 
-  def get_estimate_x_0_vmap(self, observation_map, clip=False):
+  def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=False):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -414,14 +422,15 @@ class DDIMVE(Solver):
       return observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
-  def get_estimate_x_0(self, observation_map, clip=False):
+  def get_estimate_x_0(self, observation_map, clip=False, centered=False):
+    if clip: (a_min, a_max) = (-1., 1.) if centered else (0., 1.)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
       std = self.discrete_sigmas[timestep]
       epsilon = self.model(x, t)
       x_0 = x - batch_mul(std, epsilon)
-      if clip: x_0 = jnp.clip(x_0, a_min=0., a_max=1.)
+      if clip: x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return batch_observation_map(x_0), (epsilon, x_0)
     return estimate_x_0
 
