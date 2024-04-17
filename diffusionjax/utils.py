@@ -1,11 +1,26 @@
 """Utility functions, including all functions related to
 loss computation, optimization and sampling.
 """
+
 import jax.numpy as jnp
 from jax.lax import scan
 from jax import vmap
 import jax.random as random
 from functools import partial
+from collections.abc import MutableMapping
+
+
+# Taken from https://stackoverflow.com/questions/6027558/flatten-nested-dictionaries-compressing-keys
+def flatten_nested_dict(nested_dict, parent_key="", sep="."):
+  items = []
+  for name, cfg in nested_dict.items():
+    new_key = parent_key + sep + name if parent_key else name
+    if isinstance(cfg, MutableMapping):
+      items.extend(flatten_nested_dict(cfg, new_key, sep=sep).items())
+    else:
+      items.append((new_key, cfg))
+
+  return dict(items)
 
 
 def get_timestep(t, t0, t1, num_steps):
@@ -20,6 +35,7 @@ def continuous_to_discrete(betas, dt):
 def get_sigma_function(sigma_min, sigma_max):
   log_sigma_min = jnp.log(sigma_min)
   log_sigma_max = jnp.log(sigma_max)
+
   def sigma(t):
     # return sigma_min * (sigma_max / sigma_min)**t  # Has large relative error close to zero compared to alternative, below
     return jnp.exp(log_sigma_min + t * (log_sigma_max - log_sigma_min))
@@ -29,9 +45,10 @@ def get_sigma_function(sigma_min, sigma_max):
 
 def get_linear_beta_function(beta_min, beta_max):
   """Returns:
-      Linear beta (cooling rate parameter) as a function of time,
-      It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
+  Linear beta (cooling rate parameter) as a function of time,
+  It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
   """
+
   def beta(t):
     return beta_min + t * (beta_max - beta_min)
 
@@ -44,17 +61,20 @@ def get_linear_beta_function(beta_min, beta_max):
 
 def get_cosine_beta_function(offset=0.08):
   """Returns:
-      Squared cosine beta (cooling rate parameter) as a function of time,
-      It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
+  Squared cosine beta (cooling rate parameter) as a function of time,
+  It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
   """
+
   def beta(t):
     # return jnp.cos((1. - t + offset) / (1 + offset) * 0.5 * jnp.pi)**2
     # Use double angle formula here, instead
-    return 0.5 * (jnp.cos((1. - t + offset) / (1. + offset) * jnp.pi) + 1.)
+    return 0.5 * (jnp.cos((1.0 - t + offset) / (1.0 + offset) * jnp.pi) + 1.0)
 
   def log_mean_coeff(t):
     """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
-    return - 1. / 4 * (t - (1. + offset) * jnp.sin( jnp.pi * t / (1. + offset)) / jnp.pi)
+    return (
+      -1.0 / 4 * (t - (1.0 + offset) * jnp.sin(jnp.pi * t / (1.0 + offset)) / jnp.pi)
+    )
 
   return beta, log_mean_coeff
 
@@ -84,7 +104,7 @@ def get_times(num_steps=1000, dt=None, t0=None):
     else:
       t1 = dt * num_steps
       # Defined in forward time, t \in [dt , t1], 0 < \t0 << t1
-      ts, step = jnp.linspace(0., t1, num_steps + 1, retstep=True)
+      ts, step = jnp.linspace(0.0, t1, num_steps + 1, retstep=True)
       ts = ts[1:].reshape(-1, 1)
       assert jnp.isclose(step, dt)
       dt = step
@@ -92,21 +112,21 @@ def get_times(num_steps=1000, dt=None, t0=None):
   else:
     t1 = 1.0
     if t0 is not None:
-      ts, dt = jnp.linspace(t0, 1., num_steps, retstep=True)
+      ts, dt = jnp.linspace(t0, 1.0, num_steps, retstep=True)
       ts = ts.reshape(-1, 1)
-      assert jnp.isclose(dt, (1. - t0) / (num_steps - 1))
+      assert jnp.isclose(dt, (1.0 - t0) / (num_steps - 1))
       assert t0 == ts[0]
     else:
       # Defined in forward time, t \in [dt, 1.0], 0 < dt << 1
-      ts, dt = jnp.linspace(0., 1., num_steps + 1, retstep=True)
+      ts, dt = jnp.linspace(0.0, 1.0, num_steps + 1, retstep=True)
       ts = ts[1:].reshape(-1, 1)
-      assert jnp.isclose(dt, 1. / num_steps)
+      assert jnp.isclose(dt, 1.0 / num_steps)
       t0 = ts[0]
-  assert ts[0, 0]==t0
-  assert ts[-1, 0]==t1
+  assert ts[0, 0] == t0
+  assert ts[-1, 0] == t1
   dts = jnp.diff(ts)
-  assert jnp.all(dts > 0.)
-  assert jnp.all(dts==dt)
+  assert jnp.all(dts > 0.0)
+  assert jnp.all(dts == dt)
   return ts, dt
 
 
@@ -155,10 +175,18 @@ def errors(t, sde, score, rng, data, likelihood_weighting=True):
   if not likelihood_weighting:
     return noise + batch_mul(score(x, t), std)
   else:
-    return batch_mul(noise, 1. / std) + score(x, t)
+    return batch_mul(noise, 1.0 / std) + score(x, t)
 
 
-def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, reduce_mean=True, pointwise_t=False):
+def get_loss(
+  sde,
+  solver,
+  model,
+  score_scaling=True,
+  likelihood_weighting=True,
+  reduce_mean=True,
+  pointwise_t=False,
+):
   """Create a loss function for score matching training.
   Args:
     sde: Instantiation of a valid SDE class.
@@ -172,8 +200,11 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
   Returns:
     A loss function that can be used for score matching training.
   """
-  reduce_op = jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
+  reduce_op = (
+    jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
+  )
   if pointwise_t:
+
     def pointwise_loss(t, params, rng, data):
       n_batch = data.shape[0]
       ts = jnp.ones((n_batch,)) * t
@@ -182,28 +213,35 @@ def get_loss(sde, solver, model, score_scaling=True, likelihood_weighting=True, 
       losses = e**2
       losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
       if likelihood_weighting:
-        g2 = sde.sde(jnp.zeros_like(data), ts)[1]**2
+        g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
         losses = losses * g2
       return jnp.mean(losses)
+
     return pointwise_loss
   else:
+
     def loss(params, rng, data):
       rng, step_rng = random.split(rng)
-      ts = random.uniform(step_rng, (data.shape[0],), minval=solver.ts[0], maxval=solver.t1)
+      ts = random.uniform(
+        step_rng, (data.shape[0],), minval=solver.ts[0], maxval=solver.t1
+      )
       score = get_score(sde, model, params, score_scaling)
       e = errors(ts, sde, score, rng, data, likelihood_weighting)
       losses = e**2
       losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
       if likelihood_weighting:
-        g2 = sde.sde(jnp.zeros_like(data), ts)[1]**2
+        g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
         losses = losses * g2
       return jnp.mean(losses)
+
     return loss
 
 
 def get_score(sde, model, params, score_scaling):
   if score_scaling is True:
-    return lambda x, t: -batch_mul(model.apply(params, x, t), 1. / jnp.sqrt(sde.variance(t)))
+    return lambda x, t: -batch_mul(
+      model.apply(params, x, t), 1.0 / jnp.sqrt(sde.variance(t))
+    )
   else:
     return lambda x, t: -model.apply(params, x, t)
 
@@ -223,13 +261,20 @@ def shared_update(rng, x, t, solver, probability_flow=None):
   return solver.update(rng, x, t)
 
 
-def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samples=False, inverse_scaler=None):
+def get_sampler(
+  shape,
+  outer_solver,
+  inner_solver=None,
+  denoise=True,
+  stack_samples=False,
+  inverse_scaler=None,
+):
   """Get a sampler from (possibly interleaved) numerical solver(s).
 
   Args:
-    shape: Shape of array, x. (num_samples,) + obj_shape, where x_shape is the shape
+    shape: Shape of array, x. (num_samples,) + x_shape, where x_shape is the shape
       of the object being sampled from, for example, an image may have
-      obj_shape==(H, W, C), and so shape==(N, H, W, C) where N is the number of samples.
+      x_shape==(H, W, C), and so shape==(N, H, W, C) where N is the number of samples.
     outer_solver: A valid numerical solver class that will act on an outer loop.
     inner_solver: '' that will act on an inner loop.
     denoise: Bool, that if `True` applies one-step denoising to final samples.
@@ -239,7 +284,8 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
   Returns:
     A sampler.
   """
-  if inverse_scaler is None: inverse_scaler = lambda x: x
+  if inverse_scaler is None:
+    inverse_scaler = lambda x: x
 
   def sampler(rng, x_0=None):
     """
@@ -251,37 +297,38 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
     Returns:
         Samples and the number of score function (model) evaluations.
     """
-    outer_update = partial(shared_update,
-                           solver=outer_solver)
+    outer_update = partial(shared_update, solver=outer_solver)
     outer_ts = outer_solver.ts
 
     if inner_solver:
-        inner_update = partial(shared_update,
-                               solver=inner_solver)
-        inner_ts = inner_solver.ts
-        num_function_evaluations = jnp.size(outer_ts) * (jnp.size(inner_ts) + 1)
+      inner_update = partial(shared_update, solver=inner_solver)
+      inner_ts = inner_solver.ts
+      num_function_evaluations = jnp.size(outer_ts) * (jnp.size(inner_ts) + 1)
 
-        def inner_step(carry, t):
-          rng, x, x_mean, vec_t = carry
-          rng, step_rng = random.split(rng)
-          x, x_mean = inner_update(step_rng, x, vec_t)
-          return (rng, x, x_mean, vec_t), ()
+      def inner_step(carry, t):
+        rng, x, x_mean, vec_t = carry
+        rng, step_rng = random.split(rng)
+        x, x_mean = inner_update(step_rng, x, vec_t)
+        return (rng, x, x_mean, vec_t), ()
 
-        def outer_step(carry, t):
-          rng, x, x_mean = carry
-          vec_t = jnp.full(shape[0], t)
-          rng, step_rng = random.split(rng)
-          x, x_mean = outer_update(step_rng, x, vec_t)
-          (rng, x, x_mean, vec_t), _ = scan(inner_step, (step_rng, x, x_mean, vec_t), inner_ts)
-          if not stack_samples:
-            return (rng, x, x_mean), ()
+      def outer_step(carry, t):
+        rng, x, x_mean = carry
+        vec_t = jnp.full(shape[0], t)
+        rng, step_rng = random.split(rng)
+        x, x_mean = outer_update(step_rng, x, vec_t)
+        (rng, x, x_mean, vec_t), _ = scan(
+          inner_step, (step_rng, x, x_mean, vec_t), inner_ts
+        )
+        if not stack_samples:
+          return (rng, x, x_mean), ()
+        else:
+          if denoise:
+            return (rng, x, x_mean), x_mean
           else:
-            if denoise:
-              return (rng, x, x_mean), x_mean
-            else:
-              return (rng, x, x_mean), x
+            return (rng, x, x_mean), x
     else:
       num_function_evaluations = jnp.size(outer_ts)
+
       def outer_step(carry, t):
         rng, x, x_mean = carry
         vec_t = jnp.full((shape[0],), t)
@@ -299,7 +346,7 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
       else:
         x = outer_solver.prior(step_rng, shape)
     else:
-      assert(x_0.shape==shape)
+      assert x_0.shape == shape
       x = x_0
     if not stack_samples:
       (_, x, x_mean), _ = scan(outer_step, (rng, x, x), outer_ts, reverse=True)
@@ -307,5 +354,6 @@ def get_sampler(shape, outer_solver, inner_solver=None, denoise=True, stack_samp
     else:
       (_, _, _), xs = scan(outer_step, (rng, x, x), outer_ts, reverse=True)
       return inverse_scaler(xs), num_function_evaluations
+
   # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
   return sampler

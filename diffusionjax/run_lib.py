@@ -1,11 +1,17 @@
 """Training and evaluation for score-based generative models."""
+
 import jax
 from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
 from diffusionjax.utils import (
-  get_loss, get_score, get_sampler, get_times,
-  get_sigma_function, get_linear_beta_function)
+  get_loss,
+  get_score,
+  get_sampler,
+  get_times,
+  get_sigma_function,
+  get_linear_beta_function,
+)
 from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
@@ -24,8 +30,10 @@ import wandb
 
 # This run_library requires optax, https://optax.readthedocs.io/en/latest/
 import optax
+
 # This run_library requires orbax, https://orbax.readthedocs.io/en/latest/
 import orbax.checkpoint
+
 # This run_library requires torch[cpu], https://pytorch.org/get-started/locally/
 from torch.utils.data import DataLoader
 
@@ -46,6 +54,7 @@ def get_step_fn(loss, optimizer, train, pmap):
   Returns:
     A one-step function for training or evaluation.
   """
+
   @jit
   def step_fn(carry, batch):
     (rng, params, opt_state) = carry
@@ -54,14 +63,16 @@ def get_step_fn(loss, optimizer, train, pmap):
     if train:
       loss_val, grads = grad_fn(params, step_rng, batch)
       if pmap:
-        loss_val = jax.lax.pmean(loss_val, axis_name='batch')
-        grads = jax.lax.pmean(grads, axis_name='batch')
+        loss_val = jax.lax.pmean(loss_val, axis_name="batch")
+        grads = jax.lax.pmean(grads, axis_name="batch")
       updates, opt_state = optimizer.update(grads, opt_state)
       params = optax.apply_updates(params, updates)
     else:
       loss_val = loss(params, step_rng, batch)
-      if pmap: loss_val = jax.lax.pmean(loss_val, axis_name='batch')
+      if pmap:
+        loss_val = jax.lax.pmean(loss_val, axis_name="batch")
     return (rng, params, opt_state), loss_val
+
   return step_fn
 
 
@@ -77,10 +88,12 @@ class State:
 
 def get_sde(config):
   # Setup SDE
-  if config.training.sde.lower()=='vpsde':
-    beta, log_mean_coeff = get_linear_beta_function(config.model.beta_min, config.model.beta_max)
+  if config.training.sde.lower() == "vpsde":
+    beta, log_mean_coeff = get_linear_beta_function(
+      config.model.beta_min, config.model.beta_max
+    )
     return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
-  elif config.training.sde.lower()=='vesde':
+  elif config.training.sde.lower() == "vesde":
     sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
     return sde_lib.VE(sigma=sigma)
   else:
@@ -96,49 +109,53 @@ def get_optimizer(config):
       warmup_steps=config.optim.warmup,
       decay_steps=config.optim.warmup + 1,
       end_value=1.0,
-      )
+    )
   else:
     schedule = config.optim.lr
-  if config.optim.optimizer=='Adam':
+  if config.optim.optimizer == "Adam":
     if config.optim.weight_decay:
       optimizer = optax.adamw(
-        learning_rate=schedule, b1=config.optim.beta1, eps=config.optim.eps)
+        learning_rate=schedule, b1=config.optim.beta1, eps=config.optim.eps
+      )
     else:
       optimizer = optax.adam(
-        learning_rate=schedule, b1=config.optim.beta1, eps=config.optim.eps)
-  else:
-      raise NotImplementedError(
-        'Optimiser {} not supported yet!'.format(config.optim.optimizer)
+        learning_rate=schedule, b1=config.optim.beta1, eps=config.optim.eps
       )
-  if config.optim.grad_clip:
-    optimizer = optax.chain(
-      optax.clip(config.optim.grad_clip),
-      optimizer
+  else:
+    raise NotImplementedError(
+      "Optimiser {} not supported yet!".format(config.optim.optimizer)
     )
+  if config.optim.grad_clip:
+    optimizer = optax.chain(optax.clip(config.optim.grad_clip), optimizer)
   return optimizer
 
 
 def get_model(config):
-  if config.model.name.lower()=='mlp':
+  if config.model.name.lower() == "mlp":
     return MLP()
-  elif config.model.name.lower()=='cnn':
+  elif config.model.name.lower() == "cnn":
     return CNN()
   else:
     raise NotImplementedError(f"Model {config.model.name} unknown.")
 
 
 def get_solver(config, sde, score):
-  if config.solver.outer_solver.lower()=="eulermaruyama":
-    ts, _ = get_times(num_steps=config.solver.num_outer_steps,
-                       dt=config.solver.dt, t0=config.solver.epsilon)
+  if config.solver.outer_solver.lower() == "eulermaruyama":
+    ts, _ = get_times(
+      num_steps=config.solver.num_outer_steps,
+      dt=config.solver.dt,
+      t0=config.solver.epsilon,
+    )
     outer_solver = EulerMaruyama(sde.reverse(score), ts)
   else:
     raise NotImplementedError(f"Solver {config.solver.outer_solver} unknown.")
   if config.solver.inner_solver is None:
     inner_solver = None
-  elif config.solver.inner_solver.lower()=="annealed":
+  elif config.solver.inner_solver.lower() == "annealed":
     ts, _ = get_times(num_steps=config.solver.num_inner_steps)
-    inner_solver = Annealed(sde.corrector(sde_lib.ULangevin, score), snr=config.solver.snr, ts=ts)
+    inner_solver = Annealed(
+      sde.corrector(sde_lib.ULangevin, score), snr=config.solver.snr, ts=ts
+    )
   else:
     raise NotImplementedError(f"Solver {config.solver.inner_solver} unknown.")
   return outer_solver, inner_solver
@@ -149,13 +166,21 @@ def get_ddim_chain(config, model):
   Args:
       model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function
   """
-  if config.solver.outer_solver.lower()=="ddimvp":
-    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
-    beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+  if config.solver.outer_solver.lower() == "ddimvp":
+    ts, _ = get_times(
+      config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
+    )
+    beta, _ = get_linear_beta_function(
+      beta_min=config.model.beta_min, beta_max=config.model.beta_max
+    )
     return DDIMVP(model, eta=config.solver.eta, beta=beta, ts=ts)
-  elif config.solver.outer_solver.lower()=="ddimve":
-    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
-    sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+  elif config.solver.outer_solver.lower() == "ddimve":
+    ts, _ = get_times(
+      config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
+    )
+    sigma = get_sigma_function(
+      sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
+    )
     return DDIMVE(model, eta=config.solver.eta, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"DDIM Chain {config.solver.outer_solver} unknown.")
@@ -166,14 +191,23 @@ def get_markov_chain(config, score):
   Args:
     score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
   """
-  if config.solver.outer_solver.lower()=="ddpm":
-    ts, _ = get_times(num_steps=config.solver.num_outer_steps,
-                   dt=config.solver.dt, t0=config.solver.epsilon)
-    beta, _ = get_linear_beta_function(beta_min=config.model.beta_min, beta_max=config.model.beta_max)
+  if config.solver.outer_solver.lower() == "ddpm":
+    ts, _ = get_times(
+      num_steps=config.solver.num_outer_steps,
+      dt=config.solver.dt,
+      t0=config.solver.epsilon,
+    )
+    beta, _ = get_linear_beta_function(
+      beta_min=config.model.beta_min, beta_max=config.model.beta_max
+    )
     return DDPM(score, beta=beta, ts=ts)
-  elif config.solver.outer_solver.lower()=="smld":
-    ts, _ = get_times(config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon)
-    sigma = get_sigma_function(sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max)
+  elif config.solver.outer_solver.lower() == "smld":
+    ts, _ = get_times(
+      config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
+    )
+    sigma = get_sigma_function(
+      sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
+    )
     return SMLD(score, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
@@ -202,42 +236,57 @@ def pmap_collate(num_devices, per_device_batch_size, batch):
 
 
 class NumpyLoader(DataLoader):
-  def __init__(self, config, dataset,
-               shuffle=False, sampler=None,
-               batch_sampler=None, num_workers=0,
-               pin_memory=False, drop_last=False,
-               timeout=0, worker_init_fn=None):
+  def __init__(
+    self,
+    config,
+    dataset,
+    shuffle=False,
+    sampler=None,
+    batch_sampler=None,
+    num_workers=0,
+    pin_memory=False,
+    drop_last=False,
+    timeout=0,
+    worker_init_fn=None,
+  ):
     prod_batch_dims = config.training.batch_size * config.training.n_jitted_steps
     if config.training.pmap and config.training.n_jitted_steps != 1:
       collate_fn = partial(
-        pmap_and_jit_collate, jax.local_device_count(),
+        pmap_and_jit_collate,
+        jax.local_device_count(),
         config.training.n_jitted_steps,
-        config.training.batch_size // jax.local_device_count())
-    elif config.training.pmap and config.training.n_jitted_steps==1:
+        config.training.batch_size // jax.local_device_count(),
+      )
+    elif config.training.pmap and config.training.n_jitted_steps == 1:
       collate_fn = partial(
-        pmap_collate, jax.local_device_count(),
-        config.training.batch_size // jax.local_device_count())
+        pmap_collate,
+        jax.local_device_count(),
+        config.training.batch_size // jax.local_device_count(),
+      )
     elif config.training.n_jitted_steps != 1:
       collate_fn = partial(
-        jit_collate, config.training.n_jitted_steps, config.training.batch_size)
+        jit_collate, config.training.n_jitted_steps, config.training.batch_size
+      )
     else:
       collate_fn = numpy_collate  # type: ignore
 
-    super().__init__(dataset,
-                     batch_size=prod_batch_dims,
-                     shuffle=shuffle,
-                     sampler=sampler,
-                     batch_sampler=batch_sampler,
-                     num_workers=num_workers,
-                     collate_fn=collate_fn,
-                     pin_memory=pin_memory,
-                     drop_last=drop_last,
-                     timeout=timeout,
-                     worker_init_fn=worker_init_fn)
+    super().__init__(
+      dataset,
+      batch_size=prod_batch_dims,
+      shuffle=shuffle,
+      sampler=sampler,
+      batch_sampler=batch_sampler,
+      num_workers=num_workers,
+      collate_fn=collate_fn,
+      pin_memory=pin_memory,
+      drop_last=drop_last,
+      timeout=timeout,
+      worker_init_fn=worker_init_fn,
+    )
 
 
 def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
-  """ Train a score based generative model using stochastic gradient descent
+  """Train a score based generative model using stochastic gradient descent
 
   Args:
     sampling_shape : sampling shape may differ depending on the modality of data
@@ -253,9 +302,9 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   jax.default_device = jax.devices()[0]  # type: ignore
   # Tip: use `export CUDA_VISIBLE_DEVICES` to restrict the devices visible to jax
   # ... devices (GPUs/TPUs) must be all the same model for pmap to work
-  num_devices =  int(jax.local_device_count())
-  if jax.process_index()==0: print("num_devices={}, pmap={}".format(
-    num_devices, config.training.pmap))
+  num_devices = int(jax.local_device_count())
+  if jax.process_index() == 0:
+    print("num_devices={}, pmap={}".format(num_devices, config.training.pmap))
 
   # Create directories for experimental logs
   if workdir is not None:
@@ -267,7 +316,8 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   inverse_scaler = dataset.get_data_inverse_scaler(config)
   # eval_function = dataset.calculate_metrics_batch
   # metric_names = dataset.metric_names()
-  if jax.process_index()==0 and use_wandb:
+
+  if jax.process_index() == 0 and use_wandb:
     run = wandb.init(
       project="diffusionjax",
       config=config,
@@ -279,20 +329,13 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   model = get_model(config)
   # Initialize parameters
   params = model.init(
-    model_rng,
-    jnp.zeros(
-      sampling_shape
-    ),
-    jnp.ones((sampling_shape[0],)))
+    model_rng, jnp.zeros(sampling_shape), jnp.ones((sampling_shape[0],))
+  )
 
   # Initialize optimizer
   optimizer = get_optimizer(config)
   opt_state = optimizer.init(params)
-  state = State(step=0,
-    opt_state=opt_state,
-    params=params,
-    lr=config.optim.lr,
-    rng=rng)
+  state = State(step=0, opt_state=opt_state, params=params, lr=config.optim.lr, rng=rng)
 
   if workdir is not None:
     # Create checkpoints directory
@@ -307,24 +350,29 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
 
     # Orbax checkpointer boilerplate
     manager_options = orbax.checkpoint.CheckpointManagerOptions(
-      create=True, max_to_keep=np.inf)
+      create=True, max_to_keep=np.inf
+    )
     checkpoint_manager = orbax.checkpoint.CheckpointManager(
       checkpoint_dir,
-      orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
+      orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
+      manager_options,
+    )
 
     # meta_manager_options = orbax.checkpoint.CheckpointManagerOptions(
     #   create=True, max_to_keep=1)
     meta_checkpoint_manager = orbax.checkpoint.CheckpointManager(
       checkpoint_meta_dir,
-      orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()), manager_options)
+      orbax.checkpoint.Checkpointer(orbax.checkpoint.PyTreeCheckpointHandler()),
+      manager_options,
+    )
 
     # Resume training when intermediate checkpoints are detected
     restore_args = orbax_utils.restore_args_from_target(state, mesh=None)
     save_step = meta_checkpoint_manager.latest_step()
     if save_step is not None:
       meta_checkpoint_manager.restore(
-        save_step,
-        items=state, restore_kwargs={'restore_args': restore_args})
+        save_step, items=state, restore_kwargs={"restore_args": restore_args}
+      )
 
   # `state.step` is JAX integer on the GPU/TPU devices
   initial_step = int(state.step)
@@ -339,9 +387,12 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   outer_solver, inner_solver = get_solver(config, sde, score)
 
   loss = get_loss(
-    sde, outer_solver, model,
+    sde,
+    outer_solver,
+    model,
     score_scaling=config.training.score_scaling,
-    likelihood_weighting=config.training.likelihood_weighting)
+    likelihood_weighting=config.training.likelihood_weighting,
+  )
   train_step = get_step_fn(loss, optimizer, train=True, pmap=config.training.pmap)
   eval_step = get_step_fn(loss, optimizer, train=False, pmap=config.training.pmap)
 
@@ -350,13 +401,12 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
     eval_step = partial(jax.lax.scan, eval_step)
 
   if config.training.pmap:
-    train_step = jax.pmap(
-      train_step, axis_name='batch', donate_argnums=1)
-    eval_step = jax.pmap(
-      eval_step, axis_name='batch', donate_argnums=1)
+    train_step = jax.pmap(train_step, axis_name="batch", donate_argnums=1)
+    eval_step = jax.pmap(eval_step, axis_name="batch", donate_argnums=1)
 
   # Replicate the training state to run on multiple devices
-  if config.training.pmap: state = flax_utils.replicate(state)
+  if config.training.pmap:
+    state = flax_utils.replicate(state)
 
   # Probably want to train over multiple epochs
   # If num_epochs > num_batch, decides which tqdm to go over
@@ -377,10 +427,12 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   n_jitted_steps = config.training.n_jitted_steps
 
   # Must be divisible by the number of steps jitted together
-  assert config.training.log_step_freq % n_jitted_steps == 0 and \
-    config.training.snapshot_freq_for_preemption % n_jitted_steps == 0 and \
-    config.training.eval_freq % n_jitted_steps == 0 and \
-    config.training.snapshot_freq % n_jitted_steps == 0, "Missing logs or checkpoints!"
+  assert (
+    config.training.log_step_freq % n_jitted_steps == 0
+    and config.training.snapshot_freq_for_preemption % n_jitted_steps == 0
+    and config.training.eval_freq % n_jitted_steps == 0
+    and config.training.snapshot_freq % n_jitted_steps == 0
+  ), "Missing logs or checkpoints!"
 
   mean_losses = jnp.zeros((num_epochs, 1))
   for i_epoch in trange(1, num_epochs + 1, unit="epochs"):
@@ -392,11 +444,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
 
     eval_iter = iter(eval_dataloader)
 
-    with tqdm(
-      train_dataloader,
-      unit=" batch",
-      disable=True
-    ) as tepoch:
+    with tqdm(train_dataloader, unit=" batch", disable=True) as tepoch:
       tepoch.set_description(f"Epoch {i_epoch}")
       losses = jnp.empty((len(tepoch), 1))
 
@@ -411,23 +459,34 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
           rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
 
         (_, params, opt_state), loss_train = train_step(
-          (next_rng, state.params, state.opt_state), batch)
+          (next_rng, state.params, state.opt_state), batch
+        )
         state = state.replace(opt_state=opt_state, params=params)  # type: ignore
 
         if config.training.pmap:
-          loss_train = flax_utils.unreplicate(loss_train).mean()  # returns a single instance of replicated loss array
+          loss_train = flax_utils.unreplicate(
+            loss_train
+          ).mean()  # returns a single instance of replicated loss array
         else:
           loss_train = loss_train.mean()
 
         # Log to console, file and wandb on host 0
-        if jax.process_index()==0:
+        if jax.process_index() == 0:
           step += config.training.n_jitted_steps
           losses = losses.at[i_batch].set(loss_train)
-          if step % config.training.log_step_freq==0 and jax.process_index() == 0 and use_wandb:
+          if (
+            step % config.training.log_step_freq == 0
+            and jax.process_index() == 0
+            and use_wandb
+          ):
             logging.info("step {:d}, training_loss {:.2e}".format(step, loss_train))
 
         # Save a temporary checkpoint to resume training after pre-emption (for cloud computing environments) periodically
-        if step!=0 and step % config.training.snapshot_freq_for_preemption==0 and jax.process_index()==0:
+        if (
+          step != 0
+          and step % config.training.snapshot_freq_for_preemption == 0
+          and jax.process_index() == 0
+        ):
           if config.training.pmap:
             saved_state = flax_utils.unreplicate(state)
           else:
@@ -435,7 +494,11 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
           saved_state = saved_state.replace(rng=rng)
           if workdir:
             saved_args = orbax_utils.save_args_from_target(saved_state)
-            meta_checkpoint_manager.save(step//config.training.snapshot_freq_for_preemption, saved_state, save_kwargs={'save_args': saved_args})
+            meta_checkpoint_manager.save(
+              step // config.training.snapshot_freq_for_preemption,
+              saved_state,
+              save_kwargs={"save_args": saved_args},
+            )
 
         # Report the loss on an evaluation dataset periodically
         if step % config.training.eval_freq == 0:
@@ -446,21 +509,26 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
           else:
             rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
           (_, _, _), loss_eval = eval_step(
-            (next_rng, state.params, state.opt_state), eval_batch)
+            (next_rng, state.params, state.opt_state), eval_batch
+          )
 
           if config.training.pmap:
             loss_eval = flax_utils.unreplicate(loss_eval).mean()
           else:
             loss_eval = loss_eval.mean()
 
-          if jax.process_index()==0 and use_wandb:
+          if jax.process_index() == 0 and use_wandb:
             logging.info("batch: {:d}, eval_loss: {:.5e}".format(step, loss_eval))
             wandb.log({"eval-loss": loss_eval})
 
         # Save a checkpoint periodically and generate samples if needed
-        if step != 0 and step % config.training.snapshot_freq == 0 or step == config.training.n_iters:
+        if (
+          step != 0
+          and step % config.training.snapshot_freq == 0
+          or step == config.training.n_iters
+        ):
           # Save the checkpoint
-          if jax.process_index()==0:
+          if jax.process_index() == 0:
             if config.training.pmap:
               saved_state = flax_utils.unreplicate(state)
             else:
@@ -468,22 +536,31 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
             saved_state = saved_state.replace(rng=rng)
             if workdir:
               saved_args = orbax_utils.save_args_from_target(saved_state)
-              checkpoint_manager.save(step // config.training.snapshot_freq, saved_state, save_kwargs={'save_args': saved_args})
+              checkpoint_manager.save(
+                step // config.training.snapshot_freq,
+                saved_state,
+                save_kwargs={"save_args": saved_args},
+              )
 
           # Generate and save samples
           if config.training.snapshot_sampling:
             # Setup solver with new trained score
             # Use the unreplicated parameters of the saved state
             score = get_score(
-              sde, model, saved_state.params, config.training.score_scaling)
+              sde, model, saved_state.params, config.training.score_scaling
+            )
             outer_solver, inner_solver = get_solver(config, sde, score)
-            sampler = get_sampler(sampling_shape, outer_solver,
-                                  inner_solver, denoise=config.sampling.denoise,
-                                  stack_samples=config.sampling.stack_samples,
-                                  inverse_scaler=inverse_scaler)
+            sampler = get_sampler(
+              sampling_shape,
+              outer_solver,
+              inner_solver,
+              denoise=config.sampling.denoise,
+              stack_samples=config.sampling.stack_samples,
+              inverse_scaler=inverse_scaler,
+            )
 
             if config.training.pmap:
-              sampler = jax.pmap(sampler, axis_name='batch')
+              sampler = jax.pmap(sampler, axis_name="batch")
               rng, *sample_rng = random.split(rng, 1 + jax.local_device_count())
               sample_rng = jnp.asarray(sample_rng)  # type: ignore
             else:
@@ -496,24 +573,27 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
 
             if workdir:
               this_sample_dir = os.path.join(
-                sample_dir, "iter_{}_host_{}".format(step, jax.process_index()))
+                sample_dir, "iter_{}_host_{}".format(step, jax.process_index())
+              )
               if not os.path.isdir(this_sample_dir):
                 os.mkdir(this_sample_dir)
 
-              with open(os.path.join(this_sample_dir, "sample.np"), 'wb') as infile:
+              with open(os.path.join(this_sample_dir, "sample.np"), "wb") as infile:
                 np.save(infile, sample)
 
-      if jax.process_index()==0:
+      if jax.process_index() == 0:
         mean_loss = jnp.mean(losses, axis=0)
 
-    if jax.process_index()==0 and i_epoch % config.training.log_epoch_freq==0:
+    if jax.process_index() == 0 and i_epoch % config.training.log_epoch_freq == 0:
       mean_losses = mean_losses.at[i_epoch].set(mean_loss)
       if use_wandb:
-        logging.info("step {:d}, mean_loss {:.2e}".format(int(step), float(mean_loss[0])))
+        logging.info(
+          "step {:d}, mean_loss {:.2e}".format(int(step), float(mean_loss[0]))
+        )
         wandb.log({"train-loss": mean_loss})
 
   if workdir and use_wandb:
-    artifact = wandb.Artifact(name='checkpoint', type='checkpoint')
+    artifact = wandb.Artifact(name="checkpoint", type="checkpoint")
     artifact.add_dir(local_path=checkpoint_dir)
     run.log_artifact(artifact)  # type: ignore
 
