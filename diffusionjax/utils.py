@@ -63,6 +63,12 @@ def get_cosine_beta_function(offset=0.08):
   """Returns:
   Squared cosine beta (cooling rate parameter) as a function of time,
   It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
+  Args:
+    offset: https://arxiv.org/abs/2102.09672 "Use a small offset to prevent
+    $\beta(t)$ from being too small near
+    $t = 0$, since we found that having tiny amounts of noise at the beginning
+    of the process made it hard for the network to predict $\epsilon$
+    accurately enough"
   """
 
   def beta(t):

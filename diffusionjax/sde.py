@@ -78,6 +78,7 @@ class VE:
 
     .. math::
       \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
+      \text{ and } p_{t|0}(x_{t}|x_{0}) = \mathcal{N}(x_0, \sigma_{t}^{2}I)
     """
     variance = self.variance(t)
     return variance * data_variance / (variance + data_variance)
@@ -134,9 +135,11 @@ class VP:
 
     .. math::
       \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
+      \text{ and } p_{t|0}(x_{t}|x_{0}) = \mathcal{N}(\sqrt(\alpha_{t})x_0, (1 - \alpha_{t})I)
     """
     alpha = jnp.exp(2 * self.log_mean_coeff(t))
-    return (1 - alpha) * data_variance / (1 - alpha + alpha * data_variance)
+    variance = 1.0 - alpha
+    return variance * data_variance / (variance + alpha * data_variance)
 
   def ratio(self, t):
     """Ratio of marginal variance and mean coeff."""
