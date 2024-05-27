@@ -11,7 +11,6 @@ from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.plot import plot_score, plot_heatmap, plot_samples_1D
 from diffusionjax.utils import get_score, get_loss, get_sampler, get_sigma_function
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
-from diffusionjax.models import MLP
 from diffusionjax.sde import VE
 import numpy as np
 import os
@@ -31,6 +30,26 @@ epsilon = 1e-4
 
 # Initialize the optimizer
 optimizer = optax.adam(1e-3)
+
+
+class MLP(nn.Module):
+  @nn.compact
+  def __call__(self, x, t):
+    x_shape = x.shape
+    in_size = jnp.prod(x_shape[1:])
+    n_hidden = 256
+    t = t.reshape((t.shape[0], -1))
+    x = x.reshape((x.shape[0], -1))  # flatten
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
+    x = jnp.concatenate([x, t], axis=-1)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(in_size)(x)
+    return x.reshape(x_shape)
 
 
 @partial(jit, static_argnums=[4])

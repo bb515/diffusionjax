@@ -39,7 +39,6 @@ def get_default_configs():
 
   # model
   config.model = model = ml_collections.ConfigDict()
-  model.name = "mlp"
 
   # for vp
   model.beta_min = 0.1

@@ -12,7 +12,6 @@ from diffusionjax.utils import (
   get_sigma_function,
   get_linear_beta_function,
 )
-from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
 import numpy as np
@@ -130,15 +129,6 @@ def get_optimizer(config):
   return optimizer
 
 
-def get_model(config):
-  if config.model.name.lower() == "mlp":
-    return MLP()
-  elif config.model.name.lower() == "cnn":
-    return CNN()
-  else:
-    raise NotImplementedError(f"Model {config.model.name} unknown.")
-
-
 def get_solver(config, sde, score):
   if config.solver.outer_solver.lower() == "eulermaruyama":
     ts, _ = get_times(
@@ -209,6 +199,33 @@ def get_markov_chain(config, score):
       sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
     )
     return SMLD(score, sigma=sigma, ts=ts)
+  else:
+    raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
+
+
+def get_edm_chain(config, model, data_variance=1.0):
+  """
+  A second order Heun solver from the paper Elucidating the Design space of
+  Diffusion-Based Generative Models (EDM).
+
+  arxiv.org/abs/2206.00364
+
+  Args:
+    model: EDM parameterizes the
+      `\text{denoiser}(x, sigma) = c_{\text{skip}} x + c_{\text{out}} F_{\theta}(c_{\text{\in}) x; c_{\text{noise}}(\sigma))`
+      F_{\theta} represents the raw neural network layers.
+    score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
+  """
+  if config.solver.outer_solver.lower() == "edm":
+
+    def denoise():
+      c_skip = config.sigma_data
+
+    sigma = get_EDM_sigma_function(
+      config.model.sigma_min, config.model.sigma_max, config.model.rho
+    )
+
+    return EDM(denoise, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
 
@@ -285,11 +302,12 @@ class NumpyLoader(DataLoader):
     )
 
 
-def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
+def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False):
   """Train a score based generative model using stochastic gradient descent
 
   Args:
     sampling_shape : sampling shape may differ depending on the modality of data
+    model: A valid flax nn.Module.
     config: An ml-collections configuration to use.
     dataset: a valid `torch.DataLoader` class.
     workdir: Optional working directory for checkpoints and TF summaries. If this
@@ -326,7 +344,6 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
 
   # Initialize model
   rng, model_rng = random.split(rng, 2)
-  model = get_model(config)
   # Initialize parameters
   params = model.init(
     model_rng, jnp.zeros(sampling_shape), jnp.ones((sampling_shape[0],))
