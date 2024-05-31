@@ -330,11 +330,11 @@ class SMLD(Solver):
 class DDIMVP(Solver):
   """DDIM Markov chain. For the DDPM Markov Chain or VP SDE."""
 
-  def __init__(self, model, eta=0.0, beta=None, ts=None):
+  def __init__(self, model, eta=1.0, beta=None, ts=None):
     """
     Args:
         model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
-        eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.` is DDPMVP.
+        eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVP.
     """
     super().__init__(ts)
     if beta is None:
@@ -419,10 +419,10 @@ class DDIMVE(Solver):
   """DDIM Markov chain. For the SMLD Markov Chain or VE SDE.
   Args:
       model: DDIM parameterizes the `epsilon(x, t) = -1. * fwd_marginal_std(t) * score(x, t)` function.
-      eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.` is DDPMVE.
+      eta: the hyperparameter for DDIM, a value of `eta=0.0` is deterministic 'probability ODE' solver, `eta=1.0` is DDPMVE.
   """
 
-  def __init__(self, model, eta=0.0, sigma=None, ts=None):
+  def __init__(self, model, eta=1.0, sigma=None, ts=None):
     super().__init__(ts)
     if sigma is None:
       sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.0)
