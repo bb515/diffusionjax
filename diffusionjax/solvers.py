@@ -486,97 +486,13 @@ class DDIMVE(Solver):
     return x, x_mean
 
 
-<<<<<<< Updated upstream
-class EDM(Solver):
+class EDMEuler(Solver):
   """
   A second order Heun solver from the paper Elucidating the Design space of
   Diffusion-Based Generative Models.
 
-  arxiv.org/abs/2206.00364
-
-  SMLD(NCSN) Markov Chain using Ancestral sampling."""
-
-  def __init__(
-    self, denoise, sigma=None, ts=None, S_churn=0.0, S_min=0.0, S_max=float("inf")
-  ):
-    super().__init__(ts)
-    if sigma is None:
-      sigma = get_EDM_sigma_function(sigma_min=0.002, sigma_max=80.0, rho=7)
-    sigmas = vmap(sigma)(self.ts.flatten())
-    self.sigma_max = sigmas[-1]
-    self.discrete_sigmas = sigmas
-    self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
-    self.denoise = denoise
-    self.S_churn = S_churn
-    self.S_min = S_min
-    self.S_max = S_max
-
-  def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=False):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
-
-    def estimate_x_0(x, t, timestep):
-      x = jnp.expand_dims(x, axis=0)
-      t = jnp.expand_dims(t, axis=0)
-      v = self.discrete_sigmas[timestep] ** 2
-      sigma = self.discrete_sigmas[timestep]
-      denoised = self.denoise(x, sigma)
-      s = self.score(x, t)
-      x_0 = x + v * s
-      if clip:
-        x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
-      return observation_map(x_0), (s, x_0)
-
-    return estimate_x_0
-
-  def get_estimate_x_0(self, observation_map, clip=False, centered=False):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
-    batch_observation_map = vmap(observation_map)
-
-    def estimate_x_0(x, t, timestep):
-      v = self.discrete_sigmas[timestep] ** 2
-      s = self.score(x, t)
-      x_0 = x + batch_mul(v, s)
-      if clip:
-        x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
-      return batch_observation_map(x_0), (s, x_0)
-
-    return estimate_x_0
-
-  def prior(self, rng, shape):
-    return random.normal(rng, shape) * self.sigma_max
-
-  def posterior(self, denoise, x, timestep):
-    sigma = self.discrete_sigmas[timestep]
-    # sigma_prev is the one that will finish with zero, and so it is the previous sigma in forward time
-    sigma_prev = self.discrete_sigmas_prev[timestep]
-
-    if self.S_churn > 0 and self.S_min <= sigma <= self.S_max:
-      gamma = min(self.S_churn / num_steps, jnp.sqrt(2) - 1)
-      sigma_hat = sigma + gamma * sigma
-      z = random.normal(rng, x.shape)
-      x_hat = x + jnp.sqrt(sigma_hat**2 - sigma**2) * self.S_noise * z
-    else:
-      sigma_hat = sigma
-      x_hat = x
-
-    d_cur = (x - self.denoise(x_hat, sigma_hat)) / sigma_hat
-    x_next = x + (sigma_prev - sigma) * d_cur  # Euler step
-
-    if timestep > 0:
-      # Apply 2nd order correction
-      d_prime = (x_next - self.denoise(x_next, sigma_prev)) / sigma_prev
-      x_next = x_hat + (sigma_prev - sigma_hat) * (0.5 * d_cur + 0.5 * d_prime)
-    return x_next
-
-  def update(self, rng, x, t):
-    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
-    x_next = posterior(self.denoise, x, timestep)
-    return x_next, None
-=======
-class EDMEuler(Solver):
-  """Implements Algorithm 2 (Euler steps) from Karras et al. (2022)."""
+  Algorithm 2 (Euler steps) from Karras et al. (2022) arxiv.org/abs/2206.00364
+  """
 
   def __init__(self, denoise, sigma=None, ts=None, s_churn=0.0, s_min=0.0, s_max=float('inf'), s_noise=1.0):
     """
@@ -600,6 +516,7 @@ class EDMEuler(Solver):
   def update(self, rng, x, t):
     timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     sigma = self.discrete_sigmas[timestep]
+    # sigma_prev is the one that will finish with zero, and so it is the previous sigma in forward time
     sigma_prev = self.discrete_sigmas_prev[timestep]
     gamma = min(self.s_churn / self.num_steps, jnp.sqrt(2) - 1) if self.s_min <= sigma <= self.s_max else 0.
     sigma_hat = sigma * (gamma + 1)
@@ -613,7 +530,7 @@ class EDMEuler(Solver):
     dt = sigma_prev - sigma_hat
 
     x = x + drift * dt  # Euler method
-    return x, x
+    return x, None
 
 
 class EDMHeun(Solver):
@@ -634,7 +551,7 @@ class EDMHeun(Solver):
     drift = (x - self.denoise(x, sigma_hat * jnp.ones(t.shape))) / sigma
     dt = sigma_prev - sigma_hat
 
-    if sigma_prev == 0.0:  # Euler method
+    if sigma_prev == 0.0:  # Euler method at timestep = 0
       x = x + drift * dt
     else:  # Heun's method
       x_2 = x + drift * dt
@@ -644,4 +561,3 @@ class EDMHeun(Solver):
     return x, x
 
 
->>>>>>> Stashed changes
