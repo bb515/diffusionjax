@@ -32,7 +32,17 @@ def continuous_to_discrete(betas, dt):
   return discrete_betas
 
 
-def get_sigma_function(sigma_min, sigma_max):
+def get_karras_sigma_function(sigma_min, sigma_max, rho=7.0):
+  min_inv_rho = sigma_min ** (1 / rho)
+  max_inv_rho = sigma_max ** (1 / rho)
+
+  def sigma(t):
+    return (min_inv_rho + t * (max_inv_rho - min_inv_rho)) ** rho
+
+  return sigma
+
+
+def get_exponential_sigma_function(sigma_min, sigma_max):
   log_sigma_min = jnp.log(sigma_min)
   log_sigma_max = jnp.log(sigma_max)
 
@@ -392,55 +402,3 @@ def get_sampler(
   # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
   return sampler
 
-
-# def edm_sampler(
-#   net,
-#   noise,
-#   labels=None,
-#   gnet=None,
-#   num_steps=32,
-#   sigma_min=0.002,
-#   sigma_max=80,
-#   rho=7,
-#   guidance=1,
-#   S_churn=0,
-#   S_min=0,
-#   S_max=float("inf"),
-#   S_noise=1,
-#   dtype=None,
-#   randn_like=None,
-# ):
-#   # Guided denoiser.
-#   def denoise(x, t):
-#     Dx = net(x, t, labels).to(dtype)
-#     if guidance == 1:
-#       return Dx
-#     ref_Dx = gnet(x, t).to(dtype)
-#     return ref_Dx.lerp(Dx, guidance)
-#
-#   # Time step discretization.
-#
-#   # Main sampling loop.
-#   x_next = noise.to(dtype) * t_steps[0]
-#   for i, (t_cur, t_next) in enumerate(zip(t_steps[:-1], t_steps[1:])):  # 0, ..., N-1
-#     x_cur = x_next
-#
-#     # Increase noise temporarily.
-#     if S_churn > 0 and S_min <= t_cur <= S_max:
-#       gamma = min(S_churn / num_steps, np.sqrt(2) - 1)
-#       t_hat = t_cur + gamma * t_cur
-#       x_hat = x_cur + (t_hat**2 - t_cur**2).sqrt() * S_noise * randn_like(x_cur)
-#     else:
-#       t_hat = t_cur
-#       x_hat = x_cur
-#
-#     # Euler step.
-#     d_cur = (x_hat - denoise(x_hat, t_hat)) / t_hat
-#     x_next = x_hat + (t_next - t_hat) * d_cur
-#
-#     # Apply 2nd order correction.
-#     if i < num_steps - 1:
-#       d_prime = (x_next - denoise(x_next, t_next)) / t_next
-#       x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
-#
-#   return x_next
