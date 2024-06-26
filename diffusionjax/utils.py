@@ -87,9 +87,10 @@ def get_cosine_beta_function(offset=0.08):
 
 def get_karras_sigma_function(sigma_min, sigma_max, rho=7):
   """
+  A sigma function from Algorithm 2 from Karras et al. (2022) arxiv.org/abs/2206.00364
+
   Returns:
-    A variance exploding sigma function from the paper
-    arxiv.org/abs/2206.00364
+    A function that can be used like `sigmas = vmap(sigma)(ts)` where `ts.shape = (num_steps,)`, see `test_utils.py` for usage.
 
   Args:
     sigma_min: Minimum standard deviation of forawrd transition kernel.
@@ -105,6 +106,24 @@ def get_karras_sigma_function(sigma_min, sigma_max, rho=7):
     return (min_inv_rho + t * (max_inv_rho - min_inv_rho)) ** rho
 
   return sigma
+
+
+def get_karras_gamma_function(num_steps, s_churn, s_min, s_max):
+  """
+  A gamma function from Algorithm 2 from Karras et al. (2022) arxiv.org/abs/2206.00364
+  Returns:
+    A function that can be used like `gammas = gamma(sigmas)` where `sigmas.shape = (num_steps,)`, see `test_utils.py` for usage.
+  Args:
+    num_steps:
+    s_churn: "controls the overall amount of stochasticity" in Algorithm 2 from Karras et al. (2022)
+    [s_min, s_max] : Range of noise levels that "stochasticity" is enabled.
+  """
+
+  def gamma(sigmas):
+    gammas = jnp.where(sigmas <= s_max, min(s_churn / num_steps, jnp.sqrt(2) - 1), 0.)
+    gammas = jnp.where(s_min <= sigmas, gammas, 0.)
+    return gammas
+  return gamma
 
 
 def get_times(num_steps=1000, dt=None, t0=None):

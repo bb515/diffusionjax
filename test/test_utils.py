@@ -7,6 +7,7 @@ from diffusionjax.utils import (
   continuous_to_discrete,
   get_exponential_sigma_function,
   get_karras_sigma_function,
+  get_karras_gamma_function,
 )
 import jax.numpy as jnp
 from jax import vmap
@@ -62,120 +63,20 @@ def test_karras_sigma_schedule():
   sigma_max = 80
   rho = 7
 
-  # TODO: The default ts to use is `diffusionjax.utils.get_times(num_steps, t0=0.0)`.
-  ts, dt = get_times(num_steps)
-
-  sigma = get_karras_sigma_function(sigma_min=sigma_min, sigma_max=sigma_max, rho=rho)
-  ts = jnp.concatenate([jnp.array([[0.0]]), ts])
-
+  # NOTE The default ts to use is `diffusionjax.utils.get_times(num_steps, t0=0.0)`.
+  ts, _ = get_times(num_steps, t0=0.0)
+  ts = ts.flatten()
+  sigma = get_karras_sigma_function(
+    sigma_min=sigma_min, sigma_max=sigma_max, rho=rho)
   actual_discrete_sigmas = vmap(sigma)(ts)
-  # https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8cccd935068cd9c657318fbc6ce4c/sde_lib.py#L222
-  # expected_sigmas = jnp.exp(  # I think this is wrong
-  #     jnp.linspace(jnp.log(sigma_min),
-  #                  jnp.log(sigma_max),
-  #                  num_steps))
-  #
-  step_indices = jnp.arange(num_steps)
-  ts, _ = get_times(num_steps, dt)
 
-  # Time step discretization.
-  print(step_indices)
+  step_indices = jnp.arange(num_steps)
   expected_discrete_sigmas = (
     sigma_max ** (1 / rho)
     + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))
   ) ** rho
-  print(expected_discrete_sigmas.shape)
-  print(expected_discrete_sigmas[:1].shape)
-
-  expected_discrete_sigmas = jnp.concatenate(
-    [expected_discrete_sigmas, jnp.zeros_like(expected_discrete_sigmas[:1])]
-  )  # sigma_N = 0
-
-  print(expected_discrete_sigmas.shape)
   expected_discrete_sigmas = jnp.flip(expected_discrete_sigmas)
-
-  import matplotlib.pyplot as plt
-
-  plt.plot(expected_discrete_sigmas)
-  plt.savefig("expected.png")
-  plt.close()
-
-  plt.plot(actual_discrete_sigmas)
-  plt.savefig("actual.png")
-  plt.close()
-
-  ts = jnp.concatenate([jnp.array([[0.0]]), ts]).flatten()
-  actual_discrete_sigmas = actual_discrete_sigmas.flatten()
-
-  print(ts.shape)
-  print(expected_discrete_sigmas.shape)
-  print(actual_discrete_sigmas.shape)
-
-  plt.plot(
-    ts,
-    (expected_discrete_sigmas - actual_discrete_sigmas) / expected_discrete_sigmas,
-  )
-  plt.savefig("abs.png")
-  plt.close()
-
-  plt.plot(ts, actual_discrete_sigmas / expected_discrete_sigmas)
-  plt.savefig("rel.png")
-  plt.close()
-
   assert jnp.allclose(expected_discrete_sigmas, actual_discrete_sigmas)
-  assert 0
-
-  import jax.random as random
-
-  rng = random.PRNGKey(2023)
-  rng, step_rng = random.split(rng, 2)
-
-  S_churn = 0
-  S_min = 0
-  S_max = float("inf")
-  S_noise = 1
-
-  def denoise(x_hat, t_hat):
-    return x_hat
-
-  noise = 0.0
-  x_next = noise * expected_discrete_sigmas[0]
-  print(zip(expected_discrete_sigmas[:-1], expected_discrete_sigmas[1:]))
-  assert 0
-
-
-def test_karras_heun_sampler():
-  # TODO
-
-  def sample_heun(denoise, discrete_sigmas, num_steps):
-    for i, (t_cur, t_next) in enumerate(
-      zip(discrete_sigmas[:-1], discrete_sigmas[1:])
-    ):  # 0, ..., N-1
-      print(t_cur, t_next)
-      x_cur = x_next
-
-      # Increase noise temporarily.
-      t_hat = t_cur
-      x_hat = x_cur
-      # note that this is not the same x_next as the one used to calculate d_prime
-      # so there is actually no need to carry the score vector across
-
-      # surely that this is not efficient? if S_churn is zero, then just carry
-      # over the evaluation from the previous timestep. Is this how it worked in
-      # my Heun solver, so I will want to make a new sampler for second order stuff
-
-      # Euler step.
-      d_cur = (x_hat - denoise(x_hat, t_hat)) / t_hat
-      # I should have precomputed the delta ts
-      x_next = x_hat + (t_next - t_hat) * d_cur
-
-      # Apply 2nd order correction. does not apply on the final step
-      # since t_next would be zero, so t_next is only needed
-      # for the 2nd order correction and the score is never evaluated (or trained) here
-      if i < num_steps - 1:
-        d_prime = (x_next - denoise(x_next, t_next)) / t_next
-        x_next = x_hat + (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
-    return x_next
 
 
 def test_get_timestep_continuous():
@@ -279,4 +180,18 @@ def test_get_timestep_continuous():
   unit(ts)
 
 
-test_continuous_discrete_equivalence_karras_sigma_schedule()
+def test_karras_gamma_function(s_churn=50.0, s_min=10.0, s_max=float('inf')):
+  num_steps = 100
+  ts, _ = get_times(num_steps, t0=0.0)
+  ts = ts.flatten()
+  sigma = get_karras_sigma_function(sigma_min=0.01, sigma_max=80.0, rho=7)
+  sigmas = vmap(sigma)(ts)
+  gamma = get_karras_gamma_function(num_steps, s_churn=s_churn, s_min=s_min, s_max=s_max)
+  gammas = gamma(sigmas)
+  for gamma_actual, sigma_actual in zip(gammas, sigmas):
+    gamma_expected = min(s_churn / num_steps, jnp.sqrt(2) - 1) if s_min <= sigma_actual <= s_max else 0.0
+    assert gamma_actual == gamma_expected
+
+
+test_karras_gamma_function()
+

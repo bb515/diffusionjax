@@ -11,6 +11,7 @@ from diffusionjax.utils import (
   get_timestep,
   get_exponential_sigma_function,
   get_karras_sigma_function,
+  get_karras_gamma_function,
   get_linear_beta_function,
   continuous_to_discrete,
 )
@@ -494,19 +495,19 @@ class EDMEuler(Solver):
   Algorithm 2 (Euler steps) from Karras et al. (2022) arxiv.org/abs/2206.00364
   """
 
-  def __init__(self, denoise, sigma=None, ts=None, s_churn=0.0, s_min=0.0, s_max=float('inf'), s_noise=1.0):
+  def __init__(self, denoise, sigma=None, gamma=None, ts=None, s_noise=1.0):
     """
     The default `args:ts` to use is `ts, dt = diffusionjax.utils.get_times(num_steps, t0=0.0)`.
     """
     super().__init__(ts)
     if sigma is None:
       sigma = get_karras_sigma_function(sigma_min=0.002, sigma_max=80.0, rho=7)
-    sigmas = vmap(sigma)(self.ts.flatten())
-    self.discrete_sigmas = sigmas
+    self.discrete_sigmas = vmap(sigma)(self.ts.flatten())
+    if gamma is None:
+      gamma = get_karras_gamma_function(num_steps=self.num_steps, s_churn=0.0, s_min=0.0, s_max=float('inf'))
+    self.gammas = gamma(self.discrete_sigmas)
+    self.bool_gamma_greater_than_zero = jnp.where(self.gammas > 0, 1, 0)
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
-    self.s_churn = s_churn
-    self.s_min = s_min
-    self.s_max = s_max
     self.s_noise = s_noise
     self.denoise = denoise
 
@@ -518,46 +519,42 @@ class EDMEuler(Solver):
     sigma = self.discrete_sigmas[timestep]
     # sigma_prev is the one that will finish with zero, and so it is the previous sigma in forward time
     sigma_prev = self.discrete_sigmas_prev[timestep]
-    gamma = min(self.s_churn / self.num_steps, jnp.sqrt(2) - 1) if self.s_min <= sigma <= self.s_max else 0.
+    gamma = self.gammas[timestep]
     sigma_hat = sigma * (gamma + 1)
-    if gamma > 0:
-      z = random.normal(rng, x.shape) * self.s_noise
-      std = jnp.sqrt(sigma_hat**2 - sigma**2)
-      x = x + batch_mul(std, z)
+
+    # need to do this since get JAX tracer concretization error the naive way
+    bool = self.bool_gamma_greater_than_zero[timestep[0]]
+    z = random.normal(rng, x.shape) * self.s_noise
+    std = jnp.sqrt(sigma_hat**2 - sigma**2) * bool
+    x = x + batch_mul(std, z)
 
     # Convert the denoiser output to a Karras ODE derivative
-    drift = (x - self.denoise(x, sigma_hat * jnp.ones(t.shape))) / sigma
+    drift = batch_mul(x - self.denoise(x, sigma_hat),  1.0 / sigma)
     dt = sigma_prev - sigma_hat
-
-    x = x + drift * dt  # Euler method
+    x = x + batch_mul(drift, dt)  # Euler method
     return x, None
 
 
-class EDMHeun(Solver):
+class EDMHeun(EDMEuler):
   """Implements Algorithm 2 (Heun steps) from Karras et al. (2022)."""
 
   def update(self, rng, x, t):
     timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
     sigma = self.discrete_sigmas[timestep]
     sigma_prev = self.discrete_sigmas_prev[timestep]
-    gamma = min(self.s_churn / self.num_steps, jnp.sqrt(2) - 1) if self.s_min <= sigma <= self.s_max else 0.
+    gamma = self.gammas[timestep]
     sigma_hat = sigma * (gamma + 1)
-    if gamma > 0:
-      z = random.normal(rng, x.shape) * self.s_noise
-      std = (sigma_hat**2 - sigma**2) ** 0.5
-      x = x + batch_mul(std, z)
+    # need to do this since get JAX tracer concretization error the naive way
+    std = jnp.sqrt(sigma_hat**2 - sigma**2)
+    bool = self.bool_gamma_greater_than_zero[timestep[0]]
+    x = jnp.where(bool, x + batch_mul(std, random.normal(rng, x.shape) * self.s_noise), x)
 
     # Convert the denoiser output to a Karras ODE derivative
-    drift = (x - self.denoise(x, sigma_hat * jnp.ones(t.shape))) / sigma
+    drift = batch_mul(x - self.denoise(x, sigma_hat), 1. / sigma)
     dt = sigma_prev - sigma_hat
-
-    if sigma_prev == 0.0:  # Euler method at timestep = 0
-      x = x + drift * dt
-    else:  # Heun's method
-      x_2 = x + drift * dt
-      drift_2 = (x - self.denoise(x_2, sigma_prev * jnp.ones(t.shape))) / sigma_prev
-      drift_prime = (drift + drift_2) / 2
-      x = x + drift_prime * dt
-    return x, x
-
+    x_1 = x + batch_mul(drift, dt)  #  Euler step
+    drift_1 = batch_mul(x_1 - self.denoise(x_1, sigma_prev), 1. / sigma_prev)
+    drift_prime = (drift + drift_1) / 2
+    x_2 = x_1 + batch_mul(drift_prime, dt)  # 2nd order correction
+    return x_2, x_1
 
