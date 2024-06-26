@@ -32,16 +32,6 @@ def continuous_to_discrete(betas, dt):
   return discrete_betas
 
 
-def get_karras_sigma_function(sigma_min, sigma_max, rho=7.0):
-  min_inv_rho = sigma_min ** (1 / rho)
-  max_inv_rho = sigma_max ** (1 / rho)
-
-  def sigma(t):
-    return (min_inv_rho + t * (max_inv_rho - min_inv_rho)) ** rho
-
-  return sigma
-
-
 def get_exponential_sigma_function(sigma_min, sigma_max):
   log_sigma_min = jnp.log(sigma_min)
   log_sigma_max = jnp.log(sigma_max)
@@ -95,7 +85,7 @@ def get_cosine_beta_function(offset=0.08):
   return beta, log_mean_coeff
 
 
-def get_EDM_sigma_function(sigma_min, sigma_max, rho=7):
+def get_karras_sigma_function(sigma_min, sigma_max, rho=7):
   """
   Returns:
     A variance exploding sigma function from the paper
@@ -107,18 +97,12 @@ def get_EDM_sigma_function(sigma_min, sigma_max, rho=7):
     rho: Order of the polynomial in t (determines both smoothness and growth
       rate).
   """
+  min_inv_rho = sigma_min ** (1 / rho)
+  max_inv_rho = sigma_max ** (1 / rho)
 
   def sigma(t):
-    # the original definition in arxiv.org/abs/2206.00364
-    # return (
-    #   sigma_max ** (1.0 / rho)
-    #     + t * (sigma_min ** (1.0 / rho) - sigma_max ** (1.0 / rho))
-    # ) ** rho
     # NOTE: is defined in reverse time to the definition in arxiv.org/abs/2206.00364
-    return (
-      sigma_min ** (1.0 / rho)
-      + t * (sigma_max ** (1.0 / rho) - sigma_min ** (1.0 / rho))
-    ) ** rho
+    return (min_inv_rho + t * (max_inv_rho - min_inv_rho)) ** rho
 
   return sigma
 

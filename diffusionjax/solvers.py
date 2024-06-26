@@ -496,7 +496,7 @@ class EDMEuler(Solver):
 
   def __init__(self, denoise, sigma=None, ts=None, s_churn=0.0, s_min=0.0, s_max=float('inf'), s_noise=1.0):
     """
-    The default ts to use is `diffusionjax.utils.get_times(num_steps, t0=0.0)`.
+    The default `args:ts` to use is `ts, dt = diffusionjax.utils.get_times(num_steps, t0=0.0)`.
     """
     super().__init__(ts)
     if sigma is None:
