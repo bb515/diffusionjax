@@ -9,7 +9,7 @@ from diffusionjax.utils import (
   get_score,
   get_sampler,
   get_times,
-  get_sigma_function,
+  get_exponential_sigma_function,
   get_linear_beta_function,
 )
 import diffusionjax.sde as sde_lib
@@ -93,7 +93,7 @@ def get_sde(config):
     )
     return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower() == "vesde":
-    sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
+    sigma = get_exponential_sigma_function(config.model.sigma_min, config.model.sigma_max)
     return sde_lib.VE(sigma=sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
@@ -168,7 +168,7 @@ def get_ddim_chain(config, model):
     ts, _ = get_times(
       config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
     )
-    sigma = get_sigma_function(
+    sigma = get_exponential_sigma_function(
       sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
     )
     return DDIMVE(model, eta=config.solver.eta, sigma=sigma, ts=ts)
@@ -195,37 +195,10 @@ def get_markov_chain(config, score):
     ts, _ = get_times(
       config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
     )
-    sigma = get_sigma_function(
+    sigma = get_exponential_sigma_function(
       sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
     )
     return SMLD(score, sigma=sigma, ts=ts)
-  else:
-    raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
-
-
-def get_edm_chain(config, model, data_variance=1.0):
-  """
-  A second order Heun solver from the paper Elucidating the Design space of
-  Diffusion-Based Generative Models (EDM).
-
-  arxiv.org/abs/2206.00364
-
-  Args:
-    model: EDM parameterizes the
-      `\text{denoiser}(x, sigma) = c_{\text{skip}} x + c_{\text{out}} F_{\theta}(c_{\text{\in}) x; c_{\text{noise}}(\sigma))`
-      F_{\theta} represents the raw neural network layers.
-    score: DDPM/SMLD(NCSN) parameterizes the `score(x, t)` function.
-  """
-  if config.solver.outer_solver.lower() == "edm":
-
-    def denoise():
-      c_skip = config.sigma_data
-
-    sigma = get_EDM_sigma_function(
-      config.model.sigma_min, config.model.sigma_max, config.model.rho
-    )
-
-    return EDM(denoise, sigma=sigma, ts=ts)
   else:
     raise NotImplementedError(f"Markov Chain {config.solver.outer_solver} unknown.")
 
