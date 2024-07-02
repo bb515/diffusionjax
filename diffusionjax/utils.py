@@ -225,6 +225,44 @@ def errors(t, sde, score, rng, data, likelihood_weighting=True):
     return batch_mul(noise, 1.0 / std) + score(x, t)
 
 
+def get_pointwise_loss(
+  sde,
+  model,
+  score_scaling=True,
+  likelihood_weighting=True,
+  reduce_mean=True,
+  ):
+  """Create a loss function for score matching training, returning a function that can evaluate the loss pointwise over time.
+  Args:
+    sde: Instantiation of a valid SDE class.
+    solver: Instantiation of a valid Solver class.
+    model: A valid flax neural network `:class:flax.linen.Module` class.
+    score_scaling: Bool, set to `True` if learning a score scaled by the marginal standard deviation.
+    likelihood_weighting: Bool, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
+    reduce_mean: Bool, set to `True` if taking the mean of the errors in the loss, set to `False` if taking the sum.
+
+  Returns:
+    A loss function that can be used for score matching training and can evaluate the loss pointwise over time.
+  """
+  reduce_op = (
+    jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
+  )
+
+  def pointwise_loss(t, params, rng, data):
+    n_batch = data.shape[0]
+    ts = jnp.ones((n_batch,)) * t
+    score = get_score(sde, model, params, score_scaling)
+    e = errors(ts, sde, score, rng, data, likelihood_weighting)
+    losses = e**2
+    losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
+    if likelihood_weighting:
+      g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
+      losses = losses * g2
+    return jnp.mean(losses)
+
+  return pointwise_loss
+
+
 def get_loss(
   sde,
   solver,
@@ -232,7 +270,6 @@ def get_loss(
   score_scaling=True,
   likelihood_weighting=True,
   reduce_mean=True,
-  pointwise_t=False,
 ):
   """Create a loss function for score matching training.
   Args:
@@ -242,46 +279,61 @@ def get_loss(
     score_scaling: Bool, set to `True` if learning a score scaled by the marginal standard deviation.
     likelihood_weighting: Bool, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
     reduce_mean: Bool, set to `True` if taking the mean of the errors in the loss, set to `False` if taking the sum.
-    pointwise_t: Bool, set to `True` if returning a function that can evaluate the loss pointwise over time. Set to `False` if returns an expectation of the loss over time.
 
   Returns:
-    A loss function that can be used for score matching training.
+    A loss function that can be used for score matching training and is an expectation of the regression loss over time.
   """
   reduce_op = (
     jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
   )
-  if pointwise_t:
 
-    def pointwise_loss(t, params, rng, data):
-      n_batch = data.shape[0]
-      ts = jnp.ones((n_batch,)) * t
-      score = get_score(sde, model, params, score_scaling)
-      e = errors(ts, sde, score, rng, data, likelihood_weighting)
-      losses = e**2
-      losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
-      if likelihood_weighting:
-        g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
-        losses = losses * g2
-      return jnp.mean(losses)
+  def loss(params, rng, data):
+    rng, step_rng = random.split(rng)
+    ts = random.uniform(
+      step_rng, (data.shape[0],), minval=solver.ts[0], maxval=solver.t1
+    )
+    score = get_score(sde, model, params, score_scaling)
+    e = errors(ts, sde, score, rng, data, likelihood_weighting)
+    losses = e**2
+    losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
+    if likelihood_weighting:
+      g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
+      losses = losses * g2
+    return jnp.mean(losses)
 
-    return pointwise_loss
-  else:
+  return loss
 
-    def loss(params, rng, data):
-      rng, step_rng = random.split(rng)
-      ts = random.uniform(
-        step_rng, (data.shape[0],), minval=solver.ts[0], maxval=solver.t1
-      )
-      score = get_score(sde, model, params, score_scaling)
-      e = errors(ts, sde, score, rng, data, likelihood_weighting)
-      losses = e**2
-      losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
-      if likelihood_weighting:
-        g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
-        losses = losses * g2
-      return jnp.mean(losses)
 
+def get_edm2_loss(
+  model,
+  sigma_data=1.0,
+  p_std=None,
+  p_mean=None,
+):
+  """Create a loss function for score matching training.
+  Args:
+    model: A valid flax neural network `:class:flax.linen.Module` class.
+    sigma_data: Marginal variance of the data.
+    p_std:
+    p_mean:
+
+  Returns:
+  """
+
+  def loss(params, rng, data, labels=None):
+    rng, step_rng = random.split(rng)
+    random_normal = random.normal(
+        step_rng, (data.shape[0],))
+    sigma = jnp.exp(random_normal * p_std + p_mean)
+    weight = (sigma**2 + sigma_data**2) / (sigma * sigma_data)**2
+    noise = random.normal(step_rng, data.shape) * sigma
+    net = get_net(model, params)
+    denoised, logvar = net(data + noise, sigma, labels, return_logvar=True)
+    loss = (weight / jnp.exp(logvar)) * ((denoised - data) ** 2) + logvar
     return loss
+    # return jnp.mean(losses) TODO: need a reduction here
+
+  return loss
 
 
 def get_score(sde, model, params, score_scaling):
@@ -291,6 +343,11 @@ def get_score(sde, model, params, score_scaling):
     )
   else:
     return lambda x, t: -model.apply(params, x, t)
+
+
+def get_net(model, params):
+  # TODO: compare to edmv2 code and work out if it is correct
+  return lambda x, t: -model.apply(params, x, t)
 
 
 def get_epsilon(sde, model, params, score_scaling):

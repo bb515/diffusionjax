@@ -593,3 +593,4 @@ def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False)
   else:
     saved_state = state
   return saved_state.params, saved_state.opt_state, mean_losses
+

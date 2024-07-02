@@ -49,7 +49,7 @@ def resample(x, f=[1, 1], mode="keep"):
   """
   if mode == "keep":
     return x
-  f = jnp.float32(f)
+  f = jnp.float32(f)  # TODO: type promotion required in JAX?
   assert f.ndim == 1 and len(f) % 2 == 0
   f = f / f.sum()
   f = jnp.outer(f, f)[jnp.newaxis, jnp.newaxis, :, :]
@@ -115,6 +115,7 @@ class MPFourier(nn.Module):
       "phases", jax.nn.initializers.normal(stddev=2 * jnp.pi), (self.num_channels,)
     )
     phases = jax.lax.stop_gradient(phases)
+    y = jnp.float32(x)  # TODO: required in JAX?
     y = jnp.outer(x, freqs)
     y = y + phases
     y = jnp.cos(y) * jnp.sqrt(2)
@@ -133,11 +134,11 @@ class MPConv(nn.Module):
 
   @nn.compact
   def __call__(self, x, gain=1.0):
-    w = self.param(
+    w = jnp.float32(self.param(
       "w",
       jax.nn.initializers.normal(stddev=1.0),
       (self.out_channels, self.in_channels, *self.kernel_shape),
-    )
+    ))  # TODO: type promotion required in JAX?
     if self.training:
       w = jax.lax.stop_gradient(w)
       w = weight_normalize(w)  # forced weight normalization
@@ -182,7 +183,7 @@ class Block(nn.Module):
     if self.flavor == "enc":
       if self.in_channels != self.out_channels:
         x = MPConv(
-          self.in_channels, self.out_channels, kernel_shape=[1, 1], name="conv_skip"
+          self.in_channels, self.out_channels, kernel_shape=(1, 1), name="conv_skip"
         )(x)
       x = pixel_normalize(x, channel_axis=1)  # pixel norm
 
@@ -190,12 +191,12 @@ class Block(nn.Module):
     y = MPConv(
       self.out_channels if self.flavor == "enc" else self.in_channels,
       self.out_channels,
-      kernel_shape=[3, 3],
+      kernel_shape=(3, 3),
       name="conv_res0",
     )(mp_silu(x))
 
     c = (
-      MPConv(self.emb_channels, self.out_channels, kernel_shape=[], name="emb_linear")(
+      MPConv(self.emb_channels, self.out_channels, kernel_shape=(), name="emb_linear")(
         emb, gain=self.param("emb_gain", jax.nn.initializers.zeros, (1,))
       )
       + 1
@@ -204,13 +205,13 @@ class Block(nn.Module):
     if self.dropout:
       y = nn.Dropout(self.dropout)(y, deterministic=not self.training)
     y = MPConv(
-      self.out_channels, self.out_channels, kernel_shape=[3, 3], name="conv_res1"
+      self.out_channels, self.out_channels, kernel_shape=(3, 3), name="conv_res1"
     )(y)
 
     # Connect the branches
     if self.flavor == "dec" and self.in_channels != self.out_channels:
       x = MPConv(
-        self.in_channels, self.out_channels, kernel_shape=[1, 1], name="conv_skip"
+        self.in_channels, self.out_channels, kernel_shape=(1, 1), name="conv_skip"
       )(x)
     x = mp_sum(x, y, t=self.res_balance)
 
@@ -219,7 +220,7 @@ class Block(nn.Module):
     num_heads = self.out_channels // self.channels_per_head if self.attention else 0
     if num_heads != 0:
       y = MPConv(
-        self.out_channels, self.out_channels * 3, kernel_shape=[1, 1], name="attn_qkv"
+        self.out_channels, self.out_channels * 3, kernel_shape=(1, 1), name="attn_qkv"
       )(x)
       y = y.reshape(y.shape[0], num_heads, -1, 3, y.shape[2] * y.shape[3])
       q, k, v = jax_unstack(pixel_normalize(y, channel_axis=2), axis=3)  # pixel normalization and split
@@ -227,7 +228,7 @@ class Block(nn.Module):
       w = nn.softmax(jnp.einsum("nhcq,nhck->nhqk", q, k / jnp.sqrt(q.shape[2])), axis=3)
       y = jnp.einsum("nhqk,nhck->nhcq", w, v)
       y = MPConv(
-        self.out_channels, self.out_channels, kernel_shape=[1, 1], name="attn_proj"
+        self.out_channels, self.out_channels, kernel_shape=(1, 1), name="attn_proj"
       )(y.reshape(*x.shape))
       x = mp_sum(x, y, t=self.attn_balance)
 
@@ -305,7 +306,7 @@ class UNet(nn.Module):
         cin = cout
         cout = channels
         enc[f"{res}x{res}_conv"] = MPConv(
-          cin, cout, kernel_shape=[3, 3], name=f"enc_{res}x{res}_conv"
+          cin, cout, kernel_shape=(3, 3), name=f"enc_{res}x{res}_conv"
         )
       else:
         enc[f"{res}x{res}_down"] = Block(
@@ -372,11 +373,11 @@ class UNet(nn.Module):
         )
 
     # Embedding
-    emb = MPConv(cnoise, cemb, kernel_shape=[], name="emb_noise")(MPFourier(cnoise, name="emb_fourier")(noise_labels))
+    emb = MPConv(cnoise, cemb, kernel_shape=(), name="emb_noise")(MPFourier(cnoise, name="emb_fourier")(noise_labels))
     if self.label_dim != 0:
       emb = mp_sum(
         emb,
-        MPConv(self.label_dim, cemb, kernel_shape=[], name="emb_label")(class_labels * np.sqrt(class_labels.shape[1])),
+        MPConv(self.label_dim, cemb, kernel_shape=(), name="emb_label")(class_labels * jnp.sqrt(class_labels.shape[1])),
         t=self.label_balance,
       )
     emb = mp_silu(emb)
@@ -393,8 +394,110 @@ class UNet(nn.Module):
       if "block" in name:
         x = mp_cat(x, skips.pop(), t=self.concat_balance)
       x = block(x, emb)
-    x = MPConv(cout, self.img_channels, kernel_shape=[3, 3], name="out_conv")(
+    x = MPConv(cout, self.img_channels, kernel_shape=(3, 3), name="out_conv")(
       x, gain=out_gain)
     return x
 
+
+class Precond(nn.Module):
+  """Preconditioning and uncertainty estimation."""
+
+  img_resolution: int  # Image resolution.
+  img_channels: int  # Image channels.
+  label_dim: int  # Class label dimensionality. 0 = unconditional.
+  # **precond_kwargs
+  use_fp16: bool = True  # Run the model at FP16 precision?
+  sigma_data: float = 0.5  # Expected standard deviation of the training data.
+  logvar_channels: int = 128  # Intermediate dimensionality for uncertainty estimation.
+  # **unet_kwargs,  # Keyword arguments for UNet.
+  model_channels: int = 192  # Base multiplier for the number of channels.
+  channel_mult: tuple = (1, 2, 3, 4)  # Per-resolution multipliers for the number of channels.
+  channel_mult_noise: Any = None  # Multiplier for noise embedding dimensionality. None = select based on channel_mult.
+  channel_mult_emb: Any = None  # Multiplier for final embedding dimensionality. None = select based on channel_mult.
+  num_blocks: int = 3  # Number of residual blocks per resolution.
+  attn_resolutions: tuple = (16, 8)  # List of resolutions with self-attention.
+  label_balance: float = 0.5  # Balance between noise embedding (0) and class embedding (1).
+  concat_balance: float = 0.5  # Balance between skip connections (0) and main path (1).
+  out_gain: float = 1.0
+  unet_kwargs = {
+    'model_channels': model_channels,
+    'channel_mult': channel_mult,
+    'channel_mult_noise': channel_mult_noise,
+    'channel_mult_emb': channel_mult_emb,
+    'num_blocks': num_blocks,
+    'attn_resolutions': attn_resolutions,
+    'label_balance': label_balance,
+    'concat_balance': concat_balance,
+    'out_gain': out_gain,
+  }
+
+  # **block_kwargs - arguments for Block
+  resample_filter: tuple = (1, 1)  # Resampling filter
+  channels_per_head: int = 64  # Number of channels per attention head
+  dropout: float = 0.0  # Dropout probability
+  res_balance: float = 0.3  # Balance between main branch (0) and residual branch (1)
+  attn_balance: float = 0.3  # Balance between main branch (0) and self-attention (1)
+  clip_act: int = 256  # Clip output activations. None = do not clip
+  out_gain: Any = None
+  block_kwargs = {
+    'resample_filter': resample_filter,
+    'channels_per_head': channels_per_head,
+    'dropout': dropout,
+    'res_balance': res_balance,
+    'attn_balance': attn_balance,
+    'clip_act': clip_act,
+  }
+
+  @nn.compact
+  def __call__(
+    self,
+    x,
+    sigma,
+    class_labels=None,
+    force_fp32=False,
+    return_logvar=False,
+    ):
+
+    x = jnp.float32(x)
+    sigma = jnp.float32(sigma).reshape(-1, 1, 1, 1)
+    class_labels = (
+      None
+      if self.label_dim == 0
+      else jnp.zeros((1, self.label_dim), device=x.device)
+      if class_labels is None
+      else jnp.float32(class_labels).reshape(-1, self.label_dim)
+    )
+
+    dtype = (
+      jnp.float16
+      if (self.use_fp16 and not force_fp32)
+      else jnp.float32
+    )
+
+    # Preconditioning weights
+    c_skip = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
+    c_out = sigma * self.sigma_data / jnp.sqrt(sigma**2 + self.sigma_data**2)
+    c_in = 1 / jnp.sqrt(self.sigma_data**2 + sigma**2)
+    c_noise = jnp.log(sigma.flatten()) / 4
+
+    # Run the model
+    x_in = jnp.array(c_in * x, dtype=dtype)
+
+    F_x = UNet(
+      img_resolution=self.img_resolution,
+      img_channels=self.img_channels,
+      label_dim=self.label_dim,
+      **self.unet_kwargs,
+      **self.block_kwargs,
+      name="unet",
+    )(x_in, c_noise, class_labels)
+    D_x = c_skip * x + c_out * jnp.float32(F_x)
+
+    # Estimate uncertainty if requested
+    if return_logvar:
+      logvar = MPConv(self.logvar_channels, 1, kernel_shape=(), name="logvar_linear")(
+        MPFourier(self.logvar_channels, name="logvar_fourier")(c_noise)
+        ).reshape(-1, 1, 1, 1)
+      return D_x, logvar  # u(sigma) in Equation 21
+    return D_x
 
