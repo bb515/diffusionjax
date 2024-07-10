@@ -409,7 +409,7 @@ class Precond(nn.Module):
   use_fp16: bool = True  # Run the model at FP16 precision?
   sigma_data: float = 0.5  # Expected standard deviation of the training data.
   logvar_channels: int = 128  # Intermediate dimensionality for uncertainty estimation.
-  # **unet_kwargs,  # Keyword arguments for UNet.
+  # **unet_kwargs  # Keyword arguments for UNet.
   model_channels: int = 192  # Base multiplier for the number of channels.
   channel_mult: tuple = (1, 2, 3, 4)  # Per-resolution multipliers for the number of channels.
   channel_mult_noise: Any = None  # Multiplier for noise embedding dimensionality. None = select based on channel_mult.
@@ -431,7 +431,7 @@ class Precond(nn.Module):
     'out_gain': out_gain,
   }
 
-  # **block_kwargs - arguments for Block
+  # **block_kwargs  # Keyword arguments for Block
   resample_filter: tuple = (1, 1)  # Resampling filter
   channels_per_head: int = 64  # Number of channels per attention head
   dropout: float = 0.0  # Dropout probability
