@@ -394,8 +394,7 @@ def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False)
     train_step = jax.pmap(train_step, axis_name="batch", donate_argnums=1)
     eval_step = jax.pmap(eval_step, axis_name="batch", donate_argnums=1)
 
-  # Replicate the training state to run on multiple devices
-  if config.training.pmap:
+    # Replicate the training state to run on multiple devices
     state = flax_utils.replicate(state)
 
   # Probably want to train over multiple epochs
@@ -439,14 +438,14 @@ def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False)
       losses = jnp.empty((len(tepoch), 1))
 
       for i_batch, batch in enumerate(tepoch):
-        batch = jax.tree_map(lambda x: scaler(x), batch)
+        batch = jax.tree_util.tree_map(lambda x: scaler(x), batch)
 
         # Execute one training step
         if config.training.pmap:
           rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
           next_rng = jnp.asarray(next_rng)  # type: ignore
         else:
-          rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
+          rng, next_rng = jax.random.split(rng)  # type: ignore
 
         (_, params, opt_state), loss_train = train_step(
           (next_rng, state.params, state.opt_state), batch
@@ -492,12 +491,12 @@ def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False)
 
         # Report the loss on an evaluation dataset periodically
         if step % config.training.eval_freq == 0:
-          eval_batch = jax.tree_map(lambda x: scaler(x), next(eval_iter))
+          eval_batch = jax.tree_util.tree_map(lambda x: scaler(x), next(eval_iter))
           if config.training.pmap:
             rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
             next_rng = jnp.asarray(next_rng)  # type: ignore
           else:
-            rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
+            rng, next_rng = jax.random.split(rng)  # type: ignore
           (_, _, _), loss_eval = eval_step(
             (next_rng, state.params, state.opt_state), eval_batch
           )

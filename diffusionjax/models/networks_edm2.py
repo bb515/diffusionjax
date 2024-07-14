@@ -1,6 +1,7 @@
 """JAX port of Improved diffusion model architecture proposed in the paper
 "Analyzing and Improving the Training Dynamics of Diffusion Models".
 Ported from the code https://github.com/NVlabs/edm2/blob/main/training/networks_edm2.py
+# TODO: explicit typing e.g. x = jnp.float32(x) required in JAX? in torch?
 """
 
 import jax
@@ -22,9 +23,9 @@ def pixel_normalize(x, channel_axis, eps=1e-4):
   Args:
     x: Assume (N, C, H, W)
   """
-  norm = jnp.linalg.vector_norm(x, axis=channel_axis, keepdims=True)
+  norm = jnp.float32(jnp.linalg.vector_norm(x, axis=channel_axis, keepdims=True))
   norm = eps + jnp.sqrt(norm.size / x.size) * norm
-  return x / norm
+  return x / jnp.array(norm, dtype=x.dtype)
 
 
 def weight_normalize(x, eps=1e-4):
@@ -34,9 +35,9 @@ def weight_normalize(x, eps=1e-4):
   Args:
     x: Assume (N, C, H, W)
   """
-  norm = jax.vmap(lambda x: jnp.linalg.vector_norm(x, keepdims=True))(x)
+  norm = jnp.float32(jax.vmap(lambda x: jnp.linalg.vector_norm(x, keepdims=True))(x))
   norm = eps + jnp.sqrt(norm.size / x.size) * norm
-  return x / norm
+  return x / jnp.array(norm, dtype=x.dtype)
 
 
 def resample(x, f=[1, 1], mode="keep"):
@@ -49,7 +50,7 @@ def resample(x, f=[1, 1], mode="keep"):
   """
   if mode == "keep":
     return x
-  f = jnp.float32(f)  # TODO: type promotion required in JAX?
+  f = jnp.array(f, dtype=x.dtype)
   assert f.ndim == 1 and len(f) % 2 == 0
   f = f / f.sum()
   f = jnp.outer(f, f)[jnp.newaxis, jnp.newaxis, :, :]
@@ -115,11 +116,11 @@ class MPFourier(nn.Module):
       "phases", jax.nn.initializers.normal(stddev=2 * jnp.pi), (self.num_channels,)
     )
     phases = jax.lax.stop_gradient(phases)
-    y = jnp.float32(x)  # TODO: required in JAX?
-    y = jnp.outer(x, freqs)
-    y = y + phases
+    y = jnp.float32(x)
+    y = jnp.float32(jnp.outer(x, freqs))
+    y = y + jnp.float32(phases)
     y = jnp.cos(y) * jnp.sqrt(2)
-    return y
+    return jnp.array(y, dtype=x.dtype)
 
 
 class MPConv(nn.Module):
@@ -145,6 +146,7 @@ class MPConv(nn.Module):
 
     w = weight_normalize(w)  # traditional weight normalization
     w = w * (gain / jnp.sqrt(w[0].size))  # magnitude-preserving scaling
+    w = jnp.array(w, dtype=x.dtype)
     if w.ndim == 2:
       return x @ w.T  # not sure about this
     assert w.ndim == 4
@@ -201,7 +203,7 @@ class Block(nn.Module):
       )
       + 1
     )
-    y = mp_silu(y * jnp.expand_dims(jnp.expand_dims(c, axis=2), axis=3))
+    y = jnp.array(mp_silu(y * jnp.expand_dims(jnp.expand_dims(c, axis=2), axis=3)), dtype=y.dtype)
     if self.dropout:
       y = nn.Dropout(self.dropout)(y, deterministic=not self.training)
     y = MPConv(
@@ -401,7 +403,6 @@ class UNet(nn.Module):
 
 class Precond(nn.Module):
   """Preconditioning and uncertainty estimation."""
-
   img_resolution: int  # Image resolution.
   img_channels: int  # Image channels.
   label_dim: int  # Class label dimensionality. 0 = unconditional.
@@ -467,7 +468,6 @@ class Precond(nn.Module):
       if class_labels is None
       else jnp.float32(class_labels).reshape(-1, self.label_dim)
     )
-
     dtype = (
       jnp.float16
       if (self.use_fp16 and not force_fp32)
