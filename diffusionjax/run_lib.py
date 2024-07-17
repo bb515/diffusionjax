@@ -440,7 +440,7 @@ def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False)
       for i_batch, batch in enumerate(tepoch):
         batch = jax.tree_util.tree_map(lambda x: scaler(x), batch)
 
-        # Execute one training step
+        # Execute one training step TODO: don't need a split here and in loss?
         if config.training.pmap:
           rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
           next_rng = jnp.asarray(next_rng)  # type: ignore
@@ -450,6 +450,7 @@ def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False)
         (_, params, opt_state), loss_train = train_step(
           (next_rng, state.params, state.opt_state), batch
         )
+        # TODO: Can't just interate state? move inside train_step? should rng be part of state?
         state = state.replace(opt_state=opt_state, params=params)  # type: ignore
 
         if config.training.pmap:

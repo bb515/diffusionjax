@@ -410,6 +410,7 @@ class Precond(nn.Module):
   use_fp16: bool = True  # Run the model at FP16 precision?
   sigma_data: float = 0.5  # Expected standard deviation of the training data.
   logvar_channels: int = 128  # Intermediate dimensionality for uncertainty estimation.
+  return_logvar: bool = False
   # **unet_kwargs  # Keyword arguments for UNet.
   model_channels: int = 192  # Base multiplier for the number of channels.
   channel_mult: tuple = (1, 2, 3, 4)  # Per-resolution multipliers for the number of channels.
@@ -456,7 +457,6 @@ class Precond(nn.Module):
     sigma,
     class_labels=None,
     force_fp32=False,
-    return_logvar=False,
     ):
 
     x = jnp.float32(x)
@@ -494,7 +494,7 @@ class Precond(nn.Module):
     D_x = c_skip * x + c_out * jnp.float32(F_x)
 
     # Estimate uncertainty if requested
-    if return_logvar:
+    if self.return_logvar:
       logvar = MPConv(self.logvar_channels, 1, kernel_shape=(), name="logvar_linear")(
         MPFourier(self.logvar_channels, name="logvar_fourier")(c_noise)
         ).reshape(-1, 1, 1, 1)
