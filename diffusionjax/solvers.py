@@ -504,7 +504,9 @@ class EDMEuler(Solver):
       sigma = get_karras_sigma_function(sigma_min=0.002, sigma_max=80.0, rho=7)
     self.discrete_sigmas = vmap(sigma)(self.ts.flatten())
     if gamma is None:
-      gamma = get_karras_gamma_function(num_steps=self.num_steps, s_churn=0.0, s_min=0.0, s_max=float('inf'))
+      gamma = get_karras_gamma_function(
+        num_steps=self.num_steps, s_churn=0.0, s_min=0.0, s_max=float("inf")
+      )
     self.gammas = gamma(self.discrete_sigmas)
     self.bool_gamma_greater_than_zero = jnp.where(self.gammas > 0, 1, 0)
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
@@ -529,7 +531,7 @@ class EDMEuler(Solver):
     x = x + batch_mul(std, z)
 
     # Convert the denoiser output to a Karras ODE derivative
-    drift = batch_mul(x - self.denoise(x, sigma_hat),  1.0 / sigma)
+    drift = batch_mul(x - self.denoise(x, sigma_hat), 1.0 / sigma)
     dt = sigma_prev - sigma_hat
     x = x + batch_mul(drift, dt)  # Euler method
     return x, None
@@ -547,14 +549,15 @@ class EDMHeun(EDMEuler):
     # need to do this since get JAX tracer concretization error the naive way
     std = jnp.sqrt(sigma_hat**2 - sigma**2)
     bool = self.bool_gamma_greater_than_zero[timestep[0]]
-    x = jnp.where(bool, x + batch_mul(std, random.normal(rng, x.shape) * self.s_noise), x)
+    x = jnp.where(
+      bool, x + batch_mul(std, random.normal(rng, x.shape) * self.s_noise), x
+    )
 
     # Convert the denoiser output to a Karras ODE derivative
-    drift = batch_mul(x - self.denoise(x, sigma_hat), 1. / sigma)
+    drift = batch_mul(x - self.denoise(x, sigma_hat), 1.0 / sigma)
     dt = sigma_prev - sigma_hat
     x_1 = x + batch_mul(drift, dt)  #  Euler step
-    drift_1 = batch_mul(x_1 - self.denoise(x_1, sigma_prev), 1. / sigma_prev)
+    drift_1 = batch_mul(x_1 - self.denoise(x_1, sigma_prev), 1.0 / sigma_prev)
     drift_prime = (drift + drift_1) / 2
     x_2 = x_1 + batch_mul(drift_prime, dt)  # 2nd order correction
     return x_2, x_1
-
