@@ -32,7 +32,7 @@ def continuous_to_discrete(betas, dt):
   return discrete_betas
 
 
-def get_sigma_function(sigma_min, sigma_max):
+def get_exponential_sigma_function(sigma_min, sigma_max):
   log_sigma_min = jnp.log(sigma_min)
   log_sigma_max = jnp.log(sigma_max)
 
@@ -83,6 +83,48 @@ def get_cosine_beta_function(offset=0.08):
     )
 
   return beta, log_mean_coeff
+
+
+def get_karras_sigma_function(sigma_min, sigma_max, rho=7):
+  """
+  A sigma function from Algorithm 2 from Karras et al. (2022) arxiv.org/abs/2206.00364
+
+  Returns:
+    A function that can be used like `sigmas = vmap(sigma)(ts)` where `ts.shape = (num_steps,)`, see `test_utils.py` for usage.
+
+  Args:
+    sigma_min: Minimum standard deviation of forawrd transition kernel.
+    sigma_max: Maximum standard deviation of forward transition kernel.
+    rho: Order of the polynomial in t (determines both smoothness and growth
+      rate).
+  """
+  min_inv_rho = sigma_min ** (1 / rho)
+  max_inv_rho = sigma_max ** (1 / rho)
+
+  def sigma(t):
+    # NOTE: is defined in reverse time of the definition in arxiv.org/abs/2206.00364
+    return (min_inv_rho + t * (max_inv_rho - min_inv_rho)) ** rho
+
+  return sigma
+
+
+def get_karras_gamma_function(num_steps, s_churn, s_min, s_max):
+  """
+  A gamma function from Algorithm 2 from Karras et al. (2022) arxiv.org/abs/2206.00364
+  Returns:
+    A function that can be used like `gammas = gamma(sigmas)` where `sigmas.shape = (num_steps,)`, see `test_utils.py` for usage.
+  Args:
+    num_steps:
+    s_churn: "controls the overall amount of stochasticity" in Algorithm 2 from Karras et al. (2022)
+    [s_min, s_max] : Range of noise levels that "stochasticity" is enabled.
+  """
+
+  def gamma(sigmas):
+    gammas = jnp.where(sigmas <= s_max, min(s_churn / num_steps, jnp.sqrt(2) - 1), 0.0)
+    gammas = jnp.where(s_min <= sigmas, gammas, 0.0)
+    return gammas
+
+  return gamma
 
 
 def get_times(num_steps=1000, dt=None, t0=None):
@@ -184,6 +226,44 @@ def errors(t, sde, score, rng, data, likelihood_weighting=True):
     return batch_mul(noise, 1.0 / std) + score(x, t)
 
 
+def get_pointwise_loss(
+  sde,
+  model,
+  score_scaling=True,
+  likelihood_weighting=True,
+  reduce_mean=True,
+):
+  """Create a loss function for score matching training, returning a function that can evaluate the loss pointwise over time.
+  Args:
+    sde: Instantiation of a valid SDE class.
+    solver: Instantiation of a valid Solver class.
+    model: A valid flax neural network `:class:flax.linen.Module` class.
+    score_scaling: Bool, set to `True` if learning a score scaled by the marginal standard deviation.
+    likelihood_weighting: Bool, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
+    reduce_mean: Bool, set to `True` if taking the mean of the errors in the loss, set to `False` if taking the sum.
+
+  Returns:
+    A loss function that can be used for score matching training and can evaluate the loss pointwise over time.
+  """
+  reduce_op = (
+    jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
+  )
+
+  def pointwise_loss(t, params, rng, data):
+    n_batch = data.shape[0]
+    ts = jnp.ones((n_batch,)) * t
+    score = get_score(sde, model, params, score_scaling)
+    e = errors(ts, sde, score, rng, data, likelihood_weighting)
+    losses = e**2
+    losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
+    if likelihood_weighting:
+      g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
+      losses = losses * g2
+    return jnp.mean(losses)
+
+  return pointwise_loss
+
+
 def get_loss(
   sde,
   solver,
@@ -191,7 +271,6 @@ def get_loss(
   score_scaling=True,
   likelihood_weighting=True,
   reduce_mean=True,
-  pointwise_t=False,
 ):
   """Create a loss function for score matching training.
   Args:
@@ -201,46 +280,58 @@ def get_loss(
     score_scaling: Bool, set to `True` if learning a score scaled by the marginal standard deviation.
     likelihood_weighting: Bool, set to `True` if likelihood weighting, as described in Song et al. 2020 (https://arxiv.org/abs/2011.13456), is applied.
     reduce_mean: Bool, set to `True` if taking the mean of the errors in the loss, set to `False` if taking the sum.
-    pointwise_t: Bool, set to `True` if returning a function that can evaluate the loss pointwise over time. Set to `False` if returns an expectation of the loss over time.
 
   Returns:
-    A loss function that can be used for score matching training.
+    A loss function that can be used for score matching training and is an expectation of the regression loss over time.
   """
   reduce_op = (
     jnp.mean if reduce_mean else lambda *args, **kwargs: 0.5 * jnp.sum(*args, **kwargs)
   )
-  if pointwise_t:
 
-    def pointwise_loss(t, params, rng, data):
-      n_batch = data.shape[0]
-      ts = jnp.ones((n_batch,)) * t
-      score = get_score(sde, model, params, score_scaling)
-      e = errors(ts, sde, score, rng, data, likelihood_weighting)
-      losses = e**2
-      losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
-      if likelihood_weighting:
-        g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
-        losses = losses * g2
-      return jnp.mean(losses)
+  def loss(params, rng, data):
+    rng, step_rng = random.split(rng)
+    ts = random.uniform(
+      step_rng, (data.shape[0],), minval=solver.ts[0], maxval=solver.t1
+    )
+    score = get_score(sde, model, params, score_scaling)
+    e = errors(ts, sde, score, rng, data, likelihood_weighting)
+    losses = e**2
+    losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
+    if likelihood_weighting:
+      g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
+      losses = losses * g2
+    return jnp.mean(losses)
 
-    return pointwise_loss
-  else:
+  return loss
 
-    def loss(params, rng, data):
-      rng, step_rng = random.split(rng)
-      ts = random.uniform(
-        step_rng, (data.shape[0],), minval=solver.ts[0], maxval=solver.t1
-      )
-      score = get_score(sde, model, params, score_scaling)
-      e = errors(ts, sde, score, rng, data, likelihood_weighting)
-      losses = e**2
-      losses = reduce_op(losses.reshape((losses.shape[0], -1)), axis=-1)
-      if likelihood_weighting:
-        g2 = sde.sde(jnp.zeros_like(data), ts)[1] ** 2
-        losses = losses * g2
-      return jnp.mean(losses)
 
-    return loss
+class EDM2Loss:
+  """
+  Uncertainty-based loss function (Equations 14,15,16,21) proposed in the
+  paper "Analyzing and Improving the Training Dynamics of Diffusion Models".
+  """
+
+  def __init__(
+    self, net, batch_gpu_total, loss_scaling=1.0, p_mean=-0.4, p_std=1.0, sigma_data=0.5
+  ):
+    self.net = net
+    self.p_mean = p_mean
+    self.p_std = p_std
+    self.sigma_data = sigma_data
+    self.loss_scaling = loss_scaling
+    self.batch_gpu_total = batch_gpu_total
+
+  def __call__(self, params, rng, data, labels=None):
+    rng, step_rng = random.split(rng)
+    random_normal = random.normal(
+      step_rng, (data.shape[0],) + (1,) * (len(data.shape) - 1)
+    )
+    sigma = jnp.exp(random_normal * self.p_std + self.p_mean)
+    weight = (sigma**2 + self.sigma_data**2) / (sigma * self.sigma_data) ** 2
+    noise = random.normal(step_rng, data.shape) * sigma
+    denoised, logvar = self.net.apply(params, data + noise, sigma, labels)
+    loss = (weight / jnp.exp(logvar)) * ((denoised - data) ** 2) + logvar
+    return jnp.sum(loss) * (self.loss_scaling / self.batch_gpu_total)
 
 
 def get_score(sde, model, params, score_scaling):
@@ -250,6 +341,11 @@ def get_score(sde, model, params, score_scaling):
     )
   else:
     return lambda x, t: -model.apply(params, x, t)
+
+
+def get_net(model, params):
+  # TODO: compare to edmv2 code and work out if it is correct
+  return lambda x, t: -model.apply(params, x, t)
 
 
 def get_epsilon(sde, model, params, score_scaling):

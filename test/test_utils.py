@@ -5,7 +5,9 @@ from diffusionjax.utils import (
   get_linear_beta_function,
   get_timestep,
   continuous_to_discrete,
-  get_sigma_function,
+  get_exponential_sigma_function,
+  get_karras_sigma_function,
+  get_karras_gamma_function,
 )
 import jax.numpy as jnp
 from jax import vmap
@@ -34,12 +36,12 @@ def test_continuous_discrete_equivalence_linear_beta_schedule():
   assert jnp.allclose(expected_discrete_betas, actual_discrete_betas)
 
 
-def test_continuous_discrete_equivalence_sigma_schedule():
+def test_exponential_sigma_schedule():
   num_steps = 1000
   sigma_min = 0.01
   sigma_max = 378.0
   ts, dt = get_times(num_steps)
-  sigma = get_sigma_function(sigma_min=sigma_min, sigma_max=sigma_max)
+  sigma = get_exponential_sigma_function(sigma_min=sigma_min, sigma_max=sigma_max)
   actual_discrete_sigmas = vmap(sigma)(ts)
   # https://github.com/yang-song/score_sde/blob/0acb9e0ea3b8cccd935068cd9c657318fbc6ce4c/sde_lib.py#L222
   # expected_sigmas = jnp.exp(  # I think this is wrong
@@ -51,6 +53,29 @@ def test_continuous_discrete_equivalence_sigma_schedule():
   expected_discrete_sigmas = jnp.exp(
     jnp.log(sigma_min) + ts * (jnp.log(sigma_max) - jnp.log(sigma_min))
   )
+
+  assert jnp.allclose(expected_discrete_sigmas, actual_discrete_sigmas)
+
+
+def test_karras_sigma_schedule():
+  num_steps = 1000
+  sigma_min = 0.002
+  sigma_max = 80
+  rho = 7
+
+  # NOTE The default ts to use is `diffusionjax.utils.get_times(num_steps, t0=0.0)`.
+  ts, _ = get_times(num_steps, t0=0.0)
+  ts = ts.flatten()
+  sigma = get_karras_sigma_function(
+    sigma_min=sigma_min, sigma_max=sigma_max, rho=rho)
+  actual_discrete_sigmas = vmap(sigma)(ts)
+
+  step_indices = jnp.arange(num_steps)
+  expected_discrete_sigmas = (
+    sigma_max ** (1 / rho)
+    + step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))
+  ) ** rho
+  expected_discrete_sigmas = jnp.flip(expected_discrete_sigmas)
   assert jnp.allclose(expected_discrete_sigmas, actual_discrete_sigmas)
 
 
@@ -153,3 +178,20 @@ def test_get_timestep_continuous():
   assert ts[0] == 0.01
   assert ts[-1] == 0.1 * (10 - 1) + 0.01
   unit(ts)
+
+
+def test_karras_gamma_function(s_churn=50.0, s_min=10.0, s_max=float('inf')):
+  num_steps = 100
+  ts, _ = get_times(num_steps, t0=0.0)
+  ts = ts.flatten()
+  sigma = get_karras_sigma_function(sigma_min=0.01, sigma_max=80.0, rho=7)
+  sigmas = vmap(sigma)(ts)
+  gamma = get_karras_gamma_function(num_steps, s_churn=s_churn, s_min=s_min, s_max=s_max)
+  gammas = gamma(sigmas)
+  for gamma_actual, sigma_actual in zip(gammas, sigmas):
+    gamma_expected = min(s_churn / num_steps, jnp.sqrt(2) - 1) if s_min <= sigma_actual <= s_max else 0.0
+    assert gamma_actual == gamma_expected
+
+
+test_karras_gamma_function()
+

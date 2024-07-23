@@ -9,10 +9,9 @@ from diffusionjax.utils import (
   get_score,
   get_sampler,
   get_times,
-  get_sigma_function,
+  get_exponential_sigma_function,
   get_linear_beta_function,
 )
-from diffusionjax.models import MLP, CNN
 import diffusionjax.sde as sde_lib
 from diffusionjax.solvers import EulerMaruyama, Annealed, DDIMVP, DDIMVE, SMLD, DDPM
 import numpy as np
@@ -94,7 +93,7 @@ def get_sde(config):
     )
     return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower() == "vesde":
-    sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
+    sigma = get_exponential_sigma_function(config.model.sigma_min, config.model.sigma_max)
     return sde_lib.VE(sigma=sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
@@ -128,15 +127,6 @@ def get_optimizer(config):
   if config.optim.grad_clip:
     optimizer = optax.chain(optax.clip(config.optim.grad_clip), optimizer)
   return optimizer
-
-
-def get_model(config):
-  if config.model.name.lower() == "mlp":
-    return MLP()
-  elif config.model.name.lower() == "cnn":
-    return CNN()
-  else:
-    raise NotImplementedError(f"Model {config.model.name} unknown.")
 
 
 def get_solver(config, sde, score):
@@ -178,7 +168,7 @@ def get_ddim_chain(config, model):
     ts, _ = get_times(
       config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
     )
-    sigma = get_sigma_function(
+    sigma = get_exponential_sigma_function(
       sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
     )
     return DDIMVE(model, eta=config.solver.eta, sigma=sigma, ts=ts)
@@ -205,7 +195,7 @@ def get_markov_chain(config, score):
     ts, _ = get_times(
       config.solver.num_outer_steps, dt=config.solver.dt, t0=config.solver.epsilon
     )
-    sigma = get_sigma_function(
+    sigma = get_exponential_sigma_function(
       sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
     )
     return SMLD(score, sigma=sigma, ts=ts)
@@ -285,11 +275,12 @@ class NumpyLoader(DataLoader):
     )
 
 
-def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
+def train(sampling_shape, config, model, dataset, workdir=None, use_wandb=False):
   """Train a score based generative model using stochastic gradient descent
 
   Args:
     sampling_shape : sampling shape may differ depending on the modality of data
+    model: A valid flax nn.Module.
     config: An ml-collections configuration to use.
     dataset: a valid `torch.DataLoader` class.
     workdir: Optional working directory for checkpoints and TF summaries. If this
@@ -326,7 +317,6 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
 
   # Initialize model
   rng, model_rng = random.split(rng, 2)
-  model = get_model(config)
   # Initialize parameters
   params = model.init(
     model_rng, jnp.zeros(sampling_shape), jnp.ones((sampling_shape[0],))
@@ -404,8 +394,7 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
     train_step = jax.pmap(train_step, axis_name="batch", donate_argnums=1)
     eval_step = jax.pmap(eval_step, axis_name="batch", donate_argnums=1)
 
-  # Replicate the training state to run on multiple devices
-  if config.training.pmap:
+    # Replicate the training state to run on multiple devices
     state = flax_utils.replicate(state)
 
   # Probably want to train over multiple epochs
@@ -449,18 +438,19 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
       losses = jnp.empty((len(tepoch), 1))
 
       for i_batch, batch in enumerate(tepoch):
-        batch = jax.tree_map(lambda x: scaler(x), batch)
+        batch = jax.tree_util.tree_map(lambda x: scaler(x), batch)
 
-        # Execute one training step
+        # Execute one training step TODO: don't need a split here and in loss?
         if config.training.pmap:
           rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
           next_rng = jnp.asarray(next_rng)  # type: ignore
         else:
-          rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
+          rng, next_rng = jax.random.split(rng)  # type: ignore
 
         (_, params, opt_state), loss_train = train_step(
           (next_rng, state.params, state.opt_state), batch
         )
+        # TODO: Can't just interate state? move inside train_step? should rng be part of state?
         state = state.replace(opt_state=opt_state, params=params)  # type: ignore
 
         if config.training.pmap:
@@ -502,12 +492,12 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
 
         # Report the loss on an evaluation dataset periodically
         if step % config.training.eval_freq == 0:
-          eval_batch = jax.tree_map(lambda x: scaler(x), next(eval_iter))
+          eval_batch = jax.tree_util.tree_map(lambda x: scaler(x), next(eval_iter))
           if config.training.pmap:
             rng, *next_rng = jax.random.split(rng, num=jax.local_device_count() + 1)
             next_rng = jnp.asarray(next_rng)  # type: ignore
           else:
-            rng, next_rng = jax.random.split(rng, num=2)  # type: ignore
+            rng, next_rng = jax.random.split(rng)  # type: ignore
           (_, _, _), loss_eval = eval_step(
             (next_rng, state.params, state.opt_state), eval_batch
           )
@@ -603,3 +593,4 @@ def train(sampling_shape, config, dataset, workdir=None, use_wandb=False):
   else:
     saved_state = state
   return saved_state.params, saved_state.opt_state, mean_losses
+

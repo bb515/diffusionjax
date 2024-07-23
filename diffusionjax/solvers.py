@@ -9,7 +9,9 @@ from diffusionjax.utils import (
   batch_mul_A,
   get_times,
   get_timestep,
-  get_sigma_function,
+  get_exponential_sigma_function,
+  get_karras_sigma_function,
+  get_karras_gamma_function,
   get_linear_beta_function,
   continuous_to_discrete,
 )
@@ -189,8 +191,7 @@ class DDPM(Solver):
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1.0 - self.alphas_cumprod_prev)
 
   def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=True):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -206,8 +207,7 @@ class DDPM(Solver):
     return estimate_x_0
 
   def get_estimate_x_0(self, observation_map, clip=False, centered=True):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
@@ -261,16 +261,14 @@ class SMLD(Solver):
   def __init__(self, score, sigma=None, ts=None):
     super().__init__(ts)
     if sigma is None:
-      sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.0)
+      sigma = get_exponential_sigma_function(sigma_min=0.01, sigma_max=378.0)
     sigmas = vmap(sigma)(self.ts.flatten())
-    self.sigma_max = sigmas[-1]
     self.discrete_sigmas = sigmas
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.score = score
 
   def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=False):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -285,8 +283,7 @@ class SMLD(Solver):
     return estimate_x_0
 
   def get_estimate_x_0(self, observation_map, clip=False, centered=False):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
@@ -300,7 +297,7 @@ class SMLD(Solver):
     return estimate_x_0
 
   def prior(self, rng, shape):
-    return random.normal(rng, shape) * self.sigma_max
+    return random.normal(rng, shape) * self.discrete_sigmas[-1]
 
   def posterior(self, score, x, timestep):
     sigma = self.discrete_sigmas[timestep]
@@ -351,8 +348,7 @@ class DDIMVP(Solver):
     self.sqrt_1m_alphas_cumprod_prev = jnp.sqrt(1.0 - self.alphas_cumprod_prev)
 
   def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=True):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -368,8 +364,7 @@ class DDIMVP(Solver):
     return estimate_x_0
 
   def get_estimate_x_0(self, observation_map, clip=False, centered=True):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
@@ -425,17 +420,15 @@ class DDIMVE(Solver):
   def __init__(self, model, eta=1.0, sigma=None, ts=None):
     super().__init__(ts)
     if sigma is None:
-      sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.0)
+      sigma = get_exponential_sigma_function(sigma_min=0.01, sigma_max=378.0)
     sigmas = vmap(sigma)(self.ts.flatten())
-    self.sigma_max = sigmas[-1]
     self.discrete_sigmas = sigmas
     self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
     self.eta = eta
     self.model = model
 
   def get_estimate_x_0_vmap(self, observation_map, clip=False, centered=False):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
 
     def estimate_x_0(x, t, timestep):
       x = jnp.expand_dims(x, axis=0)
@@ -444,14 +437,13 @@ class DDIMVE(Solver):
       epsilon = self.model(x, t)
       x_0 = x - std * epsilon
       if clip:
-        x_0 = jnp.clip(x_0, a_min=0.0, a_max=1.0)
+        x_0 = jnp.clip(x_0, a_min=a_min, a_max=a_max)
       return observation_map(x_0), (epsilon, x_0)
 
     return estimate_x_0
 
   def get_estimate_x_0(self, observation_map, clip=False, centered=False):
-    if clip:
-      (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
+    (a_min, a_max) = (-1.0, 1.0) if centered else (0.0, 1.0)
     batch_observation_map = vmap(observation_map)
 
     def estimate_x_0(x, t, timestep):
@@ -465,7 +457,7 @@ class DDIMVE(Solver):
     return estimate_x_0
 
   def prior(self, rng, shape):
-    return random.normal(rng, shape) * self.sigma_max
+    return random.normal(rng, shape) * self.discrete_sigmas[-1]
 
   def posterior(self, x, t):
     timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
@@ -493,3 +485,79 @@ class DDIMVE(Solver):
     z = random.normal(rng, x.shape)
     x = x_mean + batch_mul(std, z)
     return x, x_mean
+
+
+class EDMEuler(Solver):
+  """
+  A second order Heun solver from the paper Elucidating the Design space of
+  Diffusion-Based Generative Models.
+
+  Algorithm 2 (Euler steps) from Karras et al. (2022) arxiv.org/abs/2206.00364
+  """
+
+  def __init__(self, denoise, sigma=None, gamma=None, ts=None, s_noise=1.0):
+    """
+    The default `args:ts` to use is `ts, dt = diffusionjax.utils.get_times(num_steps, t0=0.0)`.
+    """
+    super().__init__(ts)
+    if sigma is None:
+      sigma = get_karras_sigma_function(sigma_min=0.002, sigma_max=80.0, rho=7)
+    self.discrete_sigmas = vmap(sigma)(self.ts.flatten())
+    if gamma is None:
+      gamma = get_karras_gamma_function(
+        num_steps=self.num_steps, s_churn=0.0, s_min=0.0, s_max=float("inf")
+      )
+    self.gammas = gamma(self.discrete_sigmas)
+    self.bool_gamma_greater_than_zero = jnp.where(self.gammas > 0, 1, 0)
+    self.discrete_sigmas_prev = jnp.append(0.0, self.discrete_sigmas[:-1])
+    self.s_noise = s_noise
+    self.denoise = denoise
+
+  def prior(self, rng, shape):
+    return random.normal(rng, shape) * self.discrete_sigmas[-1]
+
+  def update(self, rng, x, t):
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
+    sigma = self.discrete_sigmas[timestep]
+    # sigma_prev is the one that will finish with zero, and so it is the previous sigma in forward time
+    sigma_prev = self.discrete_sigmas_prev[timestep]
+    gamma = self.gammas[timestep]
+    sigma_hat = sigma * (gamma + 1)
+
+    # need to do this since get JAX tracer concretization error the naive way
+    bool = self.bool_gamma_greater_than_zero[timestep[0]]
+    z = random.normal(rng, x.shape) * self.s_noise
+    std = jnp.sqrt(sigma_hat**2 - sigma**2) * bool
+    x = x + batch_mul(std, z)
+
+    # Convert the denoiser output to a Karras ODE derivative
+    drift = batch_mul(x - self.denoise(x, sigma_hat), 1.0 / sigma)
+    dt = sigma_prev - sigma_hat
+    x = x + batch_mul(drift, dt)  # Euler method
+    return x, None
+
+
+class EDMHeun(EDMEuler):
+  """Implements Algorithm 2 (Heun steps) from Karras et al. (2022)."""
+
+  def update(self, rng, x, t):
+    timestep = get_timestep(t, self.t0, self.t1, self.num_steps)
+    sigma = self.discrete_sigmas[timestep]
+    sigma_prev = self.discrete_sigmas_prev[timestep]
+    gamma = self.gammas[timestep]
+    sigma_hat = sigma * (gamma + 1)
+    # need to do this since get JAX tracer concretization error the naive way
+    std = jnp.sqrt(sigma_hat**2 - sigma**2)
+    bool = self.bool_gamma_greater_than_zero[timestep[0]]
+    x = jnp.where(
+      bool, x + batch_mul(std, random.normal(rng, x.shape) * self.s_noise), x
+    )
+
+    # Convert the denoiser output to a Karras ODE derivative
+    drift = batch_mul(x - self.denoise(x, sigma_hat), 1.0 / sigma)
+    dt = sigma_prev - sigma_hat
+    x_1 = x + batch_mul(drift, dt)  #  Euler step
+    drift_1 = batch_mul(x_1 - self.denoise(x_1, sigma_prev), 1.0 / sigma_prev)
+    drift_prime = (drift + drift_1) / 2
+    x_2 = x_1 + batch_mul(drift_prime, dt)  # 2nd order correction
+    return x_2, x_1

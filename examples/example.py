@@ -8,13 +8,15 @@ A tutorial on the theoretical and implementation aspects of score-based generati
 # from jax.config import config as jax_config
 # jax_config.update("jax_enable_x64", True)
 import jax
-from jax import jit, vmap, grad, vjp
+from jax import jit, vmap, grad
 import jax.random as random
 import jax.numpy as jnp
+import flax.linen as nn
 from jax.scipy.special import logsumexp
-from diffusionjax.run_lib import get_model, train
+import numpy as np
+from diffusionjax.run_lib import train
 from diffusionjax.utils import get_score, get_sampler, get_times
-from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
+from diffusionjax.solvers import EulerMaruyama, Inpainted
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance, get_vjp_guidance
 from diffusionjax.plot import plot_scatter, plot_score, plot_heatmap
 import diffusionjax.sde as sde_lib
@@ -83,6 +85,26 @@ class CircleDataset(Dataset):
       return x * jnp.sqrt(2)
 
     return data_inverse_scaler
+
+
+class MLP(nn.Module):
+  @nn.compact
+  def __call__(self, x, t):
+    x_shape = x.shape
+    in_size = np.prod(x_shape[1:])
+    n_hidden = 256
+    t = t.reshape((t.shape[0], -1))
+    x = x.reshape((x.shape[0], -1))  # flatten
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
+    x = jnp.concatenate([x, t], axis=-1)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(in_size)(x)
+    return x.reshape(x_shape)
 
 
 def main(argv):
@@ -188,6 +210,7 @@ def main(argv):
     params, *_ = train(
       (config.training.batch_size // jax.local_device_count(), config.data.image_size),
       config,
+      MLP(),
       dataset,
       workdir,
       use_wandb=False,
@@ -200,7 +223,7 @@ def main(argv):
     f = open("/tmp/output0", "wb")
     f.write(output)
   else:  # Load pre-trained model parameters
-    params = get_model(config).init(
+    params = MLP().init(
       rng,
       jnp.zeros(
         (config.training.batch_size // jax.local_device_count(), config.data.image_size)
@@ -213,7 +236,7 @@ def main(argv):
 
   # Get trained score
   trained_score = get_score(
-    sde, get_model(config), params, score_scaling=config.training.score_scaling
+    sde, MLP(), params, score_scaling=config.training.score_scaling
   )
   plot_score(
     score=trained_score,

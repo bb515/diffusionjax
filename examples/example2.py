@@ -12,13 +12,13 @@ from diffusionjax.utils import (
   get_loss,
   get_sampler,
   get_times,
-  get_sigma_function,
+  get_exponential_sigma_function,
 )
 from diffusionjax.solvers import EulerMaruyama, Annealed, Inpainted, Projected
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
-from diffusionjax.models import CNN
 from diffusionjax.sde import VE, ulangevin
 import numpy as np
+import flax.linen as nn
 import os
 
 # Dependencies:
@@ -36,6 +36,29 @@ epsilon = 1e-4
 
 # Initialize the optimizer
 optimizer = optax.adam(1e-3)
+
+
+class CNN(nn.Module):
+  @nn.compact
+  def __call__(self, x, t):
+    x_shape = x.shape
+    ndim = x.ndim
+
+    n_hidden = x_shape[1]
+    n_time_channels = 1
+
+    t = t.reshape((t.shape[0], -1))
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
+    t = nn.Dense(n_hidden**2 * n_time_channels)(t)
+    t = nn.relu(t)
+    t = nn.Dense(n_hidden**2 * n_time_channels)(t)
+    t = nn.relu(t)
+    t = t.reshape(t.shape[0], n_hidden, n_hidden, n_time_channels)
+    # Add time as another channel
+    x = jnp.concatenate((x, t), axis=-1)
+    # A single convolution layer
+    x = nn.Conv(x_shape[-1], kernel_size=(9,) * (ndim - 2))(x)
+    return x
 
 
 @partial(jit, static_argnums=[4])
@@ -123,7 +146,7 @@ def main():
   plot_samples_1D(samples[:64, 0], image_size, x_max=x_max, fname="samples 1D")
 
   # Get sde model
-  sigma = get_sigma_function(sigma_min=0.001, sigma_max=3.0)
+  sigma = get_exponential_sigma_function(sigma_min=0.001, sigma_max=3.0)
   sde = VE(sigma)
 
   # Neural network training via score matching
@@ -151,7 +174,6 @@ def main():
       score_scaling=True,
       likelihood_weighting=False,
       reduce_mean=True,
-      pointwise_t=False,
     )
 
     # Train with score matching

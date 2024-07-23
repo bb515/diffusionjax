@@ -2,7 +2,11 @@
 
 import jax.numpy as jnp
 from jax import random, vmap
-from diffusionjax.utils import batch_mul, get_sigma_function, get_linear_beta_function
+from diffusionjax.utils import (
+  batch_mul,
+  get_exponential_sigma_function,
+  get_linear_beta_function,
+)
 
 
 def ulangevin(score, x, t):
@@ -38,12 +42,11 @@ class VE:
 
   def __init__(self, sigma=None):
     if sigma is None:
-      self.sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.0)
+      self.sigma = get_exponential_sigma_function(sigma_min=0.01, sigma_max=378.0)
     else:
       self.sigma = sigma
     self.sigma_min = self.sigma(0.0)
     self.sigma_max = self.sigma(1.0)
-    self.std = sigma
 
   def sde(self, x, t):
     sigma_t = self.sigma(t)
@@ -61,7 +64,7 @@ class VE:
     return jnp.ones_like(t)
 
   def variance(self, t):
-    return self.std(t) ** 2
+    return self.sigma(t) ** 2
 
   def prior(self, rng, shape):
     return random.normal(rng, shape) * self.sigma_max

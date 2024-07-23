@@ -1,17 +1,19 @@
 """Diffusion models introduction. An example using 1 dimensional image data."""
 
-from jax import vmap, jit, grad, value_and_grad
+from jax import jit, value_and_grad
 import jax.random as random
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp
 from flax import serialization
 from functools import partial
-import matplotlib.pyplot as plt
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
-from diffusionjax.plot import plot_score, plot_heatmap, plot_samples_1D
-from diffusionjax.utils import get_score, get_loss, get_sampler, get_sigma_function
+from diffusionjax.plot import plot_heatmap, plot_samples_1D
+from diffusionjax.utils import (
+  get_score,
+  get_loss,
+  get_sampler,
+  get_exponential_sigma_function,
+)
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
-from diffusionjax.models import MLP
 from diffusionjax.sde import VE
 import numpy as np
 import os
@@ -31,6 +33,26 @@ epsilon = 1e-4
 
 # Initialize the optimizer
 optimizer = optax.adam(1e-3)
+
+
+class MLP(nn.Module):
+  @nn.compact
+  def __call__(self, x, t):
+    x_shape = x.shape
+    in_size = jnp.prod(x_shape[1:])
+    n_hidden = 256
+    t = t.reshape((t.shape[0], -1))
+    x = x.reshape((x.shape[0], -1))  # flatten
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
+    x = jnp.concatenate([x, t], axis=-1)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(in_size)(x)
+    return x.reshape(x_shape)
 
 
 @partial(jit, static_argnums=[4])
@@ -136,7 +158,7 @@ def main():
   plot_samples_1D(samples[:64], image_size, x_max=x_max, fname="samples")
 
   # Get sde model
-  sigma = get_sigma_function(sigma_min=0.01, sigma_max=3.0)
+  sigma = get_exponential_sigma_function(sigma_min=0.01, sigma_max=3.0)
   sde = VE(sigma)
 
   def nabla_log_pt(x, t):
