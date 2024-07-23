@@ -102,7 +102,7 @@ def get_karras_sigma_function(sigma_min, sigma_max, rho=7):
   max_inv_rho = sigma_max ** (1 / rho)
 
   def sigma(t):
-    # NOTE: is defined in reverse time to the definition in arxiv.org/abs/2206.00364
+    # NOTE: is defined in reverse time of the definition in arxiv.org/abs/2206.00364
     return (min_inv_rho + t * (max_inv_rho - min_inv_rho)) ** rho
 
   return sigma
@@ -120,9 +120,10 @@ def get_karras_gamma_function(num_steps, s_churn, s_min, s_max):
   """
 
   def gamma(sigmas):
-    gammas = jnp.where(sigmas <= s_max, min(s_churn / num_steps, jnp.sqrt(2) - 1), 0.)
-    gammas = jnp.where(s_min <= sigmas, gammas, 0.)
+    gammas = jnp.where(sigmas <= s_max, min(s_churn / num_steps, jnp.sqrt(2) - 1), 0.0)
+    gammas = jnp.where(s_min <= sigmas, gammas, 0.0)
     return gammas
+
   return gamma
 
 
@@ -231,7 +232,7 @@ def get_pointwise_loss(
   score_scaling=True,
   likelihood_weighting=True,
   reduce_mean=True,
-  ):
+):
   """Create a loss function for score matching training, returning a function that can evaluate the loss pointwise over time.
   Args:
     sde: Instantiation of a valid SDE class.
@@ -304,36 +305,33 @@ def get_loss(
   return loss
 
 
-def get_edm2_loss(
-  model,
-  sigma_data=1.0,
-  p_std=None,
-  p_mean=None,
-):
-  """Create a loss function for score matching training.
-  Args:
-    model: A valid flax neural network `:class:flax.linen.Module` class.
-    sigma_data: Marginal variance of the data.
-    p_std:
-    p_mean:
-
-  Returns:
+class EDM2Loss:
+  """
+  Uncertainty-based loss function (Equations 14,15,16,21) proposed in the
+  paper "Analyzing and Improving the Training Dynamics of Diffusion Models".
   """
 
-  def loss(params, rng, data, labels=None):
+  def __init__(
+    self, net, batch_gpu_total, loss_scaling=1.0, p_mean=-0.4, p_std=1.0, sigma_data=0.5
+  ):
+    self.net = net
+    self.p_mean = p_mean
+    self.p_std = p_std
+    self.sigma_data = sigma_data
+    self.loss_scaling = loss_scaling
+    self.batch_gpu_total = batch_gpu_total
+
+  def __call__(self, params, rng, data, labels=None):
     rng, step_rng = random.split(rng)
     random_normal = random.normal(
-        step_rng, (data.shape[0],))
-    sigma = jnp.exp(random_normal * p_std + p_mean)
-    weight = (sigma**2 + sigma_data**2) / (sigma * sigma_data)**2
+      step_rng, (data.shape[0],) + (1,) * (len(data.shape) - 1)
+    )
+    sigma = jnp.exp(random_normal * self.p_std + self.p_mean)
+    weight = (sigma**2 + self.sigma_data**2) / (sigma * self.sigma_data) ** 2
     noise = random.normal(step_rng, data.shape) * sigma
-    net = get_net(model, params)
-    denoised, logvar = net(data + noise, sigma, labels, return_logvar=True)
+    denoised, logvar = self.net.apply(params, data + noise, sigma, labels)
     loss = (weight / jnp.exp(logvar)) * ((denoised - data) ** 2) + logvar
-    return loss
-    # return jnp.mean(losses) TODO: need a reduction here
-
-  return loss
+    return jnp.sum(loss) * (self.loss_scaling / self.batch_gpu_total)
 
 
 def get_score(sde, model, params, score_scaling):
@@ -461,4 +459,3 @@ def get_sampler(
 
   # return jax.pmap(sampler, in_axes=(0), axis_name='batch')
   return sampler
-
