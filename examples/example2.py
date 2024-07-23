@@ -12,12 +12,13 @@ from diffusionjax.utils import (
   get_loss,
   get_sampler,
   get_times,
-  get_sigma_function,
+  get_exponential_sigma_function,
 )
 from diffusionjax.solvers import EulerMaruyama, Annealed, Inpainted, Projected
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance
 from diffusionjax.sde import VE, ulangevin
 import numpy as np
+import flax.linen as nn
 import os
 
 # Dependencies:
@@ -145,7 +146,7 @@ def main():
   plot_samples_1D(samples[:64, 0], image_size, x_max=x_max, fname="samples 1D")
 
   # Get sde model
-  sigma = get_sigma_function(sigma_min=0.001, sigma_max=3.0)
+  sigma = get_exponential_sigma_function(sigma_min=0.001, sigma_max=3.0)
   sde = VE(sigma)
 
   # Neural network training via score matching
@@ -173,7 +174,6 @@ def main():
       score_scaling=True,
       likelihood_weighting=False,
       reduce_mean=True,
-      pointwise_t=False,
     )
 
     # Train with score matching
