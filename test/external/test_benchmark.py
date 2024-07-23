@@ -2,24 +2,23 @@
 
 import pytest
 import jax
-from jax import jit, vmap, grad
+from jax import vmap
 import jax.random as random
 import jax.numpy as jnp
-from jax.scipy.special import logsumexp
-from diffusionjax.run_lib import get_model, train, get_solver
+from diffusionjax.run_lib import train, get_solver
 from diffusionjax.utils import get_score, get_sampler
 import diffusionjax.sde as sde_lib
 from absl import app, flags
 from ml_collections.config_flags import config_flags
-from flax import serialization
 import time
-import os
 
 # Dependencies:
 # This test requires optax, https://optax.readthedocs.io/en/latest/
 # This test requires orbax, https://orbax.readthedocs.io/en/latest/
 # This test requires torch[cpu], https://pytorch.org/get-started/locally/
 from torch.utils.data import Dataset
+import flax.linen as nn
+import numpy as np
 
 
 FLAGS = flags.FLAGS
@@ -27,6 +26,26 @@ config_flags.DEFINE_config_file(
   "config", "./configs/example.py", "Training configuration.", lock_config=True
 )
 flags.mark_flags_as_required(["config"])
+
+
+class MLP(nn.Module):
+  @nn.compact
+  def __call__(self, x, t):
+    x_shape = x.shape
+    in_size = np.prod(x_shape[1:])
+    n_hidden = 256
+    t = t.reshape((t.shape[0], -1))
+    x = x.reshape((x.shape[0], -1))  # flatten
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
+    x = jnp.concatenate([x, t], axis=-1)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(n_hidden)(x)
+    x = nn.relu(x)
+    x = nn.Dense(in_size)(x)
+    return x.reshape(x_shape)
 
 
 class CircleDataset(Dataset):
@@ -92,9 +111,11 @@ def main(argv):
     )
     sde = sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
   elif config.training.sde.lower() == "vesde":
-    from diffusionjax.utils import get_sigma_function
+    from diffusionjax.utils import get_exponential_sigma_function
 
-    sigma = get_sigma_function(config.model.sigma_min, config.model.sigma_max)
+    sigma = get_exponential_sigma_function(
+      config.model.sigma_min, config.model.sigma_max
+    )
     sde = sde_lib.VE(sigma=sigma)
   else:
     raise NotImplementedError(f"SDE {config.training.SDE} unknown.")
@@ -126,7 +147,7 @@ def main(argv):
 
   # Get trained score
   trained_score = get_score(
-    sde, get_model(config), params, score_scaling=config.training.score_scaling
+    sde, MLP(), params, score_scaling=config.training.score_scaling
   )
   outer_solver, inner_solver = get_solver(config, sde, trained_score)
   sampler = get_sampler(
