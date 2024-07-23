@@ -1,19 +1,19 @@
 """JAX port of Improved diffusion model architecture proposed in the paper
 "Analyzing and Improving the Training Dynamics of Diffusion Models".
 Ported from the code https://github.com/NVlabs/edm2/blob/main/training/networks_edm2.py
-# TODO: explicit typing e.g. x = jnp.float32(x) required in JAX? in torch?
 """
 
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
-
 from typing import Any
 
 
 def jax_unstack(x, axis=0):
   """https://github.com/google/jax/discussions/11028"""
-  return [jax.lax.index_in_dim(x, i, axis, keepdims=False) for i in range(x.shape[axis])]
+  return [
+    jax.lax.index_in_dim(x, i, axis, keepdims=False) for i in range(x.shape[axis])
+  ]
 
 
 def pixel_normalize(x, channel_axis, eps=1e-4):
@@ -36,6 +36,20 @@ def weight_normalize(x, eps=1e-4):
     x: Assume (N, C, H, W)
   """
   norm = jnp.float32(jax.vmap(lambda x: jnp.linalg.vector_norm(x, keepdims=True))(x))
+  norm = eps + jnp.sqrt(norm.size / x.size) * norm
+  return x / jnp.array(norm, dtype=x.dtype)
+
+
+def forced_weight_normalize(x, eps=1e-4):
+  """
+  Normalize given tensor to unit magnitude with respect to all the dimensions
+  except the first. Don't take gradients through the computation.
+  Args:
+    x: Assume (N, C, H, W)
+  """
+  norm = jax.lax.stop_gradient(
+    jnp.float32(jax.vmap(lambda x: jnp.linalg.vector_norm(x, keepdims=True))(x))
+  )
   norm = eps + jnp.sqrt(norm.size / x.size) * norm
   return x / jnp.array(norm, dtype=x.dtype)
 
@@ -135,14 +149,15 @@ class MPConv(nn.Module):
 
   @nn.compact
   def __call__(self, x, gain=1.0):
-    w = jnp.float32(self.param(
-      "w",
-      jax.nn.initializers.normal(stddev=1.0),
-      (self.out_channels, self.in_channels, *self.kernel_shape),
-    ))  # TODO: type promotion required in JAX?
+    w = jnp.float32(
+      self.param(
+        "w",
+        jax.nn.initializers.normal(stddev=1.0),
+        (self.out_channels, self.in_channels, *self.kernel_shape),
+      )
+    )  # TODO: type promotion required in JAX?
     if self.training:
-      w = jax.lax.stop_gradient(w)
-      w = weight_normalize(w)  # forced weight normalization
+      w = forced_weight_normalize(w)  # forced weight normalization
 
     w = weight_normalize(w)  # traditional weight normalization
     w = w * (gain / jnp.sqrt(w[0].size))  # magnitude-preserving scaling
@@ -203,7 +218,9 @@ class Block(nn.Module):
       )
       + 1
     )
-    y = jnp.array(mp_silu(y * jnp.expand_dims(jnp.expand_dims(c, axis=2), axis=3)), dtype=y.dtype)
+    y = jnp.array(
+      mp_silu(y * jnp.expand_dims(jnp.expand_dims(c, axis=2), axis=3)), dtype=y.dtype
+    )
     if self.dropout:
       y = nn.Dropout(self.dropout)(y, deterministic=not self.training)
     y = MPConv(
@@ -218,14 +235,16 @@ class Block(nn.Module):
     x = mp_sum(x, y, t=self.res_balance)
 
     # Self-attention
-    # TODO: test if flax.linen.SelfAttention can be used instead here
+    # TODO: test if flax.linen.SelfAttention can be used instead here?
     num_heads = self.out_channels // self.channels_per_head if self.attention else 0
     if num_heads != 0:
       y = MPConv(
         self.out_channels, self.out_channels * 3, kernel_shape=(1, 1), name="attn_qkv"
       )(x)
       y = y.reshape(y.shape[0], num_heads, -1, 3, y.shape[2] * y.shape[3])
-      q, k, v = jax_unstack(pixel_normalize(y, channel_axis=2), axis=3)  # pixel normalization and split
+      q, k, v = jax_unstack(
+        pixel_normalize(y, channel_axis=2), axis=3
+      )  # pixel normalization and split
       # NOTE: quadratic cost in last dimension
       w = nn.softmax(jnp.einsum("nhcq,nhck->nhqk", q, k / jnp.sqrt(q.shape[2])), axis=3)
       y = jnp.einsum("nhqk,nhck->nhcq", w, v)
@@ -271,12 +290,12 @@ class UNet(nn.Module):
   clip_act: int = 256  # Clip output activations. None = do not clip
   out_gain: Any = None
   block_kwargs = {
-    'resample_filter': resample_filter,
-    'channels_per_head': channels_per_head,
-    'dropout': dropout,
-    'res_balance': res_balance,
-    'attn_balance': attn_balance,
-    'clip_act': clip_act,
+    "resample_filter": resample_filter,
+    "channels_per_head": channels_per_head,
+    "dropout": dropout,
+    "res_balance": res_balance,
+    "attn_balance": attn_balance,
+    "clip_act": clip_act,
   }
 
   @nn.compact
@@ -297,7 +316,6 @@ class UNet(nn.Module):
       out_gain = self.param("out_gain", jax.nn.initializers.zeros, (1,))
     else:
       out_gain = self.out_gain
-
 
     # Encoder
     enc = {}
@@ -349,7 +367,12 @@ class UNet(nn.Module):
           **self.block_kwargs,
         )
         dec[f"{res}x{res}_in1"] = Block(
-          cout, cout, cemb, flavor="dec", name=f"dec_{res}x{res}_in1", **self.block_kwargs
+          cout,
+          cout,
+          cemb,
+          flavor="dec",
+          name=f"dec_{res}x{res}_in1",
+          **self.block_kwargs,
         )
       else:
         dec[f"{res}x{res}_up"] = Block(
@@ -375,11 +398,15 @@ class UNet(nn.Module):
         )
 
     # Embedding
-    emb = MPConv(cnoise, cemb, kernel_shape=(), name="emb_noise")(MPFourier(cnoise, name="emb_fourier")(noise_labels))
+    emb = MPConv(cnoise, cemb, kernel_shape=(), name="emb_noise")(
+      MPFourier(cnoise, name="emb_fourier")(noise_labels)
+    )
     if self.label_dim != 0:
       emb = mp_sum(
         emb,
-        MPConv(self.label_dim, cemb, kernel_shape=(), name="emb_label")(class_labels * jnp.sqrt(class_labels.shape[1])),
+        MPConv(self.label_dim, cemb, kernel_shape=(), name="emb_label")(
+          class_labels * jnp.sqrt(class_labels.shape[1])
+        ),
         t=self.label_balance,
       )
     emb = mp_silu(emb)
@@ -397,12 +424,14 @@ class UNet(nn.Module):
         x = mp_cat(x, skips.pop(), t=self.concat_balance)
       x = block(x, emb)
     x = MPConv(cout, self.img_channels, kernel_shape=(3, 3), name="out_conv")(
-      x, gain=out_gain)
+      x, gain=out_gain
+    )
     return x
 
 
 class Precond(nn.Module):
   """Preconditioning and uncertainty estimation."""
+
   img_resolution: int  # Image resolution.
   img_channels: int  # Image channels.
   label_dim: int  # Class label dimensionality. 0 = unconditional.
@@ -413,24 +442,31 @@ class Precond(nn.Module):
   return_logvar: bool = False
   # **unet_kwargs  # Keyword arguments for UNet.
   model_channels: int = 192  # Base multiplier for the number of channels.
-  channel_mult: tuple = (1, 2, 3, 4)  # Per-resolution multipliers for the number of channels.
+  channel_mult: tuple = (
+    1,
+    2,
+    3,
+    4,
+  )  # Per-resolution multipliers for the number of channels.
   channel_mult_noise: Any = None  # Multiplier for noise embedding dimensionality. None = select based on channel_mult.
   channel_mult_emb: Any = None  # Multiplier for final embedding dimensionality. None = select based on channel_mult.
   num_blocks: int = 3  # Number of residual blocks per resolution.
   attn_resolutions: tuple = (16, 8)  # List of resolutions with self-attention.
-  label_balance: float = 0.5  # Balance between noise embedding (0) and class embedding (1).
+  label_balance: float = (
+    0.5  # Balance between noise embedding (0) and class embedding (1).
+  )
   concat_balance: float = 0.5  # Balance between skip connections (0) and main path (1).
   out_gain: float = 1.0
   unet_kwargs = {
-    'model_channels': model_channels,
-    'channel_mult': channel_mult,
-    'channel_mult_noise': channel_mult_noise,
-    'channel_mult_emb': channel_mult_emb,
-    'num_blocks': num_blocks,
-    'attn_resolutions': attn_resolutions,
-    'label_balance': label_balance,
-    'concat_balance': concat_balance,
-    'out_gain': out_gain,
+    "model_channels": model_channels,
+    "channel_mult": channel_mult,
+    "channel_mult_noise": channel_mult_noise,
+    "channel_mult_emb": channel_mult_emb,
+    "num_blocks": num_blocks,
+    "attn_resolutions": attn_resolutions,
+    "label_balance": label_balance,
+    "concat_balance": concat_balance,
+    "out_gain": out_gain,
   }
 
   # **block_kwargs  # Keyword arguments for Block
@@ -442,12 +478,12 @@ class Precond(nn.Module):
   clip_act: int = 256  # Clip output activations. None = do not clip
   out_gain: Any = None
   block_kwargs = {
-    'resample_filter': resample_filter,
-    'channels_per_head': channels_per_head,
-    'dropout': dropout,
-    'res_balance': res_balance,
-    'attn_balance': attn_balance,
-    'clip_act': clip_act,
+    "resample_filter": resample_filter,
+    "channels_per_head": channels_per_head,
+    "dropout": dropout,
+    "res_balance": res_balance,
+    "attn_balance": attn_balance,
+    "clip_act": clip_act,
   }
 
   @nn.compact
@@ -457,8 +493,7 @@ class Precond(nn.Module):
     sigma,
     class_labels=None,
     force_fp32=False,
-    ):
-
+  ):
     x = jnp.float32(x)
     sigma = jnp.float32(sigma).reshape(-1, 1, 1, 1)
     class_labels = (
@@ -468,11 +503,7 @@ class Precond(nn.Module):
       if class_labels is None
       else jnp.float32(class_labels).reshape(-1, self.label_dim)
     )
-    dtype = (
-      jnp.float16
-      if (self.use_fp16 and not force_fp32)
-      else jnp.float32
-    )
+    dtype = jnp.float16 if (self.use_fp16 and not force_fp32) else jnp.float32
 
     # Preconditioning weights
     c_skip = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
@@ -497,7 +528,6 @@ class Precond(nn.Module):
     if self.return_logvar:
       logvar = MPConv(self.logvar_channels, 1, kernel_shape=(), name="logvar_linear")(
         MPFourier(self.logvar_channels, name="logvar_fourier")(c_noise)
-        ).reshape(-1, 1, 1, 1)
+      ).reshape(-1, 1, 1, 1)
       return D_x, logvar  # u(sigma) in Equation 21
     return D_x
-
