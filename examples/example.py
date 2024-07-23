@@ -8,7 +8,7 @@ A tutorial on the theoretical and implementation aspects of score-based generati
 # from jax.config import config as jax_config
 # jax_config.update("jax_enable_x64", True)
 import jax
-from jax import jit, vmap, grad, vjp
+from jax import jit, vmap, grad
 import jax.random as random
 import jax.numpy as jnp
 import flax.linen as nn
@@ -16,7 +16,7 @@ from jax.scipy.special import logsumexp
 import numpy as np
 from diffusionjax.run_lib import train
 from diffusionjax.utils import get_score, get_sampler, get_times
-from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
+from diffusionjax.solvers import EulerMaruyama, Inpainted
 from diffusionjax.inverse_problems import get_pseudo_inverse_guidance, get_vjp_guidance
 from diffusionjax.plot import plot_scatter, plot_score, plot_heatmap
 import diffusionjax.sde as sde_lib

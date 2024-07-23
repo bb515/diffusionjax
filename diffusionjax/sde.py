@@ -43,7 +43,6 @@ class VE:
       self.sigma = sigma
     self.sigma_min = self.sigma(0.0)
     self.sigma_max = self.sigma(1.0)
-    self.std = sigma
 
   def sde(self, x, t):
     sigma_t = self.sigma(t)
@@ -61,7 +60,7 @@ class VE:
     return jnp.ones_like(t)
 
   def variance(self, t):
-    return self.std(t) ** 2
+    return self.sigma(t) ** 2
 
   def prior(self, rng, shape):
     return random.normal(rng, shape) * self.sigma_max
