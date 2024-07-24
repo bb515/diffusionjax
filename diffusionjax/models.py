@@ -1,4 +1,5 @@
 """Functions are designed for a mini-batch of inputs."""
+
 import flax.linen as nn
 import numpy as np
 import jax.numpy as jnp
@@ -12,7 +13,7 @@ class MLP(nn.Module):
     n_hidden = 256
     t = t.reshape((t.shape[0], -1))
     x = x.reshape((x.shape[0], -1))  # flatten
-    t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=-1)
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
     x = jnp.concatenate([x, t], axis=-1)
     x = nn.Dense(n_hidden)(x)
     x = nn.relu(x)
@@ -34,7 +35,7 @@ class CNN(nn.Module):
     n_time_channels = 1
 
     t = t.reshape((t.shape[0], -1))
-    t = jnp.concatenate([t - 0.5, jnp.cos(2*jnp.pi*t)], axis=-1)
+    t = jnp.concatenate([t - 0.5, jnp.cos(2 * jnp.pi * t)], axis=-1)
     t = nn.Dense(n_hidden**2 * n_time_channels)(t)
     t = nn.relu(t)
     t = nn.Dense(n_hidden**2 * n_time_channels)(t)

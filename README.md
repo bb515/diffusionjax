@@ -158,6 +158,7 @@ The example is based off the [Jupyter notebook](https://jakiw.com/sgm_intro) by 
 - Not many lines of code.
 - Bayesian inversion (inverse problems) with linear observation maps.
 - Easy to use, extendable. Get started with the example, provided.
+- Implements a JAX port of the model and loss from [Analyzing and Improving the Training Dynamics of Diffusion Models](https://arxiv.org/abs/2312.02696)
 
 ## Doesn't haves
 - Geometry other than Euclidean space, such as Riemannian manifolds.

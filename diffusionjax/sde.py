@@ -1,8 +1,12 @@
 """SDE class."""
+
 import jax.numpy as jnp
 from jax import random, vmap
 from diffusionjax.utils import (
-  batch_mul, get_sigma_function, get_linear_beta_function)
+  batch_mul,
+  get_exponential_sigma_function,
+  get_linear_beta_function,
+)
 
 
 def ulangevin(score, x, t):
@@ -13,6 +17,7 @@ def ulangevin(score, x, t):
 
 class ULangevin:
   """Unadjusted Langevin SDE."""
+
   def __init__(self, score):
     self.score = score
     self.sde = lambda x, t: ulangevin(self.score, x, t)
@@ -20,6 +25,7 @@ class ULangevin:
 
 class RSDE:
   """Reverse SDE class."""
+
   def __init__(self, score, forward_sde, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.score = score
@@ -33,19 +39,21 @@ class RSDE:
 
 class VE:
   """Variance exploding (VE) SDE, a.k.a. diffusion process with a time dependent diffusion coefficient."""
+
   def __init__(self, sigma=None):
     if sigma is None:
-      self.sigma = get_sigma_function(sigma_min=0.01, sigma_max=378.)
+      self.sigma = get_exponential_sigma_function(sigma_min=0.01, sigma_max=378.0)
     else:
       self.sigma = sigma
-    self.sigma_min = self.sigma(0.)
-    self.sigma_max = self.sigma(1.)
-    self.std = sigma
+    self.sigma_min = self.sigma(0.0)
+    self.sigma_max = self.sigma(1.0)
 
   def sde(self, x, t):
     sigma_t = self.sigma(t)
     drift = jnp.zeros_like(x)
-    diffusion = sigma_t * jnp.sqrt(2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min)))
+    diffusion = sigma_t * jnp.sqrt(
+      2 * (jnp.log(self.sigma_max) - jnp.log(self.sigma_min))
+    )
 
     return drift, diffusion
 
@@ -56,7 +64,7 @@ class VE:
     return jnp.ones_like(t)
 
   def variance(self, t):
-    return self.std(t)**2
+    return self.sigma(t) ** 2
 
   def prior(self, rng, shape):
     return random.normal(rng, shape) * self.sigma_max
@@ -73,6 +81,7 @@ class VE:
 
     .. math::
       \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
+      \text{ and } p_{t|0}(x_{t}|x_{0}) = \mathcal{N}(x_0, \sigma_{t}^{2}I)
     """
     variance = self.variance(t)
     return variance * data_variance / (variance + data_variance)
@@ -84,15 +93,17 @@ class VE:
 
 class VP:
   """Variance preserving (VP) SDE, a.k.a. time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
+
   def __init__(self, beta=None, log_mean_coeff=None):
     if beta is None:
       self.beta, self.log_mean_coeff = get_linear_beta_function(
-        beta_min=0.1, beta_max=20.)
+        beta_min=0.1, beta_max=20.0
+      )
     else:
       self.beta = beta
       self.log_mean_coeff = log_mean_coeff
-    self.beta_min = self.beta(0.)
-    self.beta_max = self.beta(1.)
+    self.beta_min = self.beta(0.0)
+    self.beta_max = self.beta(1.0)
 
   def sde(self, x, t):
     beta_t = self.beta(t)
@@ -127,9 +138,11 @@ class VP:
 
     .. math::
       \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
+      \text{ and } p_{t|0}(x_{t}|x_{0}) = \mathcal{N}(\sqrt(\alpha_{t})x_0, (1 - \alpha_{t})I)
     """
     alpha = jnp.exp(2 * self.log_mean_coeff(t))
-    return (1 - alpha) * data_variance / (1 - alpha + alpha * data_variance)
+    variance = 1.0 - alpha
+    return variance * data_variance / (variance + alpha * data_variance)
 
   def ratio(self, t):
     """Ratio of marginal variance and mean coeff."""
@@ -137,7 +150,6 @@ class VP:
 
 
 class RVE(RSDE, VE):
-
   def get_estimate_x_0_vmap(self, observation_map):
     """
     Get a function returning the MMSE estimate of x_0|x_t.
@@ -146,6 +158,7 @@ class RVE(RSDE, VE):
       observation_map: function that operates on unbatched x.
       shape: optional tuple that reshapes x so that it can be operated on.
     """
+
     def estimate_x_0(x, t):
       x = jnp.expand_dims(x, axis=0)
       t = jnp.expand_dims(t, axis=0)
@@ -174,6 +187,7 @@ class RVE(RSDE, VE):
         return batch_observation_map(x_0.reshape(shape)), (s, x_0)
       else:
         return batch_observation_map(x_0), (s, x_0)
+
     return estimate_x_0
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):
@@ -181,9 +195,7 @@ class RVE(RSDE, VE):
     return RVE(guidance_score, self.forward_sde, self.sigma)
 
   def correct(self, corrector):
-
     class CVE(RVE):
-
       def sde(x, t):
         return corrector(self.score, x, t)
 
@@ -191,7 +203,6 @@ class RVE(RSDE, VE):
 
 
 class RVP(RSDE, VP):
-
   def get_estimate_x_0_vmap(self, observation_map):
     """
     Get a function returning the MMSE estimate of x_0|x_t.
@@ -200,6 +211,7 @@ class RVP(RSDE, VP):
       observation_map: function that operates on unbatched x.
       shape: optional tuple that reshapes x so that it can be operated on.
     """
+
     def estimate_x_0(x, t):
       x = jnp.expand_dims(x, axis=0)
       t = jnp.expand_dims(t, axis=0)
@@ -225,11 +237,12 @@ class RVP(RSDE, VP):
       m_t = self.mean_coeff(t)
       v_t = self.variance(t)
       s = self.score(x, t)
-      x_0 = batch_mul(x + batch_mul(v_t, s), 1. / m_t)
+      x_0 = batch_mul(x + batch_mul(v_t, s), 1.0 / m_t)
       if shape:
         return batch_observation_map(x_0.reshape(shape)), (s, x_0)
       else:
         return batch_observation_map(x_0), (s, x_0)
+
     return estimate_x_0
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):
@@ -237,9 +250,7 @@ class RVP(RSDE, VP):
     return RVP(guidance_score, self.forward_sde, self.beta, self.log_mean_coeff)
 
   def correct(self, corrector):
-
     class CVP(RVP):
-
       def sde(x, t):
         return corrector(self.score, x, t)
 
