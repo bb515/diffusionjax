@@ -489,8 +489,8 @@ class DDIMVE(Solver):
 
 class EDMEuler(Solver):
   """
-  A second order Heun solver from the paper Elucidating the Design space of
-  Diffusion-Based Generative Models.
+  A solver from the paper Elucidating the Design space of Diffusion-Based
+  Generative Models.
 
   Algorithm 2 (Euler steps) from Karras et al. (2022) arxiv.org/abs/2206.00364
   """
