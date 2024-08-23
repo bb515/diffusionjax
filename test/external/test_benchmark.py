@@ -123,20 +123,18 @@ def main(argv):
   # Build data iterators
   num_samples = 8
   dataset = CircleDataset(num_samples=num_samples)
-  scaler = dataset.get_data_scaler(config)
   inverse_scaler = dataset.get_data_inverse_scaler(config)
 
   time_prev = time.time()
   params, _, mean_losses = train(
     (config.training.batch_size // jax.local_device_count(), config.data.image_size),
     config,
+    MLP(),
     dataset,
     workdir=None,
     use_wandb=False,
   )
   train_time_delta = time.time() - time_prev
-  # expected_train_time = 7.0  # seconds  # not sure why this changed
-  expected_train_time = 14.6  # seconds
   print("train time: {}s".format(train_time_delta))
   expected_mean_loss = 0.4081565
   mean_loss = jnp.mean(mean_losses)
@@ -169,8 +167,6 @@ def main(argv):
   q_samples, _ = sampler(sample_rng)
   sample_time_delta = time.time() - time_prev
   print("sample time: {}s".format(sample_time_delta))
-  expected_sample_time = 1.25  # seconds
-  # TODO: Is there a machine agnostic way to do unit tests on benchmark scores?
   q_samples = q_samples.reshape(config.eval.batch_size, config.data.image_size)
   plt.scatter(q_samples[:, 0], q_samples[:, 1])
   plt.show()
@@ -179,15 +175,6 @@ def main(argv):
   mean_radii = jnp.mean(radii)
   expected_std_radii = 0.09904917
   std_radii = jnp.std(radii)
-
-  # Benchmark
-  assert jnp.isclose(
-    train_time_delta, expected_train_time, rtol=0.035
-  ), "train (got {}s, expected {}s)".format(train_time_delta, expected_train_time)
-  # assert jnp.isclose(train_time_delta, expected_train_time, rtol=0.035), "train (got {}s, expected {}s)".format(train_time_delta, expected_train_time)
-  assert jnp.isclose(
-    sample_time_delta, expected_sample_time, rtol=0.12
-  ), "sample (got {}s, expected {}s)".format(sample_time_delta, expected_sample_time)
 
   # Regression
   assert jnp.isclose(mean_radii, expected_mean_radii)
