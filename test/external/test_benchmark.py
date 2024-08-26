@@ -106,10 +106,10 @@ def main(argv):
   if config.training.sde.lower() == "vpsde":
     from diffusionjax.utils import get_linear_beta_function
 
-    beta, log_mean_coeff = get_linear_beta_function(
+    beta, mean_coeff = get_linear_beta_function(
       config.model.beta_min, config.model.beta_max
     )
-    sde = sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
+    sde = sde_lib.VP(beta=beta, mean_coeff=mean_coeff)
   elif config.training.sde.lower() == "vesde":
     from diffusionjax.utils import get_exponential_sigma_function
 
@@ -177,6 +177,8 @@ def main(argv):
   std_radii = jnp.std(radii)
 
   # Regression
+  print(mean_radii, expected_mean_radii, "mradii")
+  print(std_radii, expected_std_radii, "mradii")
   assert jnp.isclose(mean_radii, expected_mean_radii)
   assert jnp.isclose(std_radii, expected_std_radii)
   assert jnp.isclose(

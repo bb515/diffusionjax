@@ -120,10 +120,10 @@ def main(argv):
   if config.training.sde.lower() == "vpsde":
     from diffusionjax.utils import get_linear_beta_function
 
-    beta, log_mean_coeff = get_linear_beta_function(
+    beta, mean_coeff = get_linear_beta_function(
       beta_min=config.model.beta_min, beta_max=config.model.beta_max
     )
-    sde = sde_lib.VP(beta, log_mean_coeff)
+    sde = sde_lib.VP(beta, mean_coeff)
   elif config.training.sde.lower() == "vesde":
     from diffusionjax.utils import get_exponential_sigma_function
 

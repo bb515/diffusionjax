@@ -88,10 +88,10 @@ class State:
 def get_sde(config):
   # Setup SDE
   if config.training.sde.lower() == "vpsde":
-    beta, log_mean_coeff = get_linear_beta_function(
+    beta, mean_coeff = get_linear_beta_function(
       config.model.beta_min, config.model.beta_max
     )
-    return sde_lib.VP(beta=beta, log_mean_coeff=log_mean_coeff)
+    return sde_lib.VP(beta=beta, mean_coeff=mean_coeff)
   elif config.training.sde.lower() == "vesde":
     sigma = get_exponential_sigma_function(config.model.sigma_min, config.model.sigma_max)
     return sde_lib.VE(sigma=sigma)

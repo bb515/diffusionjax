@@ -16,6 +16,7 @@ from diffusionjax.utils import (
 from diffusionjax.solvers import EulerMaruyama, Inpainted, Projected
 from diffusionjax.sde import VE
 import numpy as np
+import flax.linen as nn
 import os
 
 # Dependencies:
@@ -39,7 +40,7 @@ class MLP(nn.Module):
   @nn.compact
   def __call__(self, x, t):
     x_shape = x.shape
-    in_size = jnp.prod(x_shape[1:])
+    in_size = np.prod(x_shape[1:])
     n_hidden = 256
     t = t.reshape((t.shape[0], -1))
     x = x.reshape((x.shape[0], -1))  # flatten
@@ -199,7 +200,6 @@ def main():
       score_scaling=True,
       likelihood_weighting=False,
       reduce_mean=True,
-      pointwise_t=False,
     )
 
     # Train with score matching
