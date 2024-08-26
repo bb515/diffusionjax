@@ -120,14 +120,14 @@ def main(argv):
   if config.training.sde.lower() == "vpsde":
     from diffusionjax.utils import get_linear_beta_function
 
-    beta, log_mean_coeff = get_linear_beta_function(
+    beta, mean_coeff = get_linear_beta_function(
       beta_min=config.model.beta_min, beta_max=config.model.beta_max
     )
-    sde = sde_lib.VP(beta, log_mean_coeff)
+    sde = sde_lib.VP(beta, mean_coeff)
   elif config.training.sde.lower() == "vesde":
-    from diffusionjax.utils import get_sigma_function
+    from diffusionjax.utils import get_exponential_sigma_function
 
-    sigma = get_sigma_function(
+    sigma = get_exponential_sigma_function(
       sigma_min=config.model.sigma_min, sigma_max=config.model.sigma_max
     )
     sde = sde_lib.VE(sigma)
@@ -266,10 +266,10 @@ def main(argv):
     samples=q_samples, area_bounds=[-3.0, 3.0], fname="heatmap trained score"
   )
 
-  sampling_shape = (config.eval.batch_size, config.data.image_size)
-  rsde = sde.reverse(trained_score)
 
   # Inverse problems
+  sampling_shape = (config.eval.batch_size, config.data.image_size)
+  rsde = sde.reverse(trained_score)
   # Condition on one of the coordinates
   y = jnp.array([-0.5, 0.0])
   mask = jnp.array([1.0, 0.0])

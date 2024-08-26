@@ -104,7 +104,7 @@ class Annealed(Solver):
     noise = random.normal(rng, x.shape)
     noise_norm = jnp.linalg.norm(noise.reshape((noise.shape[0], -1)), axis=-1).mean()
     noise_norm = jax.lax.pmean(noise_norm, axis_name="batch")
-    alpha = jnp.exp(2 * self.sde.log_mean_coeff(t))
+    alpha = self.sde.mean_coeff(t)**2
     dt = (self.snr * noise_norm / grad_norm) ** 2 * 2 * alpha
     x_mean = x + batch_mul(grad, dt)
     x = x_mean + batch_mul(2 * dt, noise)
@@ -489,8 +489,8 @@ class DDIMVE(Solver):
 
 class EDMEuler(Solver):
   """
-  A second order Heun solver from the paper Elucidating the Design space of
-  Diffusion-Based Generative Models.
+  A solver from the paper Elucidating the Design space of Diffusion-Based
+  Generative Models.
 
   Algorithm 2 (Euler steps) from Karras et al. (2022) arxiv.org/abs/2206.00364
   """
