@@ -2,7 +2,6 @@
 "Analyzing and Improving the Training Dynamics of Diffusion Models".
 Ported from the code https://github.com/NVlabs/edm2/blob/main/training/networks_edm2.py
 """
-
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
@@ -163,7 +162,7 @@ class MPConv(nn.Module):
     w = w * (gain / jnp.sqrt(w[0].size))  # magnitude-preserving scaling
     w = jnp.array(w, dtype=x.dtype)
     if w.ndim == 2:
-      return x @ w.T  # not sure about this
+      return x @ w.T
     assert w.ndim == 4
 
     return jax.lax.conv(
