@@ -52,17 +52,19 @@ def get_linear_beta_function(beta_min, beta_max):
   def beta(t):
     return beta_min + t * (beta_max - beta_min)
 
-  def log_mean_coeff(t):
-    """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
-    return -0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min)
+  def mean_coeff(t):
+    """..math: exp(-0.5 * \int_{0}^{t} \beta(s) ds)"""
+    return jnp.exp(-0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min))
 
-  return beta, log_mean_coeff
+  return beta, mean_coeff
 
 
-def get_cosine_beta_function(offset=0.08):
+def get_cosine_beta_function(beta_max, offset=0.08):
   """Returns:
   Squared cosine beta (cooling rate parameter) as a function of time,
   It's integral multiplied by -0.5, which is the log mean coefficient of the VP SDE.
+  Note: this implementation cannot perfectly replicate https://arxiv.org/abs/2102.09672
+    since it deals with a continuous time formulation of beta(t).
   Args:
     offset: https://arxiv.org/abs/2102.09672 "Use a small offset to prevent
     $\beta(t)$ from being too small near
@@ -72,17 +74,15 @@ def get_cosine_beta_function(offset=0.08):
   """
 
   def beta(t):
-    # return jnp.cos((1. - t + offset) / (1 + offset) * 0.5 * jnp.pi)**2
-    # Use double angle formula here, instead
-    return 0.5 * (jnp.cos((1.0 - t + offset) / (1.0 + offset) * jnp.pi) + 1.0)
+    # clip to max_beta
+    return jnp.clip(jnp.sin((t + offset) / (1.0 + offset) * 0.5 * jnp.pi) / (jnp.cos((t + offset) / (1.0 + offset) * 0.5 * jnp.pi) + 1e-5) * jnp.pi * (1.0 / (1.0 + offset)), a_max=beta_max)
 
-  def log_mean_coeff(t):
-    """..math: -0.5 * \int_{0}^{t} \beta(t) dt"""
-    return (
-      -1.0 / 4 * (t - (1.0 + offset) * jnp.sin(jnp.pi * t / (1.0 + offset)) / jnp.pi)
-    )
+  def mean_coeff(t):
+    """..math: -0.5 * \int_{0}^{t} \beta(s) ds"""
+    return jnp.cos((t + offset) / (1.0 + offset) * 0.5 * jnp.pi)
+    # return jnp.cos((t + offset) / (1.0 + offset) * 0.5 * jnp.pi) / jnp.cos(offset / (1.0 + offset) * 0.5 * jnp.pi)
 
-  return beta, log_mean_coeff
+  return beta, mean_coeff
 
 
 def get_karras_sigma_function(sigma_min, sigma_max, rho=7):
@@ -326,7 +326,9 @@ class EDM2Loss:
     random_normal = random.normal(
       step_rng, (data.shape[0],) + (1,) * (len(data.shape) - 1)
     )
+    print("r", random_normal.shape)
     sigma = jnp.exp(random_normal * self.p_std + self.p_mean)
+    print("rs",sigma.shape)
     weight = (sigma**2 + self.sigma_data**2) / (sigma * self.sigma_data) ** 2
     noise = random.normal(step_rng, data.shape) * sigma
     denoised, logvar = self.net.apply(params, data + noise, sigma, labels)

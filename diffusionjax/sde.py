@@ -57,9 +57,6 @@ class VE:
 
     return drift, diffusion
 
-  def log_mean_coeff(self, t):
-    return jnp.zeros_like(t)
-
   def mean_coeff(self, t):
     return jnp.ones_like(t)
 
@@ -94,16 +91,14 @@ class VE:
 class VP:
   """Variance preserving (VP) SDE, a.k.a. time rescaled Ohrnstein Uhlenbeck (OU) SDE."""
 
-  def __init__(self, beta=None, log_mean_coeff=None):
+  def __init__(self, beta=None, mean_coeff=None):
     if beta is None:
-      self.beta, self.log_mean_coeff = get_linear_beta_function(
+      self.beta, self.mean_coeff = get_linear_beta_function(
         beta_min=0.1, beta_max=20.0
       )
     else:
       self.beta = beta
-      self.log_mean_coeff = log_mean_coeff
-    self.beta_min = self.beta(0.0)
-    self.beta_max = self.beta(1.0)
+      self.mean_coeff = mean_coeff
 
   def sde(self, x, t):
     beta_t = self.beta(t)
@@ -111,14 +106,11 @@ class VP:
     diffusion = jnp.sqrt(beta_t)
     return drift, diffusion
 
-  def mean_coeff(self, t):
-    return jnp.exp(self.log_mean_coeff(t))
-
   def std(self, t):
     return jnp.sqrt(self.variance(t))
 
   def variance(self, t):
-    return 1.0 - jnp.exp(2 * self.log_mean_coeff(t))
+    return 1.0 - self.mean_coeff(t)**2
 
   def marginal_prob(self, x, t):
     return batch_mul(self.mean_coeff(t), x), jnp.sqrt(self.variance(t))
@@ -129,8 +121,8 @@ class VP:
   def reverse(self, score):
     fwd_sde = self.sde
     beta = self.beta
-    log_mean_coeff = self.log_mean_coeff
-    return RVP(score, fwd_sde, beta, log_mean_coeff)
+    mean_coeff = self.mean_coeff
+    return RVP(score, fwd_sde, beta, mean_coeff)
 
   def r2(self, t, data_variance):
     r"""Analytic variance of the distribution at time zero conditioned on x_t, given crude assumption that
@@ -140,7 +132,7 @@ class VP:
       \text{Variance of }p_{0}(x_{0}|x_{t}) \text{ if } p_{0}(x_{0}) = \mathcal{N}(0, \text{data_variance}I)
       \text{ and } p_{t|0}(x_{t}|x_{0}) = \mathcal{N}(\sqrt(\alpha_{t})x_0, (1 - \alpha_{t})I)
     """
-    alpha = jnp.exp(2 * self.log_mean_coeff(t))
+    alpha = self.mean_coeff(t)**2
     variance = 1.0 - alpha
     return variance * data_variance / (variance + alpha * data_variance)
 
@@ -247,11 +239,11 @@ class RVP(RSDE, VP):
 
   def guide(self, get_guidance_score, observation_map, *args, **kwargs):
     guidance_score = get_guidance_score(self, observation_map, *args, **kwargs)
-    return RVP(guidance_score, self.forward_sde, self.beta, self.log_mean_coeff)
+    return RVP(guidance_score, self.forward_sde, self.beta, self.mean_coeff)
 
   def correct(self, corrector):
     class CVP(RVP):
       def sde(x, t):
         return corrector(self.score, x, t)
 
-    return CVP(self.score, self.forward_sde, self.beta_min, self.beta_max)
+    return CVP(self.score, self.forward_sde, self.beta, self.mean_coeff)
