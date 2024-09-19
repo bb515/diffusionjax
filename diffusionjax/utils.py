@@ -53,7 +53,7 @@ def get_linear_beta_function(beta_min, beta_max):
     return beta_min + t * (beta_max - beta_min)
 
   def mean_coeff(t):
-    """..math: exp(-0.5 * \int_{0}^{t} \beta(s) ds)"""
+    """..math: exp(-0.5 * \\int_{0}^{t} \\beta(s) ds)"""
     return jnp.exp(-0.5 * t * beta_min - 0.25 * t**2 * (beta_max - beta_min))
 
   return beta, mean_coeff
@@ -69,7 +69,7 @@ def get_cosine_beta_function(beta_max, offset=0.08):
     offset: https://arxiv.org/abs/2102.09672 "Use a small offset to prevent
     $\beta(t)$ from being too small near
     $t = 0$, since we found that having tiny amounts of noise at the beginning
-    of the process made it hard for the network to predict $\epsilon$
+    of the process made it hard for the network to predict $\\epsilon$
     accurately enough"
   """
 
@@ -78,7 +78,7 @@ def get_cosine_beta_function(beta_max, offset=0.08):
     return jnp.clip(jnp.sin((t + offset) / (1.0 + offset) * 0.5 * jnp.pi) / (jnp.cos((t + offset) / (1.0 + offset) * 0.5 * jnp.pi) + 1e-5) * jnp.pi * (1.0 / (1.0 + offset)), a_max=beta_max)
 
   def mean_coeff(t):
-    """..math: -0.5 * \int_{0}^{t} \beta(s) ds"""
+    """..math: -0.5 * \\int_{0}^{t} \\beta(s) ds"""
     return jnp.cos((t + offset) / (1.0 + offset) * 0.5 * jnp.pi)
     # return jnp.cos((t + offset) / (1.0 + offset) * 0.5 * jnp.pi) / jnp.cos(offset / (1.0 + offset) * 0.5 * jnp.pi)
 
@@ -128,7 +128,7 @@ def get_karras_gamma_function(num_steps, s_churn, s_min, s_max):
 
 
 def get_times(num_steps=1000, dt=None, t0=None):
-  """
+  r"""
   Get linear, monotonically increasing time schedule.
   Args:
       num_steps: number of discretization time steps.

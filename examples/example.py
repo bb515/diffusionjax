@@ -144,7 +144,7 @@ def main(argv):
   )
 
   def log_hat_pt(x, t):
-    """Empirical distribution score.
+    r"""Empirical distribution score.
 
     Args:
       x: One location in $\mathbb{R}^2$

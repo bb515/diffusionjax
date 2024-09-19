@@ -58,7 +58,7 @@ class MLP(nn.Module):
 
 @partial(jit, static_argnums=[4])
 def update_step(params, rng, batch, opt_state, loss):
-  """
+  r"""
   Takes the gradient of the loss function and updates the model weights (params) using it.
   Args:
       params: the current weights of the model
@@ -168,7 +168,7 @@ def main():
     Returns:
       The true log density.
       .. math::
-        \nabla_{x} \log p_{t}(x)
+        \nabla_{x} \\log p_{t}(x)
     """
     x_shape = x.shape
     v_t = sde.variance(t)
