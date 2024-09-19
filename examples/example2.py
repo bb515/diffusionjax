@@ -6,7 +6,7 @@ import jax.random as random
 import jax.numpy as jnp
 from flax import serialization
 from functools import partial
-from diffusionjax.plot import plot_samples, plot_heatmap, plot_samples_1D, plot_samples
+from diffusionjax.plot import plot_heatmap, plot_samples_1D, plot_samples
 from diffusionjax.utils import (
   get_score,
   get_loss,
@@ -63,7 +63,7 @@ class CNN(nn.Module):
 
 @partial(jit, static_argnums=[4])
 def update_step(params, rng, batch, opt_state, loss):
-  """
+  r"""
   Takes the gradient of the loss function and updates the model weights (params) using it.
   Args:
       params: the current weights of the model

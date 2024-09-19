@@ -7,5 +7,61 @@ requires = [
   "numpy>=1.16",
 ]
 
+[tool.setuptools]
+py-modules = []
+
 [tool.setuptools_scm]
 write_to = "diffusionjax/_version.py"
+
+[project]
+name = "diffusionjax"
+description = "diffusionjax is a simple and accessible diffusion models package in JAX"
+readme = 'README.md'
+requires-python = '>=3.9, <3.13'
+license = {file = 'LICENSE.rst'}
+authors = [{name = 'Benjamin Boys'}, {name = 'Jakiw Pidstrigach'}]
+maintainers = [{name = 'Benjamin Boys'}, {name = 'Jakiw Pidstrigach'}]
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+  "flax",
+  "ml_collections",
+  "tqdm",
+  "absl-py",
+  "wandb",
+]
+dynamic = ['version']
+
+[project.optional-dependencies]
+linting = [
+  "flake8",
+  "pylint",
+  "mypy",
+  "typing-extensions",
+  "pre-commit",
+  "ruff",
+  'jaxtyping',
+]
+testing = [
+  "optax",
+  "orbax-checkpoint",
+  "torch",
+  "pytest",
+  "pytest-xdist",
+  "pytest-cov",
+  "coveralls",
+  "jax>=0.4.1",
+  "jaxlib>=0.4.1",
+  "setuptools_scm[toml]",
+  "setuptools_scm_git_archive",
+]
+examples = [
+  "optax",
+  "orbax-checkpoint",
+  "torch",
+  "mlkernels",
+]
+
+[project.urls]
+repository = "https://github.com/bb515/diffusionjax"

@@ -1,5 +1,6 @@
-tab-size = 2
+indent-width = 2
 
+[lint]
 select = [
   "F",
   "W6",
@@ -30,7 +31,7 @@ exclude = [
   "wandb/",
 ]
 
-[per-file-ignores]
+[lint.per-file-ignores]
 "test/*" = [
   "F401",
   "F403",
